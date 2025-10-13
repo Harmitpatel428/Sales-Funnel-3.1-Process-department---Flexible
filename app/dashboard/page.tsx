@@ -1,14 +1,19 @@
 ﻿'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useLeads, Lead, LeadFilters } from '../context/LeadContext';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useLeads } from '../context/LeadContext';
+import type { Lead, LeadFilters } from '../types/shared';
 import { useNavigation } from '../context/NavigationContext';
 import { useColumns } from '../context/ColumnContext';
 import EditableTable from '../components/EditableTable';
-import PasswordModal from '../components/PasswordModal';
-import PasswordSettingsModal from '../components/PasswordSettingsModal';
-import LeadDetailModal from '../components/LeadDetailModal';
+import LoadingSpinner from '../components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
+import { useDebouncedValue } from '../utils/debounce';
+import * as XLSX from 'xlsx';
+
+const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
+const PasswordModal = lazy(() => import('../components/PasswordModal'));
+const PasswordSettingsModal = lazy(() => import('../components/PasswordSettingsModal'));
 import { validateLeadField } from '../hooks/useValidation';
 
 export default function DashboardPage() {
@@ -19,7 +24,9 @@ export default function DashboardPage() {
   const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showLeadModal, setShowLeadModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const isSearching = searchInput !== debouncedSearch;
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState<Lead[]>([]);
@@ -75,7 +82,9 @@ export default function DashboardPage() {
       const visibleColumns = getVisibleColumns();
       const columnConfig = visibleColumns.find(col => col.fieldKey === field);
       
-      console.log('🔧 Cell update debug:', { leadId, field, value, columnConfig });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔧 Cell update debug:', { leadId, field, value, columnConfig });
+      }
       
       // Validate the field (including custom columns)
       const error = validateLeadField(field as keyof Lead, value, lead, columnConfig);
@@ -137,6 +146,19 @@ export default function DashboardPage() {
     }
   }, [leads, updateLead, showToastNotification, getVisibleColumns]);
 
+  // Update filters when debounced search changes
+  useEffect(() => {
+    setActiveFilters(prev => {
+      const trimmedSearch = debouncedSearch.trim();
+      if (trimmedSearch) {
+        return { ...prev, searchTerm: trimmedSearch };
+      } else {
+        const { searchTerm, ...rest } = prev;
+        return rest;
+      }
+    });
+  }, [debouncedSearch]);
+
   // Reset selectAll state when filters change
   useEffect(() => {
     setSelectAll(false);
@@ -147,13 +169,17 @@ export default function DashboardPage() {
   useEffect(() => {
     const currentColumnCount = getVisibleColumns().length;
     if (currentColumnCount !== columnCount) {
-      console.log('🔄 Column count changed:', columnCount, '->', currentColumnCount);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Column count changed:', columnCount, '->', currentColumnCount);
+      }
       setColumnCount(currentColumnCount);
       
       // Force more aggressive re-render by clearing cached filter results
       // This ensures the table completely re-mounts with new column configuration
       const tableKey = `table-${currentColumnCount}-${Date.now()}`;
-      console.log('🔄 Forcing table re-mount with key:', tableKey);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Forcing table re-mount with key:', tableKey);
+      }
       
       // Force re-render by updating a dummy state
       showToastNotification(`Table updated with ${currentColumnCount} columns`, 'info');
@@ -201,7 +227,9 @@ export default function DashboardPage() {
       localStorage.removeItem('leadAdded');
       
       // Don't automatically set status filter - let user see all leads by default
-      console.log('✅ Lead added notification received, dashboard will show all leads');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Lead added notification received, dashboard will show all leads');
+      }
     }
   }, [showToastNotification]);
 
@@ -229,7 +257,9 @@ export default function DashboardPage() {
     if (hasUpdatedLeads && (!activeFilters.status || activeFilters.status.length === 0)) {
       // This ensures updated leads are removed from the main dashboard view
       // but allows users to still click status buttons to see updated leads
-      console.log('Clearing main dashboard view due to updated leads');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Clearing main dashboard view due to updated leads');
+      }
     }
   }, [leads.length, activeFiltersKey]);
 
@@ -396,9 +426,11 @@ export default function DashboardPage() {
       'Others': 0
     };
 
-    console.log('=== STATUS COUNTS DEBUG ===');
-    console.log('Total leads:', leads.length);
-    console.log('Current activeFilters:', activeFilters);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('=== STATUS COUNTS DEBUG ===');
+      console.log('Total leads:', leads.length);
+      console.log('Current activeFilters:', activeFilters);
+    }
     
     // Create a temporary filter object that excludes status filtering to get leads for status counts
     const tempFilters = { ...activeFilters };
@@ -448,22 +480,32 @@ export default function DashboardPage() {
       return true;
     });
     
-    console.log('Filtered leads for status counts:', filteredLeadsForCounts.length);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Filtered leads for status counts:', filteredLeadsForCounts.length);
+    }
     
     filteredLeadsForCounts.forEach(lead => {
-      console.log(`Lead ${lead.kva}: status="${lead.status}", discom="${lead.discom}"`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Lead ${lead.kva}: status="${lead.status}", discom="${lead.discom}"`);
+      }
       // Map Work Alloted to WAO for counting
       const statusKey = lead.status === 'Work Alloted' ? 'WAO' : lead.status;
       if (statusKey in counts) {
         counts[statusKey as keyof typeof counts]++;
-        console.log(`✅ Incremented count for status: ${statusKey} (original: ${lead.status})`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Incremented count for status: ${statusKey} (original: ${lead.status})`);
+        }
       } else {
-        console.log(`❌ Status key "${statusKey}" not found in counts object`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`❌ Status key "${statusKey}" not found in counts object`);
+        }
       }
     });
 
-    console.log('Final status counts:', counts);
-    console.log('=== END STATUS COUNTS DEBUG ===');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Final status counts:', counts);
+      console.log('=== END STATUS COUNTS DEBUG ===');
+    }
 
     return counts;
   }, [leads, activeFilters, columnCount]);
@@ -540,16 +582,15 @@ export default function DashboardPage() {
       // Small delay to ensure pending header edits are saved
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Dynamic import to avoid turbopack issues
-      const XLSX = await import('xlsx');
-      
       // Get filtered leads based on current view
       const leadsToExport = getFilteredLeads(activeFilters);
       
       // Use fresh column configuration to ensure latest columns are included
       const visibleColumns = getVisibleColumns();
-      console.log('📊 Export Debug - Using columns:', visibleColumns.map(c => c.label));
-      console.log('📊 Export Debug - Column types:', visibleColumns.map(c => ({ label: c.label, type: c.type, fieldKey: c.fieldKey })));
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📊 Export Debug - Using columns:', visibleColumns.map(c => c.label));
+        console.log('📊 Export Debug - Column types:', visibleColumns.map(c => ({ label: c.label, type: c.type, fieldKey: c.fieldKey })));
+      }
       const headers = visibleColumns.map(column => column.label);
       
       // Convert leads to Excel rows with remapped data
@@ -560,14 +601,18 @@ export default function DashboardPage() {
         
         // Format main mobile number (phone number only, no contact name)
         const mainMobileDisplay = mainMobile.number || '';
-        console.log('🔍 Export Debug - Lead:', lead.clientName, 'Main Mobile:', mainMobileDisplay);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 Export Debug - Lead:', lead.clientName, 'Main Mobile:', mainMobileDisplay);
+        }
         
         // Map data according to visible columns using safe property access
         return visibleColumns.map(column => {
           const fieldKey = column.fieldKey;
           const value = (lead as any)[fieldKey] ?? '';
           
-          console.log(`🔍 Export Debug - Field: ${fieldKey}, Value: ${value}, Type: ${column.type}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔍 Export Debug - Field: ${fieldKey}, Value: ${value}, Type: ${column.type}`);
+          }
           
           // Handle special field formatting
           switch (fieldKey) {
@@ -627,10 +672,7 @@ export default function DashboardPage() {
 
   // Search functionality
   const handleSearch = () => {
-    setActiveFilters(prev => ({
-      ...prev,
-      searchTerm: searchTerm.trim()
-    }));
+    // Debouncing handles filter updates automatically
     setShowSuggestions(false);
   };
 
@@ -689,28 +731,25 @@ export default function DashboardPage() {
     setShowSuggestions(suggestions.length > 0);
   }, [leads]);
 
-  // Debounced search input change
+  // Search input change handler
   const handleSearchInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setSearchTerm(value);
-    setActiveFilters(prev => ({
-      ...prev,
-      searchTerm: value
-    }));
+    setSearchInput(value);
     
-    // Debounce search suggestions
-    const timeoutId = setTimeout(() => {
+    // Generate suggestions immediately for better UX (not debounced)
+    if (value.length >= 2) {
       generateSuggestions(value);
-    }, 300);
-    
-    return () => clearTimeout(timeoutId);
+    } else {
+      setSearchSuggestions([]);
+      setShowSuggestions(false);
+    }
   }, [generateSuggestions]);
 
   // Handle suggestion click
   const handleSuggestionClick = (lead: Lead) => {
     // Determine what field was matched and use that for the search
-    const queryLower = searchTerm.toLowerCase();
-    const queryNumbers = searchTerm.replace(/[^0-9]/g, '');
+    const queryLower = searchInput.toLowerCase();
+    const queryNumbers = searchInput.replace(/[^0-9]/g, '');
     
     // Get all mobile numbers for this lead
     const allMobileNumbers = [
@@ -750,11 +789,7 @@ export default function DashboardPage() {
       searchValue = lead.connectionDate;
     }
     
-    setSearchTerm(searchValue);
-    setActiveFilters(prev => ({
-      ...prev,
-      searchTerm: searchValue
-    }));
+    setSearchInput(searchValue);
     setShowSuggestions(false);
   };
 
@@ -762,17 +797,13 @@ export default function DashboardPage() {
 
   // Clear search
   const clearSearch = () => {
-    setSearchTerm('');
-    setActiveFilters(prev => {
-      const newFilters = { ...prev };
-      delete newFilters.searchTerm;
-      return newFilters;
-    });
+    setSearchInput('');
+    setShowSuggestions(false);
   };
 
   // Clear all filters
   const clearAllFilters = () => {
-    setSearchTerm('');
+    setSearchInput('');
     setDiscomFilter('');
     setActiveFilters({}); // Clear all filters to show all leads
     setSelectedLeads(new Set());
@@ -1065,21 +1096,26 @@ export default function DashboardPage() {
               <input
                 type="text"
                 placeholder="Search leads..."
-                value={searchTerm}
+                value={searchInput}
                 onChange={handleSearchInputChange}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
+                onFocus={() => searchInput.length >= 2 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-black placeholder:text-black text-sm"
+                className="w-full sm:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-black placeholder:text-black text-sm"
               />
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+                </div>
+              )}
               
               {/* Search Suggestions Dropdown */}
               {showSuggestions && searchSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
                   {searchSuggestions.map((lead) => {
                     // Determine what field matched for highlighting
-                    const queryLower = searchTerm.toLowerCase();
-                    const queryNumbers = searchTerm.replace(/[^0-9]/g, '');
+                    const queryLower = searchInput.toLowerCase();
+                    const queryNumbers = searchInput.replace(/[^0-9]/g, '');
                     
                     const getMatchType = () => {
                       if (lead.kva.toLowerCase().includes(queryLower)) return 'KVA';
@@ -1323,44 +1359,58 @@ export default function DashboardPage() {
             headerEditable={true}
             onColumnAdded={(column) => {
               // Handle column addition
-              console.log('Column added:', column);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Column added:', column);
+              }
               showToastNotification(`Column "${column.label}" added successfully!`, 'success');
             }}
             onColumnDeleted={(fieldKey) => {
               // Handle column deletion
-              console.log('Column deleted:', fieldKey);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Column deleted:', fieldKey);
+              }
               showToastNotification('Column deleted successfully!', 'success');
             }}
             onColumnReorder={(newOrder) => {
               // Handle column reordering
-              console.log('Columns reordered:', newOrder);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Columns reordered:', newOrder);
+              }
             }}
             onRowsAdded={(count) => {
               // Handle row addition
-              console.log('Rows added:', count);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Rows added:', count);
+              }
             }}
             onRowsDeleted={(count) => {
               // Handle row deletion
-              console.log('Rows deleted:', count);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Rows deleted:', count);
+              }
             }}
           />
         </div>
       </div>
 
       {/* Lead Detail Modal */}
-      <LeadDetailModal
-        isOpen={showLeadModal}
-        onClose={() => {
-          setShowLeadModal(false);
-          document.body.style.overflow = 'unset';
-        }}
-        lead={selectedLead!}
-        onEdit={handleEditLead}
-        onDelete={(lead) => {
-          setLeadToDelete(lead);
-          setShowDeleteModal(true);
-        }}
-      />
+      {showLeadModal && (
+        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+          <LeadDetailModal
+            isOpen={showLeadModal}
+            onClose={() => {
+              setShowLeadModal(false);
+              document.body.style.overflow = 'unset';
+            }}
+            lead={selectedLead!}
+            onEdit={handleEditLead}
+            onDelete={(lead) => {
+              setLeadToDelete(lead);
+              setShowDeleteModal(true);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Ultra Sleek Premium Delete Modal */}
       {showDeleteModal && leadToDelete && (
@@ -1538,25 +1588,33 @@ export default function DashboardPage() {
       )}
 
       {/* Export Password Modal */}
-      <PasswordModal
-        isOpen={showExportPasswordModal}
-        onClose={() => {
-        setShowExportPasswordModal(false);
-        }}
-        operation="export"
-        onSuccess={handleExportPasswordSuccess}
-        title="Export Leads"
-        description="Enter password to export leads data"
-      />
+      {showExportPasswordModal && (
+        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+          <PasswordModal
+            isOpen={showExportPasswordModal}
+            onClose={() => {
+            setShowExportPasswordModal(false);
+            }}
+            operation="export"
+            onSuccess={handleExportPasswordSuccess}
+            title="Export Leads"
+            description="Enter password to export leads data"
+          />
+        </Suspense>
+      )}
 
       {/* Password Settings Modal */}
-      <PasswordSettingsModal
-        isOpen={passwordSettingsOpen}
-        onClose={() => setPasswordSettingsOpen(false)}
-        onPasswordChanged={() => {
-          // Refresh any cached verification status
-        }}
-      />
+      {passwordSettingsOpen && (
+        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+          <PasswordSettingsModal
+            isOpen={passwordSettingsOpen}
+            onClose={() => setPasswordSettingsOpen(false)}
+            onPasswordChanged={() => {
+              // Refresh any cached verification status
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Toast Notification */}
       {showToast && (

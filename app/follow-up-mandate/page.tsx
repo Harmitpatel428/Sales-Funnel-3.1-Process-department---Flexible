@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useLeads, Lead } from '../context/LeadContext';
+import { useLeads } from '../context/LeadContext';
+import type { Lead } from '../types/shared';
 import { useRouter, useSearchParams } from 'next/navigation';
 import LeadTable from '../components/LeadTable';
 
@@ -13,7 +14,6 @@ export default function FollowUpMandatePage() {
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Handle URL parameters to set the correct tab when returning from add-lead form
   useEffect(() => {
@@ -92,69 +92,6 @@ export default function FollowUpMandatePage() {
       window.history.replaceState({}, '', newUrl.toString());
     }
   }, [leads]);
-
-  // Copy to clipboard function
-  const copyToClipboard = async (text: string, fieldName: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(fieldName);
-      setTimeout(() => setCopiedField(null), 2000); // Reset after 2 seconds
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
-  };
-
-  // WhatsApp redirect function
-  const handleWhatsAppRedirect = (lead: Lead) => {
-    // Get the main phone number
-    const mainPhoneNumber = lead.mobileNumbers && lead.mobileNumbers.length > 0 
-      ? lead.mobileNumbers.find(m => m.isMain)?.number || lead.mobileNumbers[0]?.number || lead.mobileNumber
-      : lead.mobileNumber;
-
-    if (!mainPhoneNumber || mainPhoneNumber.trim() === '') {
-      alert('No phone number available for this lead.');
-      return;
-    }
-
-    // Clean the phone number (remove any non-digit characters)
-    const cleanNumber = mainPhoneNumber.replace(/[^0-9]/g, '');
-    
-    // Check if number is valid (should be 10 digits for Indian numbers)
-    if (cleanNumber.length !== 10) {
-      alert(`Invalid phone number: ${mainPhoneNumber}. Please check the number format.`);
-      return;
-    }
-
-    // Create WhatsApp URL
-    const whatsappUrl = `https://wa.me/91${cleanNumber}`;
-    
-    // Open WhatsApp in new tab
-    window.open(whatsappUrl, '_blank');
-  };
-
-  // Helper function to format date to DD-MM-YYYY
-  const formatDateToDDMMYYYY = (dateString: string): string => {
-    if (!dateString) return '';
-    
-    // If already in DD-MM-YYYY format, return as is
-    if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      return dateString;
-    }
-    
-    // If it's a Date object or ISO string, convert to DD-MM-YYYY
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      
-      return `${day}-${month}-${year}`;
-    } catch {
-      return dateString; // Return original if conversion fails
-    }
-  };
 
   // Handle lead click
   const handleLeadClick = (lead: any) => {

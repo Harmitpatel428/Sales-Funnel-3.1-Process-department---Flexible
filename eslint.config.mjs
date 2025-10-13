@@ -20,6 +20,21 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  // Custom rules for code quality and performance
+  // - no-unused-vars: Detects unused imports and variables for bundle size optimization
+  // - react-hooks: Prevents infinite loops and ensures correct hook usage
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
+      'no-unused-vars': 'off', // Turn off base rule as @typescript-eslint version is used
+      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/rules-of-hooks': 'error'
+    }
+  }
 ];
 
 export default eslintConfig;

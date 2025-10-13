@@ -1,4 +1,4 @@
-import { Lead } from '../context/LeadContext';
+import { Lead } from '../types/shared';
 
 // Column order for display - defines the sequence of columns in the table
 // @deprecated Use getColumnOrder() from ColumnContext instead for dynamic column ordering
@@ -25,30 +25,66 @@ export const getColumnOrder = (): (keyof Lead)[] => {
 
 // Default header labels for each field
 export const DEFAULT_HEADER_LABELS: Record<keyof Lead, string> = {
+  id: 'ID',
   kva: 'KVA',
   connectionDate: 'Connection Date',
   consumerNumber: 'Consumer Number',
   company: 'Company',
   clientName: 'Client Name',
   discom: 'Discom',
+  gidc: 'GIDC',
+  gstNumber: 'GST Number',
+  mobileNumbers: 'Mobile Numbers',
   mobileNumber: 'Mobile Number',
+  companyLocation: 'Company Location',
+  unitType: 'Unit Type',
+  marketingObjective: 'Marketing Objective',
+  budget: 'Budget',
+  timeline: 'Timeline',
   status: 'Status',
+  contactOwner: 'Contact Owner',
   lastActivityDate: 'Last Activity Date',
-  followUpDate: 'Follow Up Date'
+  followUpDate: 'Follow Up Date',
+  finalConclusion: 'Final Conclusion',
+  notes: 'Notes',
+  isDone: 'Is Done',
+  isDeleted: 'Is Deleted',
+  isUpdated: 'Is Updated',
+  activities: 'Activities',
+  mandateStatus: 'Mandate Status',
+  documentStatus: 'Document Status'
 };
 
 // Field types for validation and rendering
 export const FIELD_TYPES: Record<keyof Lead, 'text' | 'date' | 'select' | 'number'> = {
+  id: 'text',
   kva: 'text',
   connectionDate: 'date',
   consumerNumber: 'text',
   company: 'text',
   clientName: 'text',
   discom: 'text',
+  gidc: 'text',
+  gstNumber: 'text',
+  mobileNumbers: 'text',
   mobileNumber: 'text',
+  companyLocation: 'text',
+  unitType: 'select',
+  marketingObjective: 'text',
+  budget: 'text',
+  timeline: 'text',
   status: 'select',
+  contactOwner: 'text',
   lastActivityDate: 'date',
-  followUpDate: 'date'
+  followUpDate: 'date',
+  finalConclusion: 'text',
+  notes: 'text',
+  isDone: 'select',
+  isDeleted: 'select',
+  isUpdated: 'select',
+  activities: 'text',
+  mandateStatus: 'select',
+  documentStatus: 'select'
 };
 
 // Fields that support sorting
@@ -166,6 +202,141 @@ export const COLUMN_METADATA: Record<keyof Lead, {
     sortable: true,
     width: 120,
     description: 'Follow up date'
+  },
+  id: {
+    type: 'text',
+    required: true,
+    sortable: true,
+    width: 80,
+    description: 'Unique identifier'
+  },
+  gidc: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 100,
+    description: 'GIDC number'
+  },
+  gstNumber: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'GST number'
+  },
+  mobileNumbers: {
+    type: 'phone',
+    required: false,
+    sortable: false,
+    width: 150,
+    description: 'Mobile numbers'
+  },
+  companyLocation: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 150,
+    description: 'Company location'
+  },
+  unitType: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 100,
+    description: 'Unit type',
+    options: ['New', 'Existing', 'Other']
+  },
+  marketingObjective: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 150,
+    description: 'Marketing objective'
+  },
+  budget: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 100,
+    description: 'Budget'
+  },
+  timeline: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 100,
+    description: 'Timeline'
+  },
+  contactOwner: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Contact owner'
+  },
+  finalConclusion: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 150,
+    description: 'Final conclusion'
+  },
+  notes: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 150,
+    description: 'Notes'
+  },
+  isDone: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 80,
+    description: 'Is done',
+    options: ['true', 'false'],
+    defaultValue: false
+  },
+  isDeleted: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 80,
+    description: 'Is deleted',
+    options: ['true', 'false'],
+    defaultValue: false
+  },
+  isUpdated: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 80,
+    description: 'Is updated',
+    options: ['true', 'false'],
+    defaultValue: false
+  },
+  activities: {
+    type: 'text',
+    required: false,
+    sortable: false,
+    width: 150,
+    description: 'Activities'
+  },
+  mandateStatus: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Mandate status',
+    options: ['Pending', 'In Progress', 'Completed']
+  },
+  documentStatus: {
+    type: 'select',
+    required: false,
+    sortable: true,
+    width: 150,
+    description: 'Document status',
+    options: ['Pending Documents', 'Documents Submitted', 'Documents Reviewed', 'Signed Mandate']
   }
 };
 
@@ -277,7 +448,7 @@ export const validateColumnName = (name: string, existingColumns: string[], fiel
   return null;
 };
 
-export const validateColumnType = (type: string, value: any): string | null => {
+export const validateColumnType = (type: string): string | null => {
   if (!type) {
     return 'Column type is required';
   }
@@ -290,7 +461,7 @@ export const validateColumnType = (type: string, value: any): string | null => {
   return null;
 };
 
-export const validateColumnDeletion = (fieldKey: string, data: any[], requiredFields: string[]): string | null => {
+export const validateColumnDeletion = (fieldKey: string, requiredFields: string[]): string | null => {
   if (requiredFields.includes(fieldKey)) {
     return 'Cannot delete required columns';
   }
@@ -317,7 +488,7 @@ export const backupDataForColumnDeletion = (leads: any[], fieldKey: string): any
   });
 };
 
-export const restoreDataFromBackup = (leads: any[], backup: any[]): any[] => {
+export const restoreDataFromBackup = (backup: any[]): any[] => {
   return backup;
 };
 

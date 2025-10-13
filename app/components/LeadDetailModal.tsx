@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Lead } from '../context/LeadContext';
+import type { Lead } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
 import QuickBenefitModal from './QuickBenefitModal';
 
@@ -96,7 +96,7 @@ export default function LeadDetailModal({
     const clientName = lead.clientName || 'Sir';
 
     // Base script template
-    let script = `નમસ્તે સર, ${companyName} માંથી ${clientName} વાત કરો છો?
+    const script = `નમસ્તે સર, ${companyName} માંથી ${clientName} વાત કરો છો?
 
 V4U Biz Solutions, અમદાવાદ માંથી ${consultantName} વાત કરું છું. અમારી કંપની મેન્યુફેક્ચરિંગ યુનિટને ગુજરાત સરકાર દ્વારા અપાતી સબસીડી અને બિઝનેસ લોન મેળવવામાં સહાય કરે છે.
 
@@ -155,9 +155,11 @@ V4U Biz Solutions, અમદાવાદ માંથી ${consultantName} વ�
   const visibleColumns = getVisibleColumns();
   const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
   
-  console.log('🔍 LeadDetailModal - visibleColumns:', visibleColumns.length);
-  console.log('🔍 LeadDetailModal - customColumns:', customColumns.length);
-  console.log('🔍 LeadDetailModal - permanentFields:', permanentFields);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 LeadDetailModal - visibleColumns:', visibleColumns.length);
+    console.log('🔍 LeadDetailModal - customColumns:', customColumns.length);
+    console.log('🔍 LeadDetailModal - permanentFields:', permanentFields);
+  }
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">

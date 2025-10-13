@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Lead } from '../context/LeadContext';
 import { validateHeaderName } from '../hooks/useValidation';
 import { useColumns } from '../context/ColumnContext';
 import PasswordModal from './PasswordModal';

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Electron
+electron/
+
+# Test coverage
+coverage/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Type definitions
+next-env.d.ts
+*.d.ts
+
+# Scripts
+scripts/
+
+# Config files
+*.config.js
+*.config.mjs
+*.config.ts
+

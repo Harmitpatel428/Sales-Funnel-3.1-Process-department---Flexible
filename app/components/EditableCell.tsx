@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { validateLeadField } from '../hooks/useValidation';
 
 interface EditableCellProps {
@@ -16,7 +16,7 @@ interface EditableCellProps {
   fieldName?: string; // For validation
 }
 
-const EditableCell: React.FC<EditableCellProps> = ({
+const EditableCell = memo<EditableCellProps>(function EditableCell({
   value,
   type,
   options = [],
@@ -27,7 +27,7 @@ const EditableCell: React.FC<EditableCellProps> = ({
   disabled = false,
   lead,
   fieldName
-}) => {
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(String(value || ''));
   const [hasError, setHasError] = useState(false);
@@ -262,6 +262,6 @@ const EditableCell: React.FC<EditableCellProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default EditableCell;

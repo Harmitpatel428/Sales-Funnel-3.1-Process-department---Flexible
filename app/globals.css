@@ -293,6 +293,45 @@ input, textarea, select {
   transition: opacity 0.3s ease;
 }
 
+/* Progress Element Styling */
+.storage-progress { 
+  appearance: none; 
+}
+
+.storage-progress::-webkit-progress-bar { 
+  background-color: #e5e7eb; 
+  border-radius: 9999px; 
+}
+
+.storage-progress::-webkit-progress-value { 
+  background-color: currentColor; 
+  border-radius: 9999px; 
+}
+
+.storage-progress::-moz-progress-bar { 
+  background-color: currentColor; 
+  border-radius: 9999px; 
+}
+
+.password-strength-progress { 
+  appearance: none; 
+}
+
+.password-strength-progress::-webkit-progress-bar { 
+  background-color: #e5e7eb; 
+  border-radius: 9999px; 
+}
+
+.password-strength-progress::-webkit-progress-value { 
+  background-color: currentColor; 
+  border-radius: 9999px; 
+}
+
+.password-strength-progress::-moz-progress-bar { 
+  background-color: currentColor; 
+  border-radius: 9999px; 
+}
+
 .cursor-blob.hidden {
   opacity: 0;
 }

@@ -29,9 +29,7 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
     changePassword, 
     getPasswordStrength, 
     resetPassword,
-    isPasswordExpired,
-    getSecurityQuestion,
-    setSecurityQuestion
+    isPasswordExpired
   } = usePasswords();
 
   const operationLabels = {

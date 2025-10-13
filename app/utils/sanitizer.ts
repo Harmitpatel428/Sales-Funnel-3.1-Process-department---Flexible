@@ -1,0 +1,178 @@
+import DOMPurify from 'dompurify';
+import { debugLogger, DebugCategory } from './debugLogger';
+
+// Configure DOMPurify for security
+DOMPurify.setConfig({
+  RETURN_DOM: false,
+  RETURN_DOM_FRAGMENT: false,
+  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'option'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset'],
+  ALLOWED_TAGS: [], // Strip all HTML tags for text sanitization
+  ALLOWED_ATTR: []
+});
+
+// Safe HTML configuration for rich text fields (if needed in future)
+const SAFE_HTML_CONFIG = {
+  RETURN_DOM: false,
+  RETURN_DOM_FRAGMENT: false,
+  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'option'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset'],
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'li', 'ol', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+  ALLOWED_ATTR: ['class']
+};
+
+/**
+ * Sanitize text input by stripping all HTML tags and attributes
+ * @param input - Raw text input from user
+ * @returns Sanitized text string
+ */
+export function sanitizeText(input: string): string {
+  if (typeof input !== 'string') {
+    return '';
+  }
+  
+  // Use DOMPurify to strip all HTML and sanitize
+  const sanitized = DOMPurify.sanitize(input, {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: []
+  });
+  
+  // Trim whitespace
+  return sanitized.trim();
+}
+
+/**
+ * Sanitize HTML input allowing safe HTML tags
+ * @param input - HTML input from user
+ * @returns Sanitized HTML string
+ */
+export function sanitizeHTML(input: string): string {
+  if (typeof input !== 'string') {
+    return '';
+  }
+  
+  return DOMPurify.sanitize(input, SAFE_HTML_CONFIG).trim();
+}
+
+/**
+ * Sanitize a lead object by cleaning all text fields
+ * @param lead - Lead object to sanitize
+ * @returns Deep cloned and sanitized lead object
+ */
+export function sanitizeLead(lead: any): any {
+  if (!lead || typeof lead !== 'object') {
+    return lead;
+  }
+  
+  // Deep clone the lead object
+  let sanitizedLead;
+  try {
+    sanitizedLead = JSON.parse(JSON.stringify(lead));
+  } catch (error) {
+    debugLogger.warn(DebugCategory.VALIDATION, 'Failed to deep clone lead for sanitization. Using shallow copy.', { 
+      leadId: lead.id,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    // Fall back to shallow copy
+    sanitizedLead = { ...lead };
+  }
+  
+  // Sanitize all text fields
+  if (sanitizedLead.clientName) {
+    sanitizedLead.clientName = sanitizeText(sanitizedLead.clientName);
+  }
+  
+  if (sanitizedLead.company) {
+    sanitizedLead.company = sanitizeText(sanitizedLead.company);
+  }
+  
+  if (sanitizedLead.notes) {
+    sanitizedLead.notes = sanitizeText(sanitizedLead.notes);
+  }
+  
+  if (sanitizedLead.finalConclusion) {
+    sanitizedLead.finalConclusion = sanitizeText(sanitizedLead.finalConclusion);
+  }
+  
+  if (sanitizedLead.companyLocation) {
+    sanitizedLead.companyLocation = sanitizeText(sanitizedLead.companyLocation);
+  }
+  
+  if (sanitizedLead.gidc) {
+    sanitizedLead.gidc = sanitizeText(sanitizedLead.gidc);
+  }
+  
+  if (sanitizedLead.gstNumber) {
+    sanitizedLead.gstNumber = sanitizeText(sanitizedLead.gstNumber);
+  }
+  
+  if (sanitizedLead.consumerNumber) {
+    sanitizedLead.consumerNumber = sanitizeText(sanitizedLead.consumerNumber);
+  }
+  
+  // Sanitize mobile numbers array
+  if (Array.isArray(sanitizedLead.mobileNumbers)) {
+    sanitizedLead.mobileNumbers = sanitizedLead.mobileNumbers.map((mobile: any) => ({
+      ...mobile,
+      name: sanitizeText(mobile.name || ''),
+      number: sanitizeText(mobile.number || '')
+    }));
+  }
+  
+  // Sanitize custom fields
+  if (sanitizedLead.customFields && typeof sanitizedLead.customFields === 'object') {
+    const sanitizedCustomFields: Record<string, any> = {};
+    for (const [key, value] of Object.entries(sanitizedLead.customFields)) {
+      if (typeof value === 'string') {
+        sanitizedCustomFields[sanitizeText(key)] = sanitizeText(value);
+      } else {
+        sanitizedCustomFields[sanitizeText(key)] = value;
+      }
+    }
+    sanitizedLead.customFields = sanitizedCustomFields;
+  }
+  
+  return sanitizedLead;
+}
+
+/**
+ * Sanitize an array of leads
+ * @param leads - Array of lead objects
+ * @returns Array of sanitized lead objects
+ */
+export function sanitizeLeadArray(leads: any[]): any[] {
+  if (!Array.isArray(leads)) {
+    return [];
+  }
+  
+  return leads.map(lead => sanitizeLead(lead));
+}
+
+/**
+ * Generic sanitizer for form data objects
+ * @param obj - Object to sanitize
+ * @returns Sanitized object with all string values cleaned
+ */
+export function sanitizeObject(obj: Record<string, any>): Record<string, any> {
+  if (!obj || typeof obj !== 'object') {
+    return obj;
+  }
+  
+  const sanitized: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === 'string') {
+      sanitized[sanitizeText(key)] = sanitizeText(value);
+    } else if (Array.isArray(value)) {
+      sanitized[sanitizeText(key)] = value.map(item => 
+        typeof item === 'string' ? sanitizeText(item) : item
+      );
+    } else if (value && typeof value === 'object') {
+      sanitized[sanitizeText(key)] = sanitizeObject(value);
+    } else {
+      sanitized[sanitizeText(key)] = value;
+    }
+  }
+  
+  return sanitized;
+}

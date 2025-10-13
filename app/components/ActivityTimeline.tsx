@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Activity } from '../context/LeadContext';
+import type { Activity } from '../types/shared';
 
 interface ActivityTimelineProps {
   activities: Activity[];

@@ -118,5 +118,5 @@ temp/
 app-update.yml
 latest.yml
 
-# Auto-commit logs
-auto-commit.log
+# Bundle analyzer
+.next/analyze/

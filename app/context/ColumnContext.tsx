@@ -1,40 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { validateColumnConfig, getDefaultValueForType, formatColumnValue } from '../constants/columnConfig';
 import { useLeads } from './LeadContext';
-
-// Column configuration interface
-export interface ColumnConfig {
-  id: string;
-  fieldKey: string;
-  label: string;
-  type: 'text' | 'date' | 'select' | 'number' | 'email' | 'phone';
-  required: boolean;
-  sortable: boolean;
-  width: number;
-  visible: boolean;
-  options?: string[]; // For select type
-  defaultValue?: any;
-  description?: string;
-}
-
-// Column context type
-export interface ColumnContextType {
-  columns: ColumnConfig[];
-  addColumn: (config: Omit<ColumnConfig, 'id'>) => { success: boolean; message: string };
-  deleteColumn: (fieldKey: string) => { success: boolean; message: string };
-  reorderColumns: (newOrder: string[]) => boolean;
-  toggleColumnVisibility: (fieldKey: string) => boolean;
-  updateColumn: (fieldKey: string, updates: Partial<ColumnConfig>) => boolean;
-  getColumnByKey: (fieldKey: string) => ColumnConfig | undefined;
-  getVisibleColumns: () => ColumnConfig[];
-  validateColumnConfig: (config: Partial<ColumnConfig>, isUpdate?: boolean) => { valid: boolean; errors: string[] };
-  getColumnMigrationStatus: (fieldKey: string) => { migrated: boolean; totalLeads: number; migratedLeads: number };
-  resetColumnToDefault: (fieldKey: string) => { success: boolean; message: string };
-  exportColumnConfig: () => string;
-  importColumnConfig: (configJson: string) => { success: boolean; message: string };
-}
+import { ColumnConfig, ColumnContextType } from '../types/shared';
 
 // Default column configuration
 const DEFAULT_COLUMNS: ColumnConfig[] = [
@@ -183,28 +151,36 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Add column
   const addColumn = (config: Omit<ColumnConfig, 'id'>): { success: boolean; message: string } => {
     try {
-      console.log('🔄 Starting column addition process:', config);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Starting column addition process:', config);
+      }
       
       const id = config.fieldKey || `column_${Date.now()}`;
       const newColumn: ColumnConfig = {
         id,
-        fieldKey: config.fieldKey || id,
-        ...config
+        ...config,
+        fieldKey: config.fieldKey || id
       };
 
       // Use enhanced validation
       const validation = validateColumnConfig(newColumn);
       if (!validation.valid) {
-        console.log('❌ Column validation failed:', validation.errors);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Column validation failed:', validation.errors);
+        }
         return { success: false, message: validation.errors.join('. ') };
       }
 
-      console.log('✅ Column validation passed, starting data migration...');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Column validation passed, starting data migration...');
+      }
 
       // Migrate existing lead data to include the new column
       try {
         leadsCtx.migrateLeadsForNewColumn(newColumn);
-        console.log(`✅ Successfully migrated leads for new column: ${newColumn.fieldKey}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Successfully migrated leads for new column: ${newColumn.fieldKey}`);
+        }
       } catch (error) {
         console.error('❌ Error migrating leads for new column:', error);
         return { success: false, message: 'Failed to migrate existing data for the new column. Please try again.' };
@@ -213,7 +189,9 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const newColumns = [...columns, newColumn];
       saveColumns(newColumns);
       
-      console.log(`🎉 Column "${newColumn.label}" added successfully with ID: ${newColumn.id}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🎉 Column "${newColumn.label}" added successfully with ID: ${newColumn.id}`);
+      }
       return { success: true, message: `Column "${newColumn.label}" added successfully and will appear in the table immediately.` };
     } catch (error) {
       console.error('❌ Error adding column:', error);
@@ -235,7 +213,9 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // Remove column data from all leads
       try {
         leadsCtx.removeColumnFromLeads(fieldKey);
-        console.log(`Removed column "${fieldKey}" from leads`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Removed column "${fieldKey}" from leads`);
+        }
       } catch (error) {
         console.error('Error removing column from leads:', error);
       }
@@ -243,7 +223,9 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const newColumns = columns.filter(col => col.fieldKey !== fieldKey);
       saveColumns(newColumns);
       
-      console.log(`Column "${column.label}" deleted successfully`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Column "${column.label}" deleted successfully`);
+      }
       return { success: true, message: `Column "${column.label}" deleted successfully.` };
     } catch (error) {
       console.error('Error deleting column:', error);
@@ -286,7 +268,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return false;
     }
 
-    const updatedColumn = { ...columns[columnIndex], ...updates };
+    const updatedColumn = { ...columns[columnIndex], ...updates } as ColumnConfig;
     
     // Validate the updated column (but allow fieldKey changes for existing columns)
     const validation = validateColumnConfig(updatedColumn, true);
@@ -299,7 +281,9 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     newColumns[columnIndex] = updatedColumn;
     saveColumns(newColumns);
     
-    console.log(`Column "${fieldKey}" updated successfully`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Column "${fieldKey}" updated successfully`);
+    }
     return true;
   };
 
@@ -315,8 +299,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return columns.indexOf(a) - columns.indexOf(b);
     });
     
-    console.log('📊 getVisibleColumns called, returning:', visible.length, 'visible columns');
-    console.log('🔍 Visible columns:', visible.map(col => ({ fieldKey: col.fieldKey, label: col.label })));
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 getVisibleColumns called, returning:', visible.length, 'visible columns');
+      console.log('🔍 Visible columns:', visible.map(col => ({ fieldKey: col.fieldKey, label: col.label })));
+    }
     
     return visible;
   };
@@ -387,10 +373,15 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       const newColumns = [...columns];
-      newColumns[columnIndex] = { ...defaultColumn, id: newColumns[columnIndex].id };
+      const existingColumn = newColumns[columnIndex];
+      if (existingColumn) {
+        newColumns[columnIndex] = { ...defaultColumn, id: existingColumn.id };
+      }
       saveColumns(newColumns);
 
-      console.log(`Column "${fieldKey}" reset to default configuration`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Column "${fieldKey}" reset to default configuration`);
+      }
       return { success: true, message: `Column "${fieldKey}" has been reset to default configuration` };
     } catch (error) {
       console.error('Error resetting column:', error);
@@ -478,7 +469,9 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const mergedColumns = [...columns, ...importedColumns];
       saveColumns(mergedColumns);
 
-      console.log(`Successfully imported ${importedColumns.length} columns`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Successfully imported ${importedColumns.length} columns`);
+      }
       return { success: true, message: `Successfully imported ${importedColumns.length} columns` };
     } catch (error) {
       console.error('Error importing column config:', error);

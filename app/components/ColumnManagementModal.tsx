@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useColumns, ColumnConfig } from '../context/ColumnContext';
+import { useColumns } from '../context/ColumnContext';
+import type { ColumnConfig } from '../types/shared';
 import { useHeaders } from '../context/HeaderContext';
-import { validateColumnConfig, getDefaultValueForType } from '../constants/columnConfig';
 
 interface ColumnManagementModalProps {
   isOpen: boolean;
@@ -27,7 +27,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
   const [newColumn, setNewColumn] = useState({
     fieldKey: '',
     label: '',
-    type: 'text' as const,
+    type: 'text' as 'text' | 'select',
     required: false,
     sortable: true,
     width: 150,
@@ -47,8 +47,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
     addColumn, 
     deleteColumn, 
     reorderColumns, 
-    toggleColumnVisibility,
-    updateColumn 
+    toggleColumnVisibility
   } = useColumns();
   const { addHeader, removeHeader } = useHeaders();
 
@@ -110,7 +109,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       // Prepare column config
       const columnConfig = {
         ...newColumn,
-        options: newColumn.type === 'select' ? newColumn.options : undefined,
+        options: newColumn.type === 'select' ? newColumn.options : [],
         defaultValue: newColumn.defaultValue || undefined
       };
 
@@ -231,6 +230,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
 
     const newOrder = [...columns];
     const [draggedItem] = newOrder.splice(draggedIndex, 1);
+    if (!draggedItem) return;
     newOrder.splice(targetIndex, 0, draggedItem);
     
     const fieldKeys = newOrder.map(col => col.fieldKey);

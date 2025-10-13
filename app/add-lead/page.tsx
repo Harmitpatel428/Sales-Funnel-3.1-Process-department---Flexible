@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
-import { useLeads, Lead, MobileNumber } from '../context/LeadContext';
+import { useLeads } from '../context/LeadContext';
+import type { Lead, MobileNumber } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
 import { useRouter } from 'next/navigation';
 import { useValidation } from '../hooks/useValidation';
@@ -100,7 +101,7 @@ export default function AddLeadPage() {
           const { address, cleanNotes } = extractAddressFromNotes(leadData.notes || '');
           
           // Handle mobile numbers - convert old format to new format if needed
-          let mobileNumbers: MobileNumber[] = [
+          const mobileNumbers: MobileNumber[] = [
             { id: '1', number: '', name: '', isMain: true },
             { id: '2', number: '', name: '', isMain: false },
             { id: '3', number: '', name: '', isMain: false }
@@ -123,8 +124,10 @@ export default function AddLeadPage() {
             mobileNumbers[0] = { id: '1', number: leadData.mobileNumber, name: '', isMain: true };
           }
           
-          console.log('Mobile numbers being set:', mobileNumbers); // Debug log
-          console.log('Lead data discom:', leadData.discom); // Debug log for discom
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Mobile numbers being set:', mobileNumbers); // Debug log
+            console.log('Lead data discom:', leadData.discom); // Debug log for discom
+          }
           
           // Handle custom unit type for editing
           const unitType = leadData.unitType || 'New';
@@ -171,12 +174,16 @@ export default function AddLeadPage() {
   // Auto-detect client name when leads are loaded and first mobile number is complete
   useEffect(() => {
     if (leads.length > 0 && formData.mobileNumbers[0]?.number?.length === 10 && !customFields.clientName?.trim()) {
-      console.log('🔄 useEffect: Attempting auto-detection for mobile:', formData.mobileNumbers[0].number);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 useEffect: Attempting auto-detection for mobile:', formData.mobileNumbers[0].number);
+      }
       
       const existingLead = leads.find(lead => {
         // Check main mobile number (backward compatibility)
         if (lead.mobileNumber && lead.mobileNumber.trim() === formData.mobileNumbers[0]?.number) {
-          console.log('✅ useEffect: Found match in main mobile number:', lead.clientName);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ useEffect: Found match in main mobile number:', lead.clientName);
+          }
           return true;
         }
         
@@ -186,7 +193,9 @@ export default function AddLeadPage() {
             m.number && m.number.trim() === formData.mobileNumbers[0]?.number
           );
           if (hasMatch) {
-            console.log('✅ useEffect: Found match in mobile numbers array:', lead.clientName);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ useEffect: Found match in mobile numbers array:', lead.clientName);
+            }
             return true;
           }
         }
@@ -195,13 +204,17 @@ export default function AddLeadPage() {
       });
       
       if (existingLead) {
-        console.log('🎉 useEffect: Auto-populating client name:', existingLead.clientName);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎉 useEffect: Auto-populating client name:', existingLead.clientName);
+        }
         setCustomFields(prev => ({
           ...prev,
           clientName: existingLead.clientName
         }));
       } else {
-        console.log('❌ useEffect: No matching lead found for mobile:', formData.mobileNumbers[0].number);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ useEffect: No matching lead found for mobile:', formData.mobileNumbers[0].number);
+        }
       }
     }
   }, [leads, formData.mobileNumbers[0]?.number, customFields.clientName]);
@@ -297,7 +310,9 @@ export default function AddLeadPage() {
     // Only allow numeric characters (0-9) and limit to 10 digits
     const numericValue = value.replace(/[^0-9]/g, '').slice(0, 10);
     
-    console.log('🔍 Mobile number change:', { index, value, numericValue, leadsCount: leads.length });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Mobile number change:', { index, value, numericValue, leadsCount: leads.length });
+    }
     
     setFormData(prev => {
       let updatedMobileNumbers = prev.mobileNumbers.map((mobile, i) => 
@@ -306,14 +321,18 @@ export default function AddLeadPage() {
 
       // Auto-detect client name from first mobile number if it's complete (10 digits)
       if (index === 0 && numericValue.length === 10 && !customFields.clientName?.trim()) {
-        console.log('🎯 Auto-detection triggered for mobile:', numericValue);
-        console.log('📊 Available leads:', leads.length);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🎯 Auto-detection triggered for mobile:', numericValue);
+          console.log('📊 Available leads:', leads.length);
+        }
         
         // Try to find existing lead with this mobile number
         const existingLead = leads.find(lead => {
           // Check main mobile number (backward compatibility)
           if (lead.mobileNumber && lead.mobileNumber.trim() === numericValue) {
-            console.log('✅ Found match in main mobile number:', lead.clientName);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ Found match in main mobile number:', lead.clientName);
+            }
             return true;
           }
           
@@ -323,7 +342,9 @@ export default function AddLeadPage() {
               m.number && m.number.trim() === numericValue
             );
             if (hasMatch) {
-              console.log('✅ Found match in mobile numbers array:', lead.clientName);
+              if (process.env.NODE_ENV === 'development') {
+                console.log('✅ Found match in mobile numbers array:', lead.clientName);
+              }
               return true;
             }
           }
@@ -332,7 +353,9 @@ export default function AddLeadPage() {
         });
         
         if (existingLead) {
-          console.log('🎉 Auto-populating client name:', existingLead.clientName);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🎉 Auto-populating client name:', existingLead.clientName);
+          }
           
           // Also auto-populate the first mobile number's name if it's empty
           if (updatedMobileNumbers[0] && !updatedMobileNumbers[0].name.trim()) {
@@ -341,7 +364,9 @@ export default function AddLeadPage() {
             );
           }
         } else {
-          console.log('❌ No matching lead found for mobile:', numericValue);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('❌ No matching lead found for mobile:', numericValue);
+          }
         }
       }
 

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Lead } from './LeadContext';
 import { DEFAULT_HEADER_LABELS } from '../constants/columnConfig';
 import { validateHeaderName, sanitizeHeaderName } from '../hooks/useValidation';
 
@@ -36,7 +35,7 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
         const validatedConfig = { ...DEFAULT_HEADER_LABELS };
         Object.keys(DEFAULT_HEADER_LABELS).forEach(key => {
           if (parsedConfig[key] && typeof parsedConfig[key] === 'string') {
-            validatedConfig[key] = parsedConfig[key];
+            validatedConfig[key as keyof typeof DEFAULT_HEADER_LABELS] = parsedConfig[key];
           }
         });
         setHeaderConfig(validatedConfig);
@@ -116,12 +115,12 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
 
   // Get display name for a field
   const getDisplayName = useCallback((field: string) => {
-    return headerConfig[field] || DEFAULT_HEADER_LABELS[field] || field;
+    return headerConfig[field] || DEFAULT_HEADER_LABELS[field as keyof typeof DEFAULT_HEADER_LABELS] || field;
   }, [headerConfig]);
 
   // Check if headers are customized
   const isCustomized = Object.keys(headerConfig).some(
-    key => headerConfig[key] !== DEFAULT_HEADER_LABELS[key]
+    key => headerConfig[key] !== DEFAULT_HEADER_LABELS[key as keyof typeof DEFAULT_HEADER_LABELS]
   );
 
   const value: HeaderContextType = {

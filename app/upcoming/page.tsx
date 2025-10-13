@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useLeads, Lead } from '../context/LeadContext';
+import { useLeads } from '../context/LeadContext';
+import type { Lead } from '../types/shared';
 import { useRouter } from 'next/navigation';
 import LeadTable from '../components/LeadTable';
 
@@ -12,7 +13,6 @@ export default function UpcomingPage() {
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Helper function to parse DD-MM-YYYY format dates
   const parseFollowUpDate = (dateString: string): Date | null => {
@@ -31,30 +31,6 @@ export default function UpcomingPage() {
       return new Date(dateString);
     } catch {
       return null;
-    }
-  };
-
-  // Helper function to format date to DD-MM-YYYY
-  const formatDateToDDMMYYYY = (dateString: string): string => {
-    if (!dateString) return '';
-    
-    // If already in DD-MM-YYYY format, return as is
-    if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      return dateString;
-    }
-    
-    // If it's a Date object or ISO string, convert to DD-MM-YYYY
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      
-      return `${day}-${month}-${year}`;
-    } catch {
-      return dateString; // Return original if conversion fails
     }
   };
 

@@ -21,7 +21,7 @@ export interface PasswordContextType {
   resetPassword: (operation: keyof PasswordConfig) => boolean;
   getSecurityQuestion: (operation: keyof PasswordConfig) => string;
   verifySecurityAnswer: (operation: keyof PasswordConfig, answer: string) => boolean;
-  setSecurityQuestion: (operation: keyof PasswordConfig, question: string, answer: string) => void;
+  setSecurityQuestion: (operation: keyof PasswordConfig, answer: string) => void;
 }
 
 // Default passwords
@@ -57,8 +57,8 @@ const PasswordContext = createContext<PasswordContextType | undefined>(undefined
 // Password provider component
 export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [passwords, setPasswords] = useState<PasswordConfig>(DEFAULT_PASSWORDS);
-  const [securityAnswers, setSecurityAnswers] = useState<Record<keyof PasswordConfig, string>>({});
-  const [passwordExpiry, setPasswordExpiry] = useState<Record<keyof PasswordConfig, number>>({});
+  const [securityAnswers, setSecurityAnswers] = useState<Record<keyof PasswordConfig, string>>({} as Record<keyof PasswordConfig, string>);
+  const [passwordExpiry, setPasswordExpiry] = useState<Record<keyof PasswordConfig, number>>({} as Record<keyof PasswordConfig, number>);
 
   // Load passwords from localStorage on mount
   useEffect(() => {
@@ -185,7 +185,7 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Set security question and answer
-  const setSecurityQuestion = (operation: keyof PasswordConfig, question: string, answer: string): void => {
+  const setSecurityQuestion = (operation: keyof PasswordConfig, answer: string): void => {
     const newAnswers = { ...securityAnswers, [operation]: answer };
     saveSecurityAnswers(newAnswers);
   };

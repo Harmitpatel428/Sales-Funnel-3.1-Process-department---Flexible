@@ -1,7 +1,8 @@
 ﻿'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { parseDateFromDDMMYYYY } from '../hooks/useValidation';
+import { parseDateFromDDMMYYYY } from '../utils/dateUtils';
+import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig } from '../types/shared';
 
 // Helper function to format today's date as DD-MM-YYYY
 const todayDDMMYYYY = () => {
@@ -11,86 +12,6 @@ const todayDDMMYYYY = () => {
   const year = d.getFullYear();
   return `${day}-${month}-${year}`;
 };
-
-export interface MobileNumber {
-  id: string;
-  number: string;
-  name: string;
-  isMain: boolean;
-}
-
-export interface Lead {
-  id: string;
-  kva: string;
-  connectionDate: string;
-  consumerNumber: string;
-  company: string;
-  clientName: string;
-  discom?: string;
-  gidc?: string; // New field for GIDC
-  gstNumber?: string; // New field for GST Number
-  mobileNumbers: MobileNumber[]; // Updated to support multiple mobile numbers
-  mobileNumber: string; // Keep for backward compatibility
-  companyLocation?: string; // New field for company location
-  unitType: 'New' | 'Existing' | 'Other' | string; // Allow custom unit types
-  marketingObjective?: string;
-  budget?: string;
-  timeline?: string;
-  status: 'New' | 'CNR' | 'Busy' | 'Follow-up' | 'Deal Close' | 'Work Alloted' | 'Hotlead' | 'Mandate Sent' | 'Documentation' | 'Others';
-  contactOwner?: string;
-  lastActivityDate: string;
-  followUpDate: string;
-  finalConclusion?: string;
-  notes?: string;
-  isDone: boolean;
-  isDeleted: boolean; // New field to mark leads as deleted instead of removing them
-  isUpdated: boolean; // New field to track if lead has been updated
-  activities?: Activity[];
-  mandateStatus?: 'Pending' | 'In Progress' | 'Completed';
-  documentStatus?: 'Pending Documents' | 'Documents Submitted' | 'Documents Reviewed' | 'Signed Mandate';
-}
-
-export interface Activity {
-  id: string;
-  leadId: string;
-  description: string;
-  timestamp: string;
-}
-
-interface LeadContextType {
-  leads: Lead[];
-  setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
-  addLead: (lead: Lead, columnConfigs?: any[]) => void;
-  updateLead: (updatedLead: Lead, opts?: { touchActivity?: boolean }) => void;
-  deleteLead: (id: string) => void;
-  permanentlyDeleteLead: (id: string) => void;
-  markAsDone: (id: string) => void;
-  addActivity: (leadId: string, description: string) => void;
-  getFilteredLeads: (filters: LeadFilters) => Lead[];
-  resetUpdatedLeads: () => void;
-  savedViews: SavedView[];
-  addSavedView: (view: SavedView) => void;
-  deleteSavedView: (id: string) => void;
-  migrateLeadsForNewColumn: (columnConfig: any) => void;
-  removeColumnFromLeads: (fieldKey: string) => void;
-  getLeadFieldValue: (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: any) => any;
-  getLeadWithDefaults: (lead: Lead, columnConfigs: any[]) => Lead;
-  validateLeadAgainstColumns: (lead: Lead, columnConfigs: any[]) => string[];
-}
-
-export interface LeadFilters {
-  status?: Lead['status'][];
-  followUpDateStart?: string;
-  followUpDateEnd?: string;
-  searchTerm?: string;
-  discom?: string;
-}
-
-export interface SavedView {
-  id: string;
-  name: string;
-  filters: LeadFilters;
-}
 
 const LeadContext = createContext<LeadContextType | undefined>(undefined);
 
@@ -116,17 +37,21 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem('leads');
       if (stored) {
         const parsedLeads = JSON.parse(stored);
-        console.log('🔍 Loading leads from localStorage:', parsedLeads.length, 'leads');
-        console.log('📊 Lead details:', parsedLeads.map(l => ({ 
-          id: l.id, 
-          kva: l.kva, 
-          status: l.status, 
-          isDeleted: l.isDeleted, 
-          isDone: l.isDone 
-        })));
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 Loading leads from localStorage:', parsedLeads.length, 'leads');
+          console.log('📊 Lead details:', parsedLeads.map((l: Lead) => ({ 
+            id: l.id, 
+            kva: l.kva, 
+            status: l.status, 
+            isDeleted: l.isDeleted, 
+            isDone: l.isDone 
+          })));
+        }
         setLeads(parsedLeads);
       } else {
-        console.log('🔍 No leads found in localStorage');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 No leads found in localStorage');
+        }
       }
       
       const storedViews = localStorage.getItem('savedViews');
@@ -170,12 +95,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeoutId);
   }, [savedViews, isHydrated]);
 
-  const addLead = (lead: Lead, columnConfigs?: any[]) => {
-    console.log('🔍 Adding lead:', lead);
-    console.log('📊 Lead status:', lead.status);
-    console.log('📊 Lead isDeleted:', lead.isDeleted);
-    console.log('📊 Lead isDone:', lead.isDone);
-    console.log('📊 Column configs provided:', columnConfigs?.length || 0);
+  const addLead = (lead: Lead, columnConfigs?: ColumnConfig[]) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Adding lead:', lead);
+      console.log('📊 Lead status:', lead.status);
+      console.log('📊 Lead isDeleted:', lead.isDeleted);
+      console.log('📊 Lead isDone:', lead.isDone);
+      console.log('📊 Column configs provided:', columnConfigs?.length || 0);
+    }
     
     // Apply defaults for all current columns if columnConfigs provided
     const leadWithDefaults = columnConfigs ? getLeadWithDefaults(lead, columnConfigs) : lead;
@@ -190,8 +117,10 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     
     setLeads(prev => {
       const newLeads = [...prev, finalLead];
-      console.log('✅ Updated leads count:', newLeads.length);
-      console.log('📊 All leads statuses:', newLeads.map(l => ({ id: l.id, status: l.status, isDeleted: l.isDeleted, isDone: l.isDone })));
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Updated leads count:', newLeads.length);
+        console.log('📊 All leads statuses:', newLeads.map(l => ({ id: l.id, status: l.status, isDeleted: l.isDeleted, isDone: l.isDone })));
+      }
       return newLeads;
     });
   };
@@ -256,34 +185,42 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   };
   
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
-    console.log('🔍 getFilteredLeads called with filters:', filters);
-    console.log('📊 Total leads before filtering:', leads.length);
-    console.log('📊 All leads details:', leads.map(l => ({ 
-      id: l.id, 
-      kva: l.kva, 
-      status: l.status, 
-      isDeleted: l.isDeleted, 
-      isDone: l.isDone,
-      clientName: l.clientName 
-    })));
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 getFilteredLeads called with filters:', filters);
+      console.log('📊 Total leads before filtering:', leads.length);
+      console.log('📊 All leads details:', leads.map(l => ({ 
+        id: l.id, 
+        kva: l.kva, 
+        status: l.status, 
+        isDeleted: l.isDeleted, 
+        isDone: l.isDone,
+        clientName: l.clientName 
+      })));
+    }
     
     const filtered = leads.filter(lead => {
       // Filter out deleted leads (isDeleted: true) - they should not appear in dashboard
       if (lead.isDeleted) {
-        console.log('❌ Lead filtered out (deleted):', lead.clientName || lead.kva);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Lead filtered out (deleted):', lead.clientName || lead.kva);
+        }
         return false;
       }
       
       // Filter out completed leads (isDone: true)
       if (lead.isDone) {
-        console.log('❌ Lead filtered out (done):', lead.clientName || lead.kva);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Lead filtered out (done):', lead.clientName || lead.kva);
+        }
         return false;
       }
       
       // For main dashboard (no status filter), show all non-deleted, non-done leads
       // Only filter by status if explicitly provided
       if (filters.status && filters.status.length > 0 && !filters.status.includes(lead.status)) {
-        console.log('❌ Lead filtered out (status):', lead.clientName || lead.kva, 'status:', lead.status, 'filter:', filters.status);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Lead filtered out (status):', lead.clientName || lead.kva, 'status:', lead.status, 'filter:', filters.status);
+        }
         return false;
       }
       
@@ -293,11 +230,15 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       const endDate = toDate(filters.followUpDateEnd);
       
       if (startDate && leadDate && leadDate < startDate) {
-        console.log('❌ Lead filtered out (follow-up date start):', lead.clientName || lead.kva);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Lead filtered out (follow-up date start):', lead.clientName || lead.kva);
+        }
         return false;
       }
       if (endDate && leadDate && leadDate > endDate) {
-        console.log('❌ Lead filtered out (follow-up date end):', lead.clientName || lead.kva);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ Lead filtered out (follow-up date end):', lead.clientName || lead.kva);
+        }
         return false;
       }
       
@@ -312,7 +253,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         const filterDiscom = String(filters.discom).trim().toUpperCase();
         
         if (leadDiscom !== filterDiscom) {
-          console.log('❌ Lead filtered out (discom):', lead.clientName || lead.kva, 'lead discom:', leadDiscom, 'filter:', filterDiscom);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('❌ Lead filtered out (discom):', lead.clientName || lead.kva, 'lead discom:', leadDiscom, 'filter:', filterDiscom);
+          }
           return false;
         }
       }
@@ -333,7 +276,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
             if (mobileNumber) {
               const phoneDigits = mobileNumber.replace(/[^0-9]/g, '');
               if (phoneDigits.includes(filters.searchTerm)) {
-                console.log('✅ Lead matches phone search:', lead.clientName || lead.kva);
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('✅ Lead matches phone search:', lead.clientName || lead.kva);
+                }
                 return true;
               }
             }
@@ -363,16 +308,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         
         const matches = searchableFields.some(field => field?.includes(searchTerm));
         if (!matches) {
-          console.log('❌ Lead filtered out (search term):', lead.clientName || lead.kva);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('❌ Lead filtered out (search term):', lead.clientName || lead.kva);
+          }
         }
         return matches;
       }
       
-      console.log('✅ Lead passes all filters:', lead.clientName || lead.kva);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Lead passes all filters:', lead.clientName || lead.kva);
+      }
       return true;
     });
     
-    console.log('📊 Final filtered leads count:', filtered.length);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 Final filtered leads count:', filtered.length);
+    }
     return filtered;
   }, [leads]);
 
@@ -391,7 +342,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   };
 
   // Column integration methods - enhanced to handle different column types
-  const migrateLeadsForNewColumn = (columnConfig: any) => {
+  const migrateLeadsForNewColumn = (columnConfig: ColumnConfig) => {
     console.log(`🔄 Starting migration for new column: ${columnConfig.fieldKey}`);
     console.log(`📊 Total leads to migrate: ${leads.length}`);
     
@@ -454,7 +405,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     console.log(`Removed column "${fieldKey}" from ${leads.length} leads`);
   };
 
-  const getLeadFieldValue = (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: any): any => {
+  const getLeadFieldValue = (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
     const value = (lead as any)[fieldKey];
     
     if (value !== undefined && value !== null) {
@@ -517,7 +468,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   };
 
   // Additional helper functions for dynamic columns
-  const getLeadWithDefaults = (lead: Lead, columnConfigs: any[]): Lead => {
+  const getLeadWithDefaults = (lead: Lead, columnConfigs: ColumnConfig[]): Lead => {
     const leadWithDefaults = { ...lead };
     
     columnConfigs.forEach(column => {
@@ -552,7 +503,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return leadWithDefaults;
   };
 
-  const validateLeadAgainstColumns = (lead: Lead, columnConfigs: any[]): string[] => {
+  const validateLeadAgainstColumns = (lead: Lead, columnConfigs: ColumnConfig[]): string[] => {
     const errors: string[] = [];
     
     columnConfigs.forEach(column => {

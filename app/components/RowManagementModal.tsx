@@ -53,7 +53,7 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
   const [previewData, setPreviewData] = useState<any[]>([]);
 
   const { leads, addLead, deleteLead, updateLead } = useLeads();
-  const { columns, getVisibleColumns } = useColumns();
+  const { getVisibleColumns } = useColumns();
   const { validateFormWithEnhancedFeedback, validateBulkRowAddition } = useValidation();
 
   // Reset form when modal opens/closes
@@ -101,8 +101,13 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
       
       visibleColumns.forEach(column => {
         if (addConfig.template === 'copy' && leads[addConfig.copyFromIndex]) {
-          const sourceValue = leads[addConfig.copyFromIndex][column.fieldKey];
-          row[column.fieldKey] = sourceValue !== undefined ? sourceValue : getDefaultValueForColumn(column);
+          const sourceLead = leads[addConfig.copyFromIndex];
+          if (sourceLead) {
+            const sourceValue = (sourceLead as any)[column.fieldKey];
+            row[column.fieldKey] = sourceValue !== undefined ? sourceValue : getDefaultValueForColumn(column);
+          } else {
+            row[column.fieldKey] = getDefaultValueForColumn(column);
+          }
         } else if (addConfig.defaultValues[column.fieldKey] !== undefined) {
           row[column.fieldKey] = addConfig.defaultValues[column.fieldKey];
         } else {
@@ -171,8 +176,13 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
         visibleColumns.forEach(column => {
           if (addConfig.template === 'copy' && leads[addConfig.copyFromIndex]) {
             // Copy from existing lead
-            const sourceValue = leads[addConfig.copyFromIndex][column.fieldKey];
-            newLead[column.fieldKey] = sourceValue !== undefined ? sourceValue : getDefaultValueForColumn(column);
+            const sourceLead = leads[addConfig.copyFromIndex];
+            if (sourceLead) {
+              const sourceValue = (sourceLead as any)[column.fieldKey];
+              newLead[column.fieldKey] = sourceValue !== undefined ? sourceValue : getDefaultValueForColumn(column);
+            } else {
+              newLead[column.fieldKey] = getDefaultValueForColumn(column);
+            }
           } else if (addConfig.defaultValues[column.fieldKey] !== undefined) {
             // Use user-specified default value
             newLead[column.fieldKey] = addConfig.defaultValues[column.fieldKey];
@@ -311,6 +321,10 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
   const handleImportData = () => {
     try {
       const lines = addConfig.importData.split('\n').filter(line => line.trim());
+      if (lines.length === 0 || !lines[0]) {
+        setError('No data found in import text');
+        return;
+      }
       const headers = lines[0].split('\t');
       const rows = lines.slice(1).map(line => {
         const values = line.split('\t');
@@ -443,7 +457,7 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
                 >
                   {leads.map((lead, index) => (
                     <option key={lead.id} value={index}>
-                      Row {index + 1}: {lead.name || 'Unnamed'}
+                      Row {index + 1}: {lead.clientName || 'Unnamed'}
                     </option>
                   ))}
                 </select>
@@ -738,7 +752,7 @@ const RowManagementModal: React.FC<RowManagementModalProps> = ({
                       aria-label={`Select row ${index + 1} for bulk edit`}
                     />
                     <span className="ml-2 text-sm text-gray-700">
-                      Row {index + 1}: {lead.name || 'Unnamed'}
+                      Row {index + 1}: {lead.clientName || 'Unnamed'}
                     </span>
                   </div>
                 ))}

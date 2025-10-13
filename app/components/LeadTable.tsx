@@ -1,13 +1,17 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useLeads, Lead, LeadFilters } from '../context/LeadContext';
+import React, { useState, useMemo, useEffect, useCallback, lazy, Suspense } from 'react';
+import { FixedSizeList as List } from 'react-window';
+import { useLeads } from '../context/LeadContext';
 import { useHeaders } from '../context/HeaderContext';
-import { useColumns, ColumnConfig } from '../context/ColumnContext';
+import { useColumns } from '../context/ColumnContext';
+import type { Lead, LeadFilters, ColumnConfig } from '../types/shared';
 import EditableCell from './EditableCell';
 import EditableHeaderCell from './EditableHeaderCell';
-import MobileNumbersModal from './MobileNumbersModal';
-import ColumnManagementModal from './ColumnManagementModal';
+import LoadingSpinner from './LoadingSpinner';
+
+const MobileNumbersModal = lazy(() => import('./MobileNumbersModal'));
+const ColumnManagementModal = lazy(() => import('./ColumnManagementModal'));
 
 type SortField = keyof Lead | '';
 type SortDirection = 'asc' | 'desc';
@@ -30,7 +34,6 @@ interface LeadTableProps {
   headerEditable?: boolean; // Enable header editing
   onColumnAdded?: (column: any) => void; // Column management callbacks
   onColumnDeleted?: (fieldKey: string) => void;
-  onColumnReorder?: (newOrder: string[]) => void;
 }
 
 const LeadTable = React.memo(function LeadTable({ 
@@ -50,8 +53,7 @@ const LeadTable = React.memo(function LeadTable({
   validationErrors = {},
   headerEditable = true,
   onColumnAdded,
-  onColumnDeleted,
-  onColumnReorder
+  onColumnDeleted
 }: LeadTableProps) {
   const { leads: contextLeads, getFilteredLeads } = useLeads();
   const { getDisplayName, updateHeader, headerConfig } = useHeaders();
@@ -62,7 +64,13 @@ const LeadTable = React.memo(function LeadTable({
   const [mobileModalOpen, setMobileModalOpen] = useState<string | null>(null);
   const [editingHeader, setEditingHeader] = useState<string | null>(null);
   const [columnManagementOpen, setColumnManagementOpen] = useState(false);
-  const [columnOperation, setColumnOperation] = useState<{type: string, fieldKey?: string} | null>(null);
+  const [columnOperation, setColumnOperation] = useState<{type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string} | null>(null);
+
+  // Virtualization settings
+  const [useVirtualization, setUseVirtualization] = useState(false);
+  const ROW_HEIGHT = 40; // Matches current row height with padding
+  const CONTAINER_HEIGHT = 600; // Visible table height
+  const VIRTUALIZATION_THRESHOLD = 100; // Enable when >100 leads
 
   // Use custom leads if provided, otherwise use context leads
   const leads = customLeads || contextLeads;
@@ -74,9 +82,12 @@ const LeadTable = React.memo(function LeadTable({
     // Track visible column count to force re-render when columns change
     const currentColumns = getVisibleColumns();
     const columnCount = currentColumns.length;
+    if (process.env.NODE_ENV === 'development') {
     console.log('Column configuration updated:', columnCount, 'visible columns');
+    }
     setColumnVersion(columnCount);
   }, [getVisibleColumns]);
+
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -144,12 +155,16 @@ const LeadTable = React.memo(function LeadTable({
   }, []);
 
   const handleColumnAdded = useCallback((column: any) => {
+    if (process.env.NODE_ENV === 'development') {
     console.log('Column added successfully:', column);
+    }
     onColumnAdded?.(column);
     setColumnManagementOpen(false);
     setColumnOperation(null);
     // Force table re-render
+    if (process.env.NODE_ENV === 'development') {
     console.log('Table will re-render with new column:', column.fieldKey);
+    }
     
     // Scroll headers into view after a short delay to allow for re-render
     setTimeout(() => {
@@ -161,22 +176,29 @@ const LeadTable = React.memo(function LeadTable({
   }, [onColumnAdded]);
 
   const handleColumnDeleted = useCallback((fieldKey: string) => {
+    if (process.env.NODE_ENV === 'development') {
     console.log('Column deleted successfully:', fieldKey);
+    }
     onColumnDeleted?.(fieldKey);
     setColumnManagementOpen(false);
     setColumnOperation(null);
     // Force table re-render
+    if (process.env.NODE_ENV === 'development') {
     console.log('Table will re-render without column:', fieldKey);
+    }
   }, [onColumnDeleted]);
   
   // Get filtered leads
+  // Dependencies use stable primitives: getFilteredLeads is memoized in context,
+  // filters is a stable object reference, customLeads from props
+  // Using leads.length instead of leads array prevents unnecessary recomputations
   const filteredLeads = useMemo(() => {
     if (customLeads) {
       // If custom leads are provided, return them as is (no filtering)
       return customLeads;
     }
     return getFilteredLeads(filters);
-  }, [getFilteredLeads, filters, leads, customLeads]);
+  }, [getFilteredLeads, filters, leads.length, customLeads]);
 
   // Helper function to parse dates for sorting
   const parseDateForSorting = useCallback((dateString: string): Date => {
@@ -185,7 +207,9 @@ const LeadTable = React.memo(function LeadTable({
     // Handle DD-MM-YYYY format
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       const [day, month, year] = dateString.split('-');
-      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (day && month && year) {
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      }
     }
     
     // Handle ISO format or other formats
@@ -219,14 +243,14 @@ const LeadTable = React.memo(function LeadTable({
       
       // Handle date fields
       if (column?.type === 'date') {
-        const aDate = parseDateForSorting(aValue);
-        const bDate = parseDateForSorting(bValue);
+        const aDate = parseDateForSorting(String(aValue || ''));
+        const bDate = parseDateForSorting(String(bValue || ''));
         comparison = aDate.getTime() - bDate.getTime();
       }
       // Handle numeric fields
       else if (column?.type === 'number') {
-        const aNum = parseNumericForSorting(aValue);
-        const bNum = parseNumericForSorting(bValue);
+        const aNum = parseNumericForSorting(String(aValue || ''));
+        const bNum = parseNumericForSorting(String(bValue || ''));
         comparison = aNum - bNum;
       }
       // Handle string fields
@@ -240,7 +264,14 @@ const LeadTable = React.memo(function LeadTable({
     });
   }, [filteredLeads, sortField, sortDirection, getColumnByKey]);
   
-  console.log('LeadTable - sorted leads:', sortedLeads);
+  // Enable virtual scrolling for large datasets to improve performance
+  useEffect(() => {
+    setUseVirtualization(sortedLeads.length > VIRTUALIZATION_THRESHOLD);
+  }, [sortedLeads.length, VIRTUALIZATION_THRESHOLD]);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('LeadTable - sorted leads:', sortedLeads);
+  }
   
   // Handle column header click for sorting
   const handleSort = useCallback((field: SortField) => {
@@ -308,6 +339,239 @@ const LeadTable = React.memo(function LeadTable({
     return span;
   };
 
+  // Helper function to safely parse mobile numbers
+  const getMobileNumbers = useCallback((lead: Lead) => {
+    if (!lead.mobileNumbers) return [];
+    
+    // If it's already an array, return it
+    if (Array.isArray(lead.mobileNumbers)) {
+      return lead.mobileNumbers;
+    }
+    
+    // If it's a string, try to parse it as JSON
+    if (typeof lead.mobileNumbers === 'string') {
+      try {
+        const parsed = JSON.parse(lead.mobileNumbers);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    
+    return [];
+  }, []);
+
+  // Helper function to get main mobile number
+  const getMainMobileNumber = useCallback((lead: Lead) => {
+    const mobileNumbers = getMobileNumbers(lead);
+    const mainNumber = mobileNumbers.find(m => m.isMain)?.number;
+    return mainNumber || lead.mobileNumber || '';
+  }, [getMobileNumbers]);
+
+  // Memoized row component for virtual scrolling
+  const LeadRow = React.memo<{
+    index: number;
+    style?: React.CSSProperties;
+    data: {
+      leads: Lead[];
+      onLeadClick?: (lead: Lead) => void;
+      selectedLeads: Set<string>;
+      onLeadSelection?: (leadId: string, checked: boolean) => void;
+      getVisibleColumns: () => ColumnConfig[];
+      editable: boolean;
+      handleCellUpdate: (leadId: string, field: string, value: string) => Promise<void>;
+      validationErrors: Record<string, Record<string, string>>;
+      showActions: boolean;
+      actionButtons?: (lead: Lead) => React.ReactNode;
+      getStatusColor: (status: Lead['status']) => string;
+      formatDate: (dateString: string) => string;
+      getColumnByKey: (fieldKey: string) => ColumnConfig | undefined;
+      setMobileModalOpen: (leadId: string | null) => void;
+      getMobileNumbers: (lead: Lead) => any[];
+      getMainMobileNumber: (lead: Lead) => string;
+    };
+  }>(({ index, style, data }) => {
+    const lead = data.leads[index];
+    if (!lead) return null;
+
+    return (
+      <tr
+        key={lead.id}
+        style={style} // Inline style required by react-window for virtual scrolling performance - cannot be moved to CSS
+        className="cursor-pointer hover:bg-gray-50 transition-colors duration-150"
+        onClick={() => data.onLeadClick && data.onLeadClick(lead)}
+      >
+        {data.onLeadSelection && (
+          <td className="px-0.5 py-0.5 whitespace-nowrap">
+            <div className="w-9 h-8 flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={data.selectedLeads.has(lead.id)}
+                onChange={(e) => data.onLeadSelection && data.onLeadSelection(lead.id, e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                aria-label={`Select lead ${lead.kva}`}
+              />
+            </div>
+          </td>
+        )}
+        {data.getVisibleColumns().map((column) => {
+          const fieldKey = column.fieldKey;
+          const value = (lead as any)[fieldKey] ?? '';
+          
+          // Debug logging for dynamic columns
+          if (process.env.NODE_ENV === 'development') {
+            if (!(fieldKey in lead)) {
+              console.log(`Dynamic column "${fieldKey}" not found in lead data, using default value`);
+            }
+          }
+          
+          // Get the column configuration for this field
+          const columnConfig = data.getColumnByKey(fieldKey);
+          const defaultValue = columnConfig?.defaultValue || '';
+          const displayValue = (lead as any)[fieldKey] ?? defaultValue;
+          
+          // Special handling for mobile number field
+          if (fieldKey === 'mobileNumber') {
+            return (
+              <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
+                {data.editable ? (
+                  <div className="flex items-center space-x-1">
+                    <EditableCell
+                      value={getMainMobileNumber(lead).replace(/-/g, '')}
+                      type="number"
+                      onSave={(val) => {
+                        // Update the main mobile number
+                        const mobileNumbers = getMobileNumbers(lead);
+                        const updatedMobileNumbers = [...mobileNumbers];
+                        const mainIndex = updatedMobileNumbers.findIndex(m => m.isMain);
+                        if (mainIndex >= 0) {
+                          const existing = updatedMobileNumbers[mainIndex];
+                          if (existing) {
+                            updatedMobileNumbers[mainIndex] = { 
+                              id: existing.id,
+                              number: val,
+                              name: existing.name,
+                              isMain: existing.isMain
+                            };
+                          }
+                        } else if (updatedMobileNumbers.length > 0) {
+                          const existing = updatedMobileNumbers[0];
+                          if (existing) {
+                            updatedMobileNumbers[0] = { 
+                              id: existing.id,
+                              number: val,
+                              name: existing.name,
+                              isMain: existing.isMain
+                            };
+                          }
+                        }
+                        data.handleCellUpdate(lead.id, 'mobileNumbers', JSON.stringify(updatedMobileNumbers));
+                        data.handleCellUpdate(lead.id, 'mobileNumber', val);
+                      }}
+                      placeholder="Mobile number"
+                      fieldName="mobileNumber"
+                      lead={lead}
+                      className="text-xs max-w-12 truncate flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        data.setMobileModalOpen(lead.id);
+                      }}
+                      className="px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"
+                      title="Edit all mobile numbers"
+                    >
+                      ...
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-1 text-xs text-black max-w-12 truncate">
+                    {getMainMobileNumber(lead).replace(/-/g, '')}
+                  </div>
+                )}
+              </td>
+            );
+          }
+          
+          // Special handling for status field
+          if (fieldKey === 'status') {
+            return (
+              <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
+                {data.editable ? (
+                  <EditableCell
+                    value={value}
+                    type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type}
+                    options={column.options || ['New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'Work Alloted', 'Hotlead', 'Mandate Sent', 'Documentation', 'Others']}
+                    onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)}
+                    placeholder="Select Status"
+                    fieldName={fieldKey}
+                    lead={lead}
+                    className="text-xs"
+                  />
+                ) : (
+                  <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${data.getStatusColor(lead.status)}`}>
+                    {lead.status === 'Work Alloted' ? 'WAO' : lead.status}
+                  </span>
+                )}
+              </td>
+            );
+          }
+          
+          // Special handling for date fields
+          if (column.type === 'date') {
+            return (
+              <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
+                {data.editable ? (
+                  <EditableCell
+                    value={data.formatDate(value)}
+                    type="date"
+                    onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)}
+                    placeholder="DD-MM-YYYY"
+                    fieldName={fieldKey}
+                    lead={lead}
+                    className="text-xs min-w-16"
+                  />
+                ) : (
+                  <div className="text-xs text-black min-w-16">{data.formatDate(value)}</div>
+                )}
+              </td>
+            );
+          }
+          
+          // Default handling for other fields
+          return (
+            <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
+              {data.editable ? (
+                <EditableCell
+                  value={displayValue}
+                  type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type}
+                  {...(column.options && { options: column.options })}
+                  onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)}
+                  placeholder={`Enter ${column.label.toLowerCase()}`}
+                  fieldName={fieldKey}
+                  lead={lead}
+                  className="text-xs"
+                />
+              ) : (
+                <div className="text-xs text-black truncate" title={displayValue}>
+                  {displayValue || defaultValue || 'N/A'}
+                </div>
+              )}
+            </td>
+          );
+        })}
+        {data.showActions && (
+          <td className="px-0.5 py-0.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+            {data.actionButtons && data.actionButtons(lead)}
+          </td>
+        )}
+      </tr>
+    );
+  });
+  LeadRow.displayName = 'LeadRow';
+
   return (
     <div className={`overflow-x-auto relative ${className}`}>
       <table key={columnVersion} className="min-w-full divide-y divide-gray-200 bg-white table-container">
@@ -353,7 +617,7 @@ const LeadTable = React.memo(function LeadTable({
                   key={field}
                   scope="col" 
                   className={`px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider ${!isEditing ? 'cursor-pointer hover:bg-gray-100' : ''} ${getColumnWidth(column)}`}
-                  onClick={!isEditing ? () => handleSort(field) : undefined}
+                  onClick={!isEditing ? () => handleSort(field as SortField) : undefined}
                 >
                   {headerEditable ? (
                     <div className="flex items-center w-full">
@@ -372,12 +636,12 @@ const LeadTable = React.memo(function LeadTable({
                         onDeleteColumn={handleDeleteColumn}
                         onColumnSettings={handleColumnSettings}
                       />
-                      {!isEditing && renderSortIndicator(field)}
+                      {!isEditing && renderSortIndicator(field as SortField)}
                     </div>
                   ) : (
                     <span className="flex items-center">
                       {displayName}
-                      {renderSortIndicator(field)}
+                      {renderSortIndicator(field as SortField)}
                     </span>
                   )}
                 </th>
@@ -390,193 +654,106 @@ const LeadTable = React.memo(function LeadTable({
             )}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        {/* Conditional rendering: Virtual scrolling for large lists, standard rendering for small lists */}
           {sortedLeads.length > 0 ? (
-            sortedLeads.map((lead) => (
-              <tr 
-                key={lead.id} 
-                className="cursor-pointer hover:bg-gray-50 transition-colors duration-150"
-                onClick={() => onLeadClick && onLeadClick(lead)}
-              >
-                {onLeadSelection && (
-                  <td className="px-0.5 py-0.5 whitespace-nowrap">
-                    <div className="w-9 h-8 flex items-center justify-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedLeads.has(lead.id)}
-                        onChange={(e) => onLeadSelection && onLeadSelection(lead.id, e.target.checked)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                        aria-label={`Select lead ${lead.kva}`}
-                      />
-                    </div>
-                  </td>
-                )}
-                {getVisibleColumns().map((column) => {
-                  const fieldKey = column.fieldKey;
-                  const value = (lead as any)[fieldKey] ?? '';
-                  
-                  // Debug logging for dynamic columns
-                  if (!(fieldKey in lead)) {
-                    console.log(`Dynamic column "${fieldKey}" not found in lead data, using default value`);
-                  }
-                  
-                  // Get the column configuration for this field
-                  const columnConfig = getColumnByKey(fieldKey);
-                  const defaultValue = columnConfig?.defaultValue || '';
-                  const displayValue = (lead as any)[fieldKey] ?? defaultValue;
-                  
-                  // Special handling for mobile number field
-                  if (fieldKey === 'mobileNumber') {
-                    return (
-                      <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
-                        {editable ? (
-                          <div className="flex items-center space-x-1">
-                            <EditableCell
-                              value={(lead.mobileNumbers?.find(m => m.isMain)?.number || lead.mobileNumber)?.replace(/-/g, '') || ''}
-                              type="number"
-                              onSave={(val) => {
-                                // Update the main mobile number
-                                const updatedMobileNumbers = [...(lead.mobileNumbers || [])];
-                                const mainIndex = updatedMobileNumbers.findIndex(m => m.isMain);
-                                if (mainIndex >= 0) {
-                                  updatedMobileNumbers[mainIndex] = { ...updatedMobileNumbers[mainIndex], number: val };
-                                } else if (updatedMobileNumbers.length > 0) {
-                                  updatedMobileNumbers[0] = { ...updatedMobileNumbers[0], number: val };
-                                }
-                                handleCellUpdate(lead.id, 'mobileNumbers', JSON.stringify(updatedMobileNumbers));
-                                handleCellUpdate(lead.id, 'mobileNumber', val);
-                              }}
-                              placeholder="Mobile number"
-                              fieldName="mobileNumber"
-                              lead={lead}
-                              className="text-xs max-w-12 truncate flex-1"
-                            />
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMobileModalOpen(lead.id);
-                              }}
-                              className="px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors"
-                              title="Edit all mobile numbers"
-                            >
-                              ...
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="px-1 text-xs text-black max-w-12 truncate">
-                            {(lead.mobileNumbers?.find(m => m.isMain)?.number || lead.mobileNumber)?.replace(/-/g, '') || ''}
-                          </div>
-                        )}
-                      </td>
-                    );
-                  }
-                  
-                  // Special handling for status field
-                  if (fieldKey === 'status') {
-                    return (
-                      <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
-                        {editable ? (
-                          <EditableCell
-                            value={value}
-                            type={column.type}
-                            options={column.options || ['New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'Work Alloted', 'Hotlead', 'Mandate Sent', 'Documentation', 'Others']}
-                            onSave={(val) => handleCellUpdate(lead.id, fieldKey, val)}
-                            placeholder="Select Status"
-                            fieldName={fieldKey}
-                            lead={lead}
-                            className="text-xs"
-                          />
-                        ) : (
-                          <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${getStatusColor(lead.status)}`}>
-                            {lead.status === 'Work Alloted' ? 'WAO' : lead.status}
-                          </span>
-                        )}
-                      </td>
-                    );
-                  }
-                  
-                  // Special handling for date fields
-                  if (column.type === 'date') {
-                    return (
-                      <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
-                        {editable ? (
-                          <EditableCell
-                            value={formatDate(value)}
-                            type="date"
-                            onSave={(val) => handleCellUpdate(lead.id, fieldKey, val)}
-                            placeholder="DD-MM-YYYY"
-                            fieldName={fieldKey}
-                            lead={lead}
-                            className="text-xs min-w-16"
-                          />
-                        ) : (
-                          <div className="text-xs text-black min-w-16">{formatDate(value)}</div>
-                        )}
-                      </td>
-                    );
-                  }
-                  
-                  // Default handling for other fields
-                  return (
-                    <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
-                      {editable ? (
-                        <EditableCell
-                          value={displayValue}
-                          type={column.type}
-                          options={column.options}
-                          onSave={(val) => handleCellUpdate(lead.id, fieldKey, val)}
-                          placeholder={`Enter ${column.label.toLowerCase()}`}
-                          fieldName={fieldKey}
-                          lead={lead}
-                          className="text-xs"
-                        />
-                      ) : (
-                        <div className="text-xs text-black truncate" title={displayValue}>
-                          {displayValue || defaultValue || 'N/A'}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-                {showActions && (
-                  <td className="px-0.5 py-0.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    {actionButtons && actionButtons(lead)}
-                  </td>
-                )}
-              </tr>
-            ))
+          useVirtualization ? (
+            // Virtual scrolling enabled for performance with large datasets
+            <List
+              height={CONTAINER_HEIGHT}
+              itemCount={sortedLeads.length}
+              itemSize={ROW_HEIGHT}
+              width="100%"
+              overscanCount={5}
+              innerElementType="tbody"
+              className="bg-white divide-y divide-gray-200"
+              itemData={{
+                leads: sortedLeads,
+                ...(onLeadClick && { onLeadClick }),
+                selectedLeads,
+                ...(onLeadSelection && { onLeadSelection }),
+                getVisibleColumns,
+                editable,
+                handleCellUpdate,
+                validationErrors,
+                showActions,
+                ...(actionButtons && { actionButtons }),
+                getStatusColor,
+                formatDate,
+                getColumnByKey,
+                setMobileModalOpen,
+                getMobileNumbers,
+                getMainMobileNumber,
+              }}
+            >
+              {LeadRow}
+            </List>
           ) : (
+            // Standard rendering for small lists (no virtualization overhead)
+            <tbody className="bg-white divide-y divide-gray-200">
+              {sortedLeads.map((lead, index) => (
+                <LeadRow
+                  key={lead.id}
+                  index={index}
+                  data={{
+                    leads: sortedLeads,
+                    ...(onLeadClick && { onLeadClick }),
+                    selectedLeads,
+                    ...(onLeadSelection && { onLeadSelection }),
+                    getVisibleColumns,
+                    editable,
+                    handleCellUpdate,
+                    validationErrors,
+                    showActions,
+                    ...(actionButtons && { actionButtons }),
+                    getStatusColor,
+                    formatDate,
+                    getColumnByKey,
+                    setMobileModalOpen,
+                    getMobileNumbers,
+                    getMainMobileNumber,
+                  }}
+                />
+              ))}
+            </tbody>
+          )
+        ) : (
+          <tbody className="bg-white divide-y divide-gray-200">
             <tr>
               <td colSpan={getColumnSpan()} className="px-0.5 py-0.5 text-center text-xs text-black">
                 {emptyMessage}
               </td>
             </tr>
+          </tbody>
           )}
-        </tbody>
       </table>
       
       {/* Mobile Numbers Modal */}
       {mobileModalOpen && (
-        <MobileNumbersModal
-          isOpen={true}
-          onClose={() => setMobileModalOpen(null)}
-          lead={sortedLeads.find(lead => lead.id === mobileModalOpen)!}
-          onSave={handleMobileModalSave}
-        />
+        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+          <MobileNumbersModal
+            isOpen={true}
+            onClose={() => setMobileModalOpen(null)}
+            lead={sortedLeads.find(lead => lead.id === mobileModalOpen)!}
+            onSave={handleMobileModalSave}
+          />
+        </Suspense>
       )}
 
       {/* Column Management Modal */}
-      <ColumnManagementModal
-        isOpen={columnManagementOpen}
-        onClose={() => {
-          setColumnManagementOpen(false);
-          setColumnOperation(null);
-        }}
-        onColumnAdded={handleColumnAdded}
-        onColumnDeleted={handleColumnDeleted}
-        operation={columnOperation}
-      />
+      {columnManagementOpen && (
+        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+          <ColumnManagementModal
+            isOpen={columnManagementOpen}
+            onClose={() => {
+              setColumnManagementOpen(false);
+              setColumnOperation(null);
+            }}
+            onColumnAdded={handleColumnAdded}
+            onColumnDeleted={handleColumnDeleted}
+            {...(columnOperation && { operation: columnOperation })}
+          />
+        </Suspense>
+      )}
     </div>
   );
 });

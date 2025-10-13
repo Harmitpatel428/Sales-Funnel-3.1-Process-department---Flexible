@@ -1,7 +1,8 @@
 'use client';
 
-import { Lead } from '../context/LeadContext';
+import type { Lead } from '../types/shared';
 import { validateColumnName, validateColumnType, validateColumnDeletion } from '../constants/columnConfig';
+import { formatDateToDDMMYYYY, parseDateFromDDMMYYYY } from '../utils/dateUtils';
 
 // Validation functions for individual fields
 export const validateKva = (value: string): string | null => {
@@ -80,49 +81,6 @@ export const validateGSTNumber = (value: string): string | null => {
     return 'Please enter a valid GST number';
   }
   return null;
-};
-
-// Helper functions for date formatting and parsing
-export const formatDateToDDMMYYYY = (dateString: string): string => {
-  if (!dateString) return '';
-  
-  // If already in DD-MM-YYYY format, return as is
-  if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
-    return dateString;
-  }
-  
-  // If it's a Date object or ISO string, convert to DD-MM-YYYY
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return dateString; // Return original if invalid
-    
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
-    return `${day}-${month}-${year}`;
-  } catch {
-    return dateString; // Return original if conversion fails
-  }
-};
-
-export const parseDateFromDDMMYYYY = (dateString: string): Date | null => {
-  if (!dateString) return null;
-  
-  try {
-    // Handle DD-MM-YYYY format
-    const dateParts = dateString.split('-');
-    if (dateString.includes('-') && dateParts[0] && dateParts[0].length <= 2) {
-      const [day, month, year] = dateString.split('-');
-      if (day && month && year) {
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      }
-    }
-    // Handle other date formats
-    return new Date(dateString);
-  } catch {
-    return null;
-  }
 };
 
 // Main validation function for lead fields - enhanced to support dynamic columns
@@ -799,4 +757,94 @@ export const useValidation = () => {
     validateFormField,
     validateFormWithEnhancedFeedback
   };
+};
+
+// Import-specific validation functions
+export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[]): { valid: boolean; errors: string[]; warnings: string[] } => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  // Validate required fields
+  if (!lead.clientName || lead.clientName.trim() === '') {
+    errors.push('Client name is required');
+  }
+  
+  // Validate data types and formats
+  if (lead.kva && typeof lead.kva !== 'string') {
+    warnings.push(`KVA field has unexpected type: ${typeof lead.kva}`);
+  }
+  
+  if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
+    lead.mobileNumbers.forEach((mobile, idx) => {
+      if (mobile.number && !/^\d+$/.test(mobile.number)) {
+        warnings.push(`Mobile number ${idx + 1} contains non-numeric characters: ${mobile.number}`);
+      }
+    });
+  }
+  
+  // Check date formats
+  const dateFields = ['connectionDate', 'lastActivityDate', 'followUpDate'];
+  dateFields.forEach(field => {
+    const value = (lead as any)[field];
+    if (value && typeof value === 'string') {
+      if (!/^\d{2}-\d{2}-\d{4}$/.test(value)) {
+        warnings.push(`${field} format should be DD-MM-YYYY, got: ${value}`);
+      }
+    }
+  });
+  
+  // Validate dynamic columns
+  visibleColumns.forEach(column => {
+    if (column.required) {
+      const value = (lead as any)[column.fieldKey];
+      if (!value || value.toString().trim() === '') {
+        errors.push(`Required field missing: ${column.label}`);
+      }
+    }
+  });
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+};
+
+export const validateImportedLeads = (leads: Partial<Lead>[], visibleColumns: any[]): Array<{lead: Partial<Lead>, errors: string[], warnings: string[], index: number}> => {
+  return leads.map((lead, index) => {
+    const validation = validateImportedLead(lead, visibleColumns);
+    return {
+      lead,
+      errors: validation.errors,
+      warnings: validation.warnings,
+      index
+    };
+  });
+};
+
+export const getImportSuggestions = (unmappedHeader: string): string[] => {
+  const suggestions: string[] = [];
+  const header = unmappedHeader.toLowerCase();
+  
+  // Fuzzy matching suggestions
+  if (header.includes('client') || header.includes('name')) {
+    suggestions.push('Client Name');
+  }
+  if (header.includes('mobile') || header.includes('phone')) {
+    suggestions.push('Mobile Number');
+  }
+  if (header.includes('status')) {
+    suggestions.push('Status');
+  }
+  if (header.includes('date') && header.includes('follow')) {
+    suggestions.push('Follow Up Date');
+  }
+  if (header.includes('date') && header.includes('last')) {
+    suggestions.push('Last Activity Date');
+  }
+  if (header.includes('kva') || header.includes('name')) {
+    suggestions.push('KVA');
+  }
+  
+  return suggestions.length > 0 ? suggestions : ['No suggestions available'];
 };

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Lead, MobileNumber } from '../context/LeadContext';
+import type { Lead, MobileNumber } from '../types/shared';
 import { validateMobileNumber } from '../hooks/useValidation';
 
 interface MobileNumbersModalProps {

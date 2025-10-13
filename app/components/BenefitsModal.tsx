@@ -3,11 +3,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, ChevronDown, Search } from 'lucide-react';
 import { 
-  getAllDistricts, 
   getTalukasByDistrict, 
   getCategoryByTaluka,
   searchDistricts,
-  searchTalukas,
   type TalukaInfo 
 } from '../constants/districtTalukaData';
 

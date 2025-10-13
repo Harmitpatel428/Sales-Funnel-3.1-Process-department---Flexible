@@ -1,10 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Lead, LeadFilters } from '../context/LeadContext';
-import { useHeaders } from '../context/HeaderContext';
-import { usePasswords } from '../context/PasswordContext';
-import { useColumns } from '../context/ColumnContext';
+import type { Lead, LeadFilters } from '../types/shared';
 import LeadTable from './LeadTable';
 import PasswordModal from './PasswordModal';
 import PasswordSettingsModal from './PasswordSettingsModal';
@@ -55,64 +52,28 @@ const EditableTable: React.FC<EditableTableProps> = ({
   onExportClick,
   onImportClick,
   headerEditable = true,
-  onHeaderUpdate,
   onColumnAdded,
   onColumnDeleted,
   onColumnReorder,
   onRowsAdded,
   onRowsDeleted
 }) => {
-  const { resetHeaders, isCustomized } = useHeaders();
-  const { verifyPassword } = usePasswords();
-  const { addColumn, deleteColumn, reorderColumns } = useColumns();
   const [editMode, setEditMode] = useState(false);
   const [headerEditMode, setHeaderEditMode] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [undoStack, setUndoStack] = useState<Array<{ leadId: string; field: string; oldValue: string; newValue: string }>>([]);
   const [redoStack, setRedoStack] = useState<Array<{ leadId: string; field: string; oldValue: string; newValue: string }>>([]);
   const [verifiedOperations, setVerifiedOperations] = useState<Set<string>>(new Set());
-  const [activeModal, setActiveModal] = useState<string | null>(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordSettingsOpen, setPasswordSettingsOpen] = useState(false);
   const [columnManagementOpen, setColumnManagementOpen] = useState(false);
   const [rowManagementOpen, setRowManagementOpen] = useState(false);
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
 
-  // Handle header update
-  const handleHeaderUpdate = useCallback((field: string, newLabel: string) => {
-    if (onHeaderUpdate) {
-      onHeaderUpdate(field, newLabel);
-    }
-  }, [onHeaderUpdate]);
-
-  // Handle header reset
-  const handleHeaderReset = useCallback(() => {
-    resetHeaders();
-  }, [resetHeaders]);
-
   // Toggle header edit mode
   const toggleHeaderEditMode = useCallback(() => {
     setHeaderEditMode(prev => !prev);
   }, []);
-
-  // Password-protected operation handlers
-  const handleEditModeToggle = useCallback(() => {
-    if (verifiedOperations.has('editMode') || sessionStorage.getItem('verified_editMode')) {
-      setEditMode(prev => !prev);
-    } else {
-      setPendingOperation('editMode');
-      setPasswordModalOpen(true);
-    }
-  }, [verifiedOperations]);
-
-  const handleHeaderEditToggle = useCallback(() => {
-    if (verifiedOperations.has('headerEdit') || sessionStorage.getItem('verified_headerEdit')) {
-      setHeaderEditMode(prev => !prev);
-    } else {
-      setPendingOperation('headerEdit');
-      setPasswordModalOpen(true);
-    }
-  }, [verifiedOperations]);
 
   const handleExportClick = useCallback(() => {
     if (verifiedOperations.has('export') || sessionStorage.getItem('verified_export')) {
@@ -209,6 +170,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
     if (undoStack.length === 0 || !onCellUpdate) return;
 
     const lastAction = undoStack[undoStack.length - 1];
+    if (!lastAction) return;
     
     // Add to redo stack
     setRedoStack(prev => [...prev, lastAction]);
@@ -225,6 +187,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
     if (redoStack.length === 0 || !onCellUpdate) return;
 
     const lastAction = redoStack[redoStack.length - 1];
+    if (!lastAction) return;
     
     // Add back to undo stack
     setUndoStack(prev => [...prev, lastAction]);
@@ -421,22 +384,22 @@ const EditableTable: React.FC<EditableTableProps> = ({
       {/* Lead Table */}
       <LeadTable
         filters={filters}
-        onLeadClick={onLeadClick}
+        {...(onLeadClick && { onLeadClick })}
         selectedLeads={selectedLeads}
-        onLeadSelection={onLeadSelection}
+        {...(onLeadSelection && { onLeadSelection })}
         selectAll={selectAll}
-        onSelectAll={onSelectAll}
-        leads={customLeads}
+        {...(onSelectAll && { onSelectAll })}
+        {...(customLeads && { leads: customLeads })}
         showActions={showActions}
-        actionButtons={actionButtons}
+        {...(actionButtons && { actionButtons })}
         emptyMessage={emptyMessage}
         editable={editable && editMode}
         onCellUpdate={handleCellUpdate}
         validationErrors={validationErrors}
         headerEditable={headerEditable && headerEditMode}
-        onColumnAdded={onColumnAdded}
-        onColumnDeleted={onColumnDeleted}
-        onColumnReorder={onColumnReorder}
+        {...(onColumnAdded && { onColumnAdded })}
+        {...(onColumnDeleted && { onColumnDeleted })}
+        {...(onColumnReorder && { onColumnReorder })}
       />
 
       {/* Keyboard Shortcuts Help */}
