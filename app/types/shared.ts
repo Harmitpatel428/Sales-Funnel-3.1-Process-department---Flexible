@@ -142,6 +142,8 @@ export interface LeadContextType {
   getLeadFieldValue: (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig) => any;
   getLeadWithDefaults: (lead: Lead, columnConfigs: ColumnConfig[]) => Lead;
   validateLeadAgainstColumns: (lead: Lead, columnConfigs: ColumnConfig[]) => string[];
+  skipPersistence?: boolean;
+  setSkipPersistence?: (skip: boolean) => void;
 }
 
 /**

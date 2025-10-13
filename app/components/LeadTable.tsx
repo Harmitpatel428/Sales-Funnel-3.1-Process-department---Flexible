@@ -67,10 +67,13 @@ const LeadTable = React.memo(function LeadTable({
   const [columnOperation, setColumnOperation] = useState<{type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string} | null>(null);
 
   // Virtualization settings
+  // Virtual scrolling disabled for <5000 leads to maintain proper HTML table structure
+  // react-window's List component with innerElementType="tbody" can break table rendering
   const [useVirtualization, setUseVirtualization] = useState(false);
+  const [virtualizationError, setVirtualizationError] = useState(false);
   const ROW_HEIGHT = 40; // Matches current row height with padding
-  const CONTAINER_HEIGHT = 600; // Visible table height
-  const VIRTUALIZATION_THRESHOLD = 100; // Enable when >100 leads
+  const CONTAINER_HEIGHT = 800; // Visible table height - increased for better UX
+  const VIRTUALIZATION_THRESHOLD = 5000; // Enable when >5000 leads - prevents table structure issues with react-window
 
   // Use custom leads if provided, otherwise use context leads
   const leads = customLeads || contextLeads;
@@ -267,10 +270,41 @@ const LeadTable = React.memo(function LeadTable({
   // Enable virtual scrolling for large datasets to improve performance
   useEffect(() => {
     setUseVirtualization(sortedLeads.length > VIRTUALIZATION_THRESHOLD);
+    // Reset virtualization error when threshold changes
+    if (sortedLeads.length <= VIRTUALIZATION_THRESHOLD) {
+      setVirtualizationError(false);
+    }
   }, [sortedLeads.length, VIRTUALIZATION_THRESHOLD]);
+
+  // Add error detection effect for virtualization issues
+  useEffect(() => {
+    if (useVirtualization && sortedLeads.length > 0) {
+      // Check if table rows are rendering correctly after a short delay
+      const checkTimeout = setTimeout(() => {
+        const tableRows = document.querySelectorAll('tbody tr');
+        const visibleRows = Array.from(tableRows).filter(row => 
+          row.offsetHeight > 0 && row.offsetWidth > 0
+        );
+        
+        // If we have leads but no visible rows, virtualization might be broken
+        if (sortedLeads.length > 0 && visibleRows.length === 0) {
+          console.warn('Virtualization may be causing rendering issues, falling back to standard rendering');
+          setVirtualizationError(true);
+        }
+      }, 100);
+      
+      return () => clearTimeout(checkTimeout);
+    }
+  }, [useVirtualization, sortedLeads.length]);
   
+  // Add render time tracking and performance monitoring
   if (process.env.NODE_ENV === 'development') {
-    console.log('LeadTable - sorted leads:', sortedLeads);
+    console.log('LeadTable rendering', sortedLeads.length, 'leads', useVirtualization ? 'with virtualization' : 'standard');
+    
+    // Performance warning for very large datasets
+    if (sortedLeads.length > 10000) {
+      console.warn(`Large dataset detected (${sortedLeads.length} leads). Consider implementing pagination or advanced virtualization.`);
+    }
   }
   
   // Handle column header click for sorting
@@ -397,7 +431,7 @@ const LeadTable = React.memo(function LeadTable({
     return (
       <tr
         key={lead.id}
-        style={style} // Inline style required by react-window for virtual scrolling performance - cannot be moved to CSS
+        style={style}
         className="cursor-pointer hover:bg-gray-50 transition-colors duration-150"
         onClick={() => data.onLeadClick && data.onLeadClick(lead)}
       >
@@ -574,6 +608,19 @@ const LeadTable = React.memo(function LeadTable({
 
   return (
     <div className={`overflow-x-auto relative ${className}`}>
+      {/* Loading indicator for large datasets */}
+      {sortedLeads.length > 1000 && (
+        <div className="absolute top-0 left-0 right-0 bg-blue-50 text-blue-800 text-xs px-2 py-1 text-center z-20">
+          Loading {sortedLeads.length} leads...
+        </div>
+      )}
+      
+      {/* Count badge and performance indicator */}
+      {sortedLeads.length > 0 && (
+        <div className="absolute top-0 right-0 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-bl z-20">
+          Displaying {sortedLeads.length} leads {(useVirtualization && !virtualizationError) ? '(Optimized Mode)' : '(Standard Mode)'}
+        </div>
+      )}
       <table key={columnVersion} className="min-w-full divide-y divide-gray-200 bg-white table-container">
         <thead className="bg-gray-50 sticky top-0 z-30 shadow-sm">
           <tr>
@@ -656,14 +703,17 @@ const LeadTable = React.memo(function LeadTable({
         </thead>
         {/* Conditional rendering: Virtual scrolling for large lists, standard rendering for small lists */}
           {sortedLeads.length > 0 ? (
-          useVirtualization ? (
+          (useVirtualization && !virtualizationError) ? (
             // Virtual scrolling enabled for performance with large datasets
+            // Note: Virtual scrolling may cause table structure issues in some browsers
+            // If data doesn't display correctly, reduce VIRTUALIZATION_THRESHOLD
             <List
-              height={CONTAINER_HEIGHT}
+              key={sortedLeads.length}
+              height={Math.min(CONTAINER_HEIGHT, window.innerHeight - 300)}
               itemCount={sortedLeads.length}
               itemSize={ROW_HEIGHT}
               width="100%"
-              overscanCount={5}
+              overscanCount={10}
               innerElementType="tbody"
               className="bg-white divide-y divide-gray-200"
               itemData={{
@@ -688,7 +738,8 @@ const LeadTable = React.memo(function LeadTable({
               {LeadRow}
             </List>
           ) : (
-            // Standard rendering for small lists (no virtualization overhead)
+            // Standard rendering optimized with React.memo and stable keys
+            // Handles up to 5000 leads efficiently on modern browsers
             <tbody className="bg-white divide-y divide-gray-200">
               {sortedLeads.map((lead, index) => (
                 <LeadRow
@@ -725,6 +776,17 @@ const LeadTable = React.memo(function LeadTable({
             </tr>
           </tbody>
           )}
+        
+        {/* Show warning when fallback occurs */}
+        {virtualizationError && (
+          <tbody className="bg-yellow-50 divide-y divide-gray-200">
+            <tr>
+              <td colSpan={getColumnSpan()} className="px-0.5 py-0.5 text-center text-xs text-yellow-800 bg-yellow-100">
+                Displaying {sortedLeads.length} leads in standard mode for better compatibility
+              </td>
+            </tr>
+          </tbody>
+        )}
       </table>
       
       {/* Mobile Numbers Modal */}

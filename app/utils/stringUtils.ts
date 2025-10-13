@@ -42,15 +42,24 @@ export function calculateLevenshteinDistance(str1: string, str2: string): number
 
 /**
  * Calculate similarity score between two strings
+ * Note: These functions are called frequently during import. Results are cached for performance.
  * @param str1 First string
  * @param str2 Second string
  * @returns Similarity score between 0 and 1
  */
+const similarityCache: Record<string, number> = {};
+
 export function calculateSimilarity(str1: string, str2: string): number {
+  const cacheKey = `${str1}:${str2}`;
+  if (similarityCache[cacheKey] !== undefined) {
+    return similarityCache[cacheKey];
+  }
+  
   const normalized1 = normalizeHeader(str1);
   const normalized2 = normalizeHeader(str2);
   
   if (normalized1 === normalized2) {
+    similarityCache[cacheKey] = 1.0;
     return 1.0;
   }
   
@@ -58,10 +67,13 @@ export function calculateSimilarity(str1: string, str2: string): number {
   const maxLength = Math.max(normalized1.length, normalized2.length);
   
   if (maxLength === 0) {
+    similarityCache[cacheKey] = 1.0;
     return 1.0;
   }
   
-  return 1 - (distance / maxLength);
+  const result = 1 - (distance / maxLength);
+  similarityCache[cacheKey] = result;
+  return result;
 }
 
 /**
@@ -79,27 +91,49 @@ export function partialMatch(needle: string, haystack: string): boolean {
 
 /**
  * Normalize header string for comparison
+ * Note: Results are cached for performance during import
  * @param header Header string to normalize
  * @returns Normalized header string
  */
+const normalizeHeaderCache: Record<string, string> = {};
+
 export function normalizeHeader(header: string): string {
   if (!header) return '';
   
-  return header
+  // Check cache first
+  if (normalizeHeaderCache[header] !== undefined) {
+    return normalizeHeaderCache[header];
+  }
+  
+  const result = header
     .toLowerCase()
     .trim()
     .replace(/[^\w\s]/g, '') // Remove special characters
     .replace(/\s+/g, ' ')     // Replace multiple spaces with single space
     .replace(/\b(the|a|an)\b/g, '') // Remove common articles
     .trim();
+    
+  // Cache the result
+  normalizeHeaderCache[header] = result;
+  return result;
 }
 
 /**
  * Generate common variations of a header
+ * Note: Results are cached and limited for performance during import
  * @param header Original header string
- * @returns Array of header variations
+ * @returns Array of header variations (max 10)
  */
+const headerVariationsCache: Record<string, string[]> = {};
+
 export function getHeaderVariations(header: string): string[] {
+  if (!header) return [];
+  
+  // Check cache first
+  if (headerVariationsCache[header] !== undefined) {
+    return headerVariationsCache[header];
+  }
+  
   const variations = new Set<string>();
   const normalized = normalizeHeader(header);
   
@@ -124,31 +158,31 @@ export function getHeaderVariations(header: string): string[] {
     .join('');
   variations.add(camelCase);
   
-  // Add abbreviated versions
+  // Add abbreviated versions (limit to prevent excessive variations)
   const words = normalized.split(' ');
-  if (words.length > 1) {
+  if (words.length > 1 && words.length <= 3) { // Limit to reasonable word count
     const abbreviated = words.map(word => word.charAt(0)).join('');
     variations.add(abbreviated);
     
-    // Add partial abbreviations
+    // Add partial abbreviations for 2-word headers only
     if (words.length === 2) {
       variations.add(words[0] + words[1].charAt(0));
       variations.add(words[0].charAt(0) + words[1]);
     }
   }
   
-  // Add common abbreviations
+  // Add common abbreviations (limit to prevent excessive variations)
   const abbreviations: Record<string, string[]> = {
-    'number': ['no', 'num', 'nbr'],
-    'name': ['nm', 'nme'],
-    'mobile': ['mob', 'mbl'],
-    'client': ['clnt', 'cust'],
-    'address': ['addr', 'add'],
-    'date': ['dt', 'dte'],
-    'status': ['stat', 'sts'],
-    'amount': ['amt', 'qty'],
-    'email': ['eml', 'mail'],
-    'phone': ['ph', 'tel']
+    'number': ['no', 'num'],
+    'name': ['nm'],
+    'mobile': ['mob'],
+    'client': ['clnt'],
+    'address': ['addr'],
+    'date': ['dt'],
+    'status': ['stat'],
+    'amount': ['amt'],
+    'email': ['eml'],
+    'phone': ['ph']
   };
   
   Object.entries(abbreviations).forEach(([full, abbrs]) => {
@@ -159,7 +193,11 @@ export function getHeaderVariations(header: string): string[] {
     }
   });
   
-  return Array.from(variations).filter(v => v.length > 0);
+  const result = Array.from(variations).filter(v => v.length > 0).slice(0, 10); // Limit to 10 variations
+  
+  // Cache the result
+  headerVariationsCache[header] = result;
+  return result;
 }
 
 /**

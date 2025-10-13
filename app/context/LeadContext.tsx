@@ -19,6 +19,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [skipPersistence, setSkipPersistence] = useState(false);
 
   // Helper function to parse dates from various formats
   const toDate = (v?: string) => {
@@ -65,9 +66,11 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-    // Save leads to localStorage whenever they change (debounced)
+  // Save leads to localStorage whenever they change (debounced)
+  // Skip persistence during bulk operations (imports) to improve performance
+  // Persistence will resume automatically after skipPersistence is set to false
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated || skipPersistence) return;
     
     const timeoutId = setTimeout(() => {
       try {
@@ -537,7 +540,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       removeColumnFromLeads,
       getLeadFieldValue,
       getLeadWithDefaults,
-      validateLeadAgainstColumns
+      validateLeadAgainstColumns,
+      skipPersistence,
+      setSkipPersistence
     }}>
       {!isHydrated ? (
         <div className="flex items-center justify-center min-h-screen">

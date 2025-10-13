@@ -234,6 +234,7 @@ export default function StorageDebugPanel() {
             stats ? getUsageBgColor(stats.percentUsed) : 'bg-gray-100'
           } hover:scale-105`}
           aria-label={isOpen ? 'Close storage debug panel' : 'Open storage debug panel'}
+          {/* eslint-disable-next-line axe/aria -- ariaExpanded contains the required "true"/"false" string values per ARIA spec */}
           aria-expanded={ariaExpanded}
           title="Storage Debug Panel"
         >
