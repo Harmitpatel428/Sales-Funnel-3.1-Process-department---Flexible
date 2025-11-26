@@ -3,7 +3,7 @@
 import type { Lead, MobileNumber, Activity, SavedView, LeadFilters } from '../types/shared';
 import type { ColumnConfig } from '../types/shared';
 import { HeaderConfig } from '../context/HeaderContext';
-import { validateDate, formatDateToDDMMYYYY, parseDateFromDDMMYYYY } from '../utils/dateUtils';
+import { validateDateString, formatDateToDDMMYYYY, parseDateFromDDMMYYYY } from '../utils/dateUtils';
 import { getSchemaMetadata } from './schemaRegistry';
 import { generateUUID } from './uuid';
 
@@ -173,7 +173,7 @@ export function validateLeadFields(lead: any): ValidationResult {
   }
   
   // Validate dates
-  if (lead.followUpDate && !validateDate(lead.followUpDate)) {
+  if (lead.followUpDate && !validateDateString(lead.followUpDate).valid) {
     errors.push({
       field: 'followUpDate',
       message: 'Follow-up date must be in DD-MM-YYYY format',
@@ -183,7 +183,7 @@ export function validateLeadFields(lead: any): ValidationResult {
     });
   }
   
-  if (lead.lastActivityDate && !validateDate(lead.lastActivityDate)) {
+  if (lead.lastActivityDate && !validateDateString(lead.lastActivityDate).valid) {
     errors.push({
       field: 'lastActivityDate',
       message: 'Last activity date must be in DD-MM-YYYY format',
@@ -789,14 +789,14 @@ export function repairLead(lead: any): Lead | null {
     }
     
     // Convert date formats
-    if (repaired.followUpDate && !validateDate(repaired.followUpDate)) {
+    if (repaired.followUpDate && !validateDateString(repaired.followUpDate).valid) {
       const parsedDate = parseDateFromDDMMYYYY(repaired.followUpDate);
       if (parsedDate) {
         repaired.followUpDate = formatDateToDDMMYYYY(parsedDate.toISOString());
       }
     }
     
-    if (repaired.lastActivityDate && !validateDate(repaired.lastActivityDate)) {
+    if (repaired.lastActivityDate && !validateDateString(repaired.lastActivityDate).valid) {
       const parsedDate = parseDateFromDDMMYYYY(repaired.lastActivityDate);
       if (parsedDate) {
         repaired.lastActivityDate = formatDateToDDMMYYYY(parsedDate.toISOString());

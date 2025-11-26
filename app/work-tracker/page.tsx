@@ -174,7 +174,7 @@ export default function WorkTrackerPage() {
           activity.description,
           activity.leadName,
           new Date(activity.timestamp).toLocaleString(),
-          activity.duration || '',
+          String(activity.duration || ''),
           activity.employeeName || ''
         ]);
       });
@@ -190,7 +190,7 @@ export default function WorkTrackerPage() {
           session.leadName,
           new Date(session.startTime).toLocaleString(),
           session.endTime ? new Date(session.endTime).toLocaleString() : '',
-          session.duration || '',
+          String(session.duration || ''),
           session.duration ? formatDuration(session.duration) : 'In Progress',
           session.endTime ? 'Completed' : 'Active',
           session.employeeName || ''
@@ -443,6 +443,7 @@ export default function WorkTrackerPage() {
             isOpen={showLeadModal}
             onClose={handleCloseLeadModal}
             lead={selectedLead}
+            onEdit={() => {}}
           />
         </Suspense>
       )}

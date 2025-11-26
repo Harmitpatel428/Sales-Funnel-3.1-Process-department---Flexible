@@ -5,6 +5,7 @@
 
 import { storageErrorLogger } from './storageErrorLogger';
 import { storageNotifications } from './storageNotifications';
+import { restoreFromBackup, hasBackup, repairCorruptedLeads, repairColumnConfig, getItem, setItem } from './storage';
 
 export interface RecoveryResult {
   success: boolean;
@@ -36,10 +37,8 @@ export enum RecoveryStrategy {
 export async function recoverFromStorageError(key: string, error: Error): Promise<RecoveryResult> {
   try {
     // Try to restore from backup first
-    const { restoreFromBackup, hasBackup } = await import('./storage');
-    
-    if (await hasBackup(key)) {
-      const result = await restoreFromBackup(key);
+    if (hasBackup(key)) {
+      const result = restoreFromBackup(key);
       if (result.success) {
         return {
           success: true,
@@ -224,27 +223,71 @@ export async function recoverFromNetworkError(
  */
 export async function recoverFromCorruptedData(key: string, schema: any): Promise<RecoveryResult> {
   try {
-    const { repairCorruptedLeads, repairColumnConfig } = await import('./storage');
-    
     if (key === 'leads') {
-      const result = await repairCorruptedLeads();
+      // Get corrupted data from storage
+      const dataResult = await getItem(key, []);
+      if (!dataResult.success || !dataResult.data) {
+        return {
+          success: false,
+          strategy: RecoveryStrategy.REPAIR_DATA,
+          message: 'Failed to load corrupted leads data',
+          error: dataResult.error || 'Unknown error'
+        };
+      }
+      
+      // Repair the corrupted data
+      const repairedData = repairCorruptedLeads(dataResult.data);
+      
+      // Save repaired data back
+      const saveResult = await setItem(key, repairedData);
+      if (!saveResult.success) {
+        return {
+          success: false,
+          strategy: RecoveryStrategy.REPAIR_DATA,
+          message: 'Failed to save repaired leads data',
+          error: saveResult.error
+        };
+      }
+      
       return {
-        success: result.success,
+        success: true,
         strategy: RecoveryStrategy.REPAIR_DATA,
-        message: result.success ? 'Leads data repaired successfully' : 'Failed to repair leads data',
-        data: result.data,
-        error: result.success ? undefined : result.error
+        message: 'Leads data repaired successfully',
+        data: repairedData
       };
     }
     
     if (key === 'columns') {
-      const result = await repairColumnConfig();
+      // Get corrupted data from storage
+      const dataResult = await getItem(key, []);
+      if (!dataResult.success || !dataResult.data) {
+        return {
+          success: false,
+          strategy: RecoveryStrategy.REPAIR_DATA,
+          message: 'Failed to load corrupted column configuration',
+          error: dataResult.error || 'Unknown error'
+        };
+      }
+      
+      // Repair the corrupted data
+      const repairedData = repairColumnConfig(dataResult.data);
+      
+      // Save repaired data back
+      const saveResult = await setItem(key, repairedData);
+      if (!saveResult.success) {
+        return {
+          success: false,
+          strategy: RecoveryStrategy.REPAIR_DATA,
+          message: 'Failed to save repaired column configuration',
+          error: saveResult.error
+        };
+      }
+      
       return {
-        success: result.success,
+        success: true,
         strategy: RecoveryStrategy.REPAIR_DATA,
-        message: result.success ? 'Column configuration repaired successfully' : 'Failed to repair column configuration',
-        data: result.data,
-        error: result.success ? undefined : result.error
+        message: 'Column configuration repaired successfully',
+        data: repairedData
       };
     }
     
@@ -260,7 +303,7 @@ export async function recoverFromCorruptedData(key: string, schema: any): Promis
       success: false,
       strategy: RecoveryStrategy.REPAIR_DATA,
       message: `Failed to repair corrupted data for ${key}`,
-      error: error.message
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
@@ -287,11 +330,17 @@ export function getRecoveryOptions(error: Error): RecoveryOption[] {
       label: 'Restore from Backup',
       description: 'Restore data from the most recent backup',
       action: async () => {
-        const { restoreFromBackup, hasBackup } = await import('./storage');
         const keys = ['leads', 'columns', 'settings'];
         for (const key of keys) {
-          if (await hasBackup(key)) {
-            return await restoreFromBackup(key);
+          if (hasBackup(key)) {
+            const result = restoreFromBackup(key);
+            return {
+              success: result.success,
+              strategy: RecoveryStrategy.RESTORE_BACKUP,
+              message: result.success ? `Successfully restored ${key} from backup` : `Failed to restore ${key} from backup`,
+              data: result.data,
+              error: result.success ? undefined : result.error
+            };
           }
         }
         return {
@@ -336,12 +385,10 @@ export function getRecoveryOptions(error: Error): RecoveryOption[] {
  */
 export async function executeRecoveryStrategy(strategy: RecoveryStrategy, context: any = {}): Promise<RecoveryResult> {
   try {
-    storageErrorLogger.logError({
-      message: `Executing recovery strategy: ${strategy}`,
-      level: 'info',
-      timestamp: new Date().toISOString(),
-      context
-    });
+    // Log recovery strategy execution (informational)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[RECOVERY] Executing recovery strategy: ${strategy}`, context);
+    }
     
     let result: RecoveryResult;
     
@@ -380,17 +427,9 @@ export async function executeRecoveryStrategy(strategy: RecoveryStrategy, contex
     
     // Show notification based on result
     if (result.success) {
-      storageNotifications.notify({
-        type: 'success',
-        message: result.message,
-        duration: 3000
-      });
+      storageNotifications.notify(result.message, 'success');
     } else {
-      storageNotifications.notify({
-        type: 'error',
-        message: result.message,
-        duration: 5000
-      });
+      storageNotifications.notify(result.message, 'error');
     }
     
     return result;
@@ -403,11 +442,7 @@ export async function executeRecoveryStrategy(strategy: RecoveryStrategy, contex
       error: error.message
     };
     
-    storageNotifications.notify({
-      type: 'error',
-      message: result.message,
-      duration: 5000
-    });
+    storageNotifications.notify(result.message, 'error');
     
     return result;
   }

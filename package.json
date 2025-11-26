@@ -34,26 +34,21 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "dompurify": "^3.2.7",
+    "express": "^4.21.2"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  },
+  "devDependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@types/dompurify": "^3.0.5",
-    "dompurify": "^3.2.7",
-    "express": "^4.21.2",
-    "framer-motion": "^12.23.12",
-    "gsap": "^3.13.0",
-    "lucide-react": "^0.542.0",
-    "next": "15.5.2",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "react-window": "^1.8.10",
-    "recharts": "^3.1.2",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@next/bundle-analyzer": "^15.5.2",
     "@tailwindcss/postcss": "^4",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^20.19.17",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -63,10 +58,19 @@
     "electron-builder": "^26.0.12",
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
+    "framer-motion": "^12.23.12",
+    "gsap": "^3.13.0",
+    "lucide-react": "^0.542.0",
+    "next": "15.5.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-window": "^1.8.10",
+    "recharts": "^3.1.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4",
-    "wait-on": "^8.0.4"
+    "wait-on": "^8.0.4",
+    "xlsx": "^0.18.5"
   },
   "main": "electron/main.js",
   "homepage": "./",
@@ -112,18 +116,16 @@
       ],
       "requestedExecutionLevel": "asInvoker",
       "artifactName": "${productName} Setup ${version}.${ext}",
-      "oneClick": true,
-      "perMachine": false,
       "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Enterprise Lead Management System",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
-      "compression": "normal",
       "preCompressedFileExtensions": [".avi", ".mov", ".mp4", ".mkv", ".webm", ".zip", ".7z", ".png", ".jpg", ".jpeg", ".gif", ".webp"],
       "installerIcon": "build/installerIcon.ico",
       "uninstallerIcon": "build/installerIcon.ico",

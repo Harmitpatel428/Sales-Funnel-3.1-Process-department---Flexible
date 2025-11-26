@@ -2,6 +2,7 @@
 
 import type { Lead, MobileNumber, SavedView } from '../types/shared';
 import type { ColumnConfig } from '../types/shared';
+import type { HeaderConfig } from '../context/HeaderContext';
 import { formatDateToDDMMYYYY, parseDateFromDDMMYYYY } from '../utils/dateUtils';
 import { DEFAULT_HEADER_LABELS } from '../constants/columnConfig';
 import { createBackup, restoreFromBackup } from './storage';

@@ -174,6 +174,9 @@ export function sanitizeObject(obj: Record<string, any>): Record<string, any> {
     }
   }
   
+  return sanitized;
+}
+
 /**
  * Sanitize column configuration object
  * @param config - Column configuration to sanitize

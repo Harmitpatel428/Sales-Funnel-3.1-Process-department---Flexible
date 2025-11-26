@@ -55,10 +55,13 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
     ['deriveKey']
   );
 
+  // Ensure salt is properly typed as BufferSource
+  const saltBuffer = new Uint8Array(salt);
+  
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt,
+      salt: saltBuffer,
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256'
     },
@@ -158,19 +161,22 @@ export async function encryptData(data: string): Promise<string> {
     const encoder = new TextEncoder();
     const iv = generateIV();
     
+    // Ensure IV is properly typed as BufferSource
+    const ivBuffer = new Uint8Array(iv);
+    
     const encryptedData = await crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
-        iv: iv
+        iv: ivBuffer
       },
       masterKey,
       encoder.encode(data)
     );
 
     // Combine IV and encrypted data
-    const combined = new Uint8Array(iv.length + encryptedData.byteLength);
-    combined.set(iv);
-    combined.set(new Uint8Array(encryptedData), iv.length);
+    const combined = new Uint8Array(ivBuffer.length + encryptedData.byteLength);
+    combined.set(ivBuffer);
+    combined.set(new Uint8Array(encryptedData), ivBuffer.length);
 
     // Return base64 encoded result
     return btoa(String.fromCharCode(...combined));
@@ -198,10 +204,13 @@ export async function decryptData(encryptedData: string): Promise<string> {
     const iv = combined.slice(0, IV_LENGTH);
     const encrypted = combined.slice(IV_LENGTH);
 
+    // Ensure IV is properly typed as BufferSource
+    const ivBuffer = new Uint8Array(iv);
+
     const decryptedData = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
-        iv: iv
+        iv: ivBuffer
       },
       masterKey,
       encrypted

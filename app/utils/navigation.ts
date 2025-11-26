@@ -61,8 +61,9 @@ export function useSafeNavigation() {
 
 /**
  * Setup navigation protection for the application
+ * Returns a cleanup function to remove event listeners
  */
-export function setupNavigationProtection(): void {
+export function setupNavigationProtection(): () => void {
   // Protect against page unload
   const handleBeforeUnload = (event: BeforeUnloadEvent) => {
     flushCriticalData();

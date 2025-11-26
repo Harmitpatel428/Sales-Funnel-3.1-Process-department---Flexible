@@ -315,7 +315,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         dataToParse = await decryptData(item);
       } catch (decryptError) {
         const error = decryptError instanceof Error ? decryptError : new Error(String(decryptError));
-        logDecryptionError(key, 'getItem', error);
+        logDecryptionError(`Decryption failed for ${key} in getItem`, error);
         return {
           success: false,
           error: `Decryption failed: ${error.message}`,
@@ -335,7 +335,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
     const errorObj = error instanceof Error ? error : new Error(String(error));
     
     // Enhanced error logging for JSON parse failures
-    logStorageError('getItem', errorObj, { 
+    logStorageError('getItem: JSON parse failed', errorObj, { 
       operation: 'getItem',
       key, 
       additionalData: {
@@ -345,8 +345,10 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
       },
       timestamp: Date.now(),
       userAgent: navigator.userAgent,
-      url: window.location.href
-    }, ErrorSeverity.MEDIUM, ErrorCategory.CORRUPTION);
+      url: window.location.href,
+      severity: ErrorSeverity.MEDIUM,
+      category: ErrorCategory.CORRUPTION
+    });
     
     // Attempt to restore from backup if available
     try {
@@ -354,20 +356,21 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
       const backupData = localStorage.getItem(backupKey);
       if (backupData) {
         const backupParsed = JSON.parse(backupData);
-        logStorageError('getItem', new Error('Restored from backup due to JSON parse failure'), { 
+        logStorageError('getItem: Restored from backup due to JSON parse failure', new Error('Restored from backup due to JSON parse failure'), { 
           key, 
-          backupUsed: true 
-        }, ErrorSeverity.LOW, ErrorCategory.UNKNOWN);
+          backupUsed: true,
+          severity: ErrorSeverity.LOW,
+          category: ErrorCategory.STORAGE
+        });
         
         return {
           success: true,
           data: backupParsed,
-          bytesUsed: new Blob([backupData]).size,
-          recovered: true
+          bytesUsed: new Blob([backupData]).size
         };
       }
     } catch (backupError) {
-      logStorageError('getItem', backupError as Error, { 
+      logStorageError('getItem: Backup restore failed', backupError as Error, { 
         operation: 'getItem',
         key, 
         additionalData: {
@@ -375,8 +378,10 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         },
         timestamp: Date.now(),
         userAgent: navigator.userAgent,
-        url: window.location.href
-      }, ErrorSeverity.HIGH, ErrorCategory.CORRUPTION);
+        url: window.location.href,
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.CORRUPTION
+      });
     }
     
     return {
@@ -429,7 +434,7 @@ async function executeTransaction(transaction: StorageTransaction): Promise<void
     const quotaCheck = checkQuotaSync(size);
     if (!quotaCheck.withinLimit) {
       // Log quota exceeded error
-      logQuotaExceeded(key, quotaCheck.currentSize, quotaCheck.quotaLimit);
+      logQuotaExceeded(`Quota exceeded for ${key}`, { currentSize: quotaCheck.currentSize, quotaLimit: quotaCheck.quotaLimit });
       
       // Call quota exceeded callback
       config?.onQuotaExceeded?.(key, quotaCheck.currentSize);
@@ -603,7 +608,7 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
         };
       } catch (encryptError) {
         const error = encryptError instanceof Error ? encryptError : new Error(String(encryptError));
-        logEncryptionError(key, 'setItem', error);
+        logEncryptionError(`Encryption failed for ${key} in setItem`, error);
         return {
           success: false,
           error: `Encryption failed: ${error.message}`
@@ -621,7 +626,7 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
     
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    logStorageError('setItem', errorObj, { key }, ErrorSeverity.MEDIUM, ErrorCategory.UNKNOWN);
+    logStorageError('setItem failed', errorObj, { key, severity: ErrorSeverity.MEDIUM, category: ErrorCategory.STORAGE });
     
     if (config?.onError) {
       config.onError(errorObj);
@@ -885,11 +890,13 @@ export function restoreFromBackup(key: string): StorageResult<void> {
         const parsed = JSON.parse(backupValue);
         callbacks.forEach(callback => callback(parsed));
       } catch (parseError) {
-        logStorageError('restoreFromBackup', parseError as Error, { 
+        logStorageError('restoreFromBackup: Backup parse failed', parseError as Error, { 
           key, 
           errorType: 'BACKUP_PARSE_FAILED',
-          backupLength: backupValue.length 
-        }, ErrorSeverity.HIGH, ErrorCategory.CORRUPTION);
+          backupLength: backupValue.length,
+          severity: ErrorSeverity.HIGH,
+          category: ErrorCategory.CORRUPTION
+        });
         console.warn(`Backup data for '${key}' is corrupted and cannot be restored.`, parseError);
       }
     }
@@ -937,7 +944,7 @@ export function setItemDebounced(key: string, data: any, delay: number, config?:
   pendingData.set(key, data);
   
   // Set new timer
-  const timer = setTimeout(() => {
+  const timer = window.setTimeout(() => {
     const pendingDataForKey = pendingData.get(key);
     if (pendingDataForKey !== undefined) {
       void setItem(key, pendingDataForKey, config);
@@ -1081,11 +1088,13 @@ export function initStorageSync(): void {
         const parsed = JSON.parse(event.newValue);
         callbacks.forEach(callback => callback(parsed));
       } catch (error) {
-        logStorageError('storageEvent', error as Error, { 
+        logStorageError('storageEvent: Parse failed', error as Error, { 
           key: event.key, 
           errorType: 'STORAGE_EVENT_PARSE_FAILED',
-          newValueLength: event.newValue?.length || 0 
-        }, ErrorSeverity.LOW, ErrorCategory.CORRUPTION);
+          newValueLength: event.newValue?.length || 0,
+          severity: ErrorSeverity.LOW,
+          category: ErrorCategory.CORRUPTION
+        });
         console.warn(`Received invalid data from another tab for '${event.key}'. Ignoring update.`, error);
       }
     }
@@ -1434,11 +1443,13 @@ export function validateImportData(data: Record<string, any>): ImportValidationR
         JSON.parse(value);
       } catch (parseError) {
         result.warnings.push(`Key '${key}' contains invalid JSON and will be skipped during import.`);
-        logStorageError('validateImportData', parseError as Error, { 
+        logStorageError('validateImportData: JSON parse failed', parseError as Error, { 
           key, 
           errorType: 'IMPORT_VALIDATION_JSON_PARSE_FAILED',
-          valueLength: value.length 
-        }, ErrorSeverity.MEDIUM, ErrorCategory.CORRUPTION);
+          valueLength: value.length,
+          severity: ErrorSeverity.MEDIUM,
+          category: ErrorCategory.CORRUPTION
+        });
       }
     }
 
@@ -1468,10 +1479,12 @@ export function dryRunImport(jsonString: string): ImportValidationResult {
     return validateImportData(data);
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    logStorageError('dryRunImport', errorObj, { 
+    logStorageError('dryRunImport: JSON parse failed', errorObj, { 
       errorType: 'DRY_RUN_JSON_PARSE_FAILED',
-      jsonStringLength: jsonString.length 
-    }, ErrorSeverity.MEDIUM, ErrorCategory.CORRUPTION);
+      jsonStringLength: jsonString.length,
+      severity: ErrorSeverity.MEDIUM,
+      category: ErrorCategory.CORRUPTION
+    });
     
     return {
       valid: false,
@@ -1548,10 +1561,12 @@ export function restoreFromImportBackup(backupKey: string): StorageResult<void> 
     };
   } catch (parseError) {
     const errorObj = parseError instanceof Error ? parseError : new Error(String(parseError));
-    logStorageError('restoreImportBackup', errorObj, { 
+    logStorageError('restoreImportBackup: JSON parse failed', errorObj, { 
       errorType: 'IMPORT_BACKUP_JSON_PARSE_FAILED',
-      backupDataLength: backupData?.length || 0
-    }, ErrorSeverity.HIGH, ErrorCategory.CORRUPTION);
+      backupDataLength: backupData?.length || 0,
+      severity: ErrorSeverity.HIGH,
+      category: ErrorCategory.CORRUPTION
+    });
     
     return {
       success: false,
@@ -1647,10 +1662,12 @@ export function importStorage(jsonString: string, options: ImportOptions = {}): 
     
   } catch (parseError) {
     const errorObj = parseError instanceof Error ? parseError : new Error(String(parseError));
-    logStorageError('importStorage', errorObj, { 
+    logStorageError('importStorage: JSON parse failed', errorObj, { 
       errorType: 'IMPORT_STORAGE_JSON_PARSE_FAILED',
-      jsonStringLength: jsonString.length 
-    }, ErrorSeverity.HIGH, ErrorCategory.CORRUPTION);
+      jsonStringLength: jsonString.length,
+      severity: ErrorSeverity.HIGH,
+      category: ErrorCategory.CORRUPTION
+    });
     
     return {
       success: false,
@@ -1674,13 +1691,13 @@ export async function getItemTyped<T>(key: string, defaultValue: T, validator: (
       if (validator(result.data)) {
         return result;
       } else {
-        logValidationError(key, 'Type validation failed', ErrorSeverity.MEDIUM, ErrorCategory.VALIDATION_FAILED);
+        logValidationError(`Type validation failed for ${key}`, undefined, { severity: ErrorSeverity.MEDIUM, category: ErrorCategory.VALIDATION });
         return { success: true, data: defaultValue };
       }
     }
     return result;
   } catch (error) {
-    logStorageError(key, 'getItemTyped failed', error instanceof Error ? error.message : 'Unknown error', ErrorSeverity.HIGH, ErrorCategory.UNKNOWN);
+    logStorageError(`getItemTyped failed for ${key}`, error instanceof Error ? error : new Error('Unknown error'), { severity: ErrorSeverity.HIGH, category: ErrorCategory.STORAGE });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -1696,13 +1713,13 @@ export async function getItemTyped<T>(key: string, defaultValue: T, validator: (
 export async function setItemTyped<T>(key: string, data: T, validator: (data: unknown) => data is T, config?: Partial<StorageConfig>): Promise<StorageResult<void>> {
   try {
     if (!validator(data)) {
-      logValidationError(key, 'Pre-save validation failed', ErrorSeverity.HIGH, ErrorCategory.VALIDATION_FAILED);
+      logValidationError(`Pre-save validation failed for ${key}`, undefined, { severity: ErrorSeverity.HIGH, category: ErrorCategory.VALIDATION });
       return { success: false, error: 'Data validation failed' };
     }
     
     return await setItem(key, data, config);
   } catch (error) {
-    logStorageError(key, 'setItemTyped failed', error instanceof Error ? error.message : 'Unknown error', ErrorSeverity.HIGH, ErrorCategory.UNKNOWN);
+    logStorageError(`setItemTyped failed for ${key}`, error instanceof Error ? error : new Error('Unknown error'), { severity: ErrorSeverity.HIGH, category: ErrorCategory.STORAGE });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
