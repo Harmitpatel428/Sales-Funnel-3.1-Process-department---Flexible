@@ -88,7 +88,7 @@ export interface Lead {
   budget?: string;
   termLoan?: string;
   timeline?: string;
-  status: 'New' | 'CNR' | 'Busy' | 'Follow-up' | 'Deal Close' | 'Work Alloted' | 'Hotlead' | 'Mandate Sent' | 'Documentation' | 'Others';
+  status: 'New' | 'CNR' | 'Busy' | 'Follow-up' | 'Deal Close' | 'Work Alloted' | 'Hotlead' | 'Mandate Sent' | 'Documentation' | 'Others' | 'WOA' | 'Fresh Lead';
   contactOwner?: string;
   lastActivityDate: string;
   followUpDate: string;

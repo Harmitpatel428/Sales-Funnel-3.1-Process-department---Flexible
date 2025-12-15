@@ -1328,6 +1328,7 @@ export default function AddLeadPage() {
                   disabled={isSubmitting}
                 >
                   <option value="New">New</option>
+                  <option value="Fresh Lead">FL1 (Fresh Lead)</option>
                   <option value="CNR">CNR</option>
                   <option value="Busy">Busy</option>
                   <option value="Follow-up">Follow-up</option>

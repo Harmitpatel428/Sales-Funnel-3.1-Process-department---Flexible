@@ -54,7 +54,7 @@ export default function DashboardPage() {
   // Drag and drop state for status buttons
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [statusOrder, setStatusOrder] = useState<string[]>([
-    'New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'WAO', 
+    'New', 'FL1', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'WAO', 
     'Hotlead', 'Mandate Sent', 'Documentation', 'Others'
   ]);
 
@@ -463,6 +463,7 @@ export default function DashboardPage() {
   const statusCounts = useMemo(() => {
     const counts = {
       'New': 0,
+      'FL1': 0,
       'CNR': 0,
       'Busy': 0,
       'Follow-up': 0,
@@ -495,8 +496,10 @@ export default function DashboardPage() {
       if (process.env.NODE_ENV === 'development') {
         console.log(`Lead ${lead.kva}: status="${lead.status}", discom="${lead.discom}"`);
       }
-      // Map Work Alloted to WAO for counting
-      const statusKey = lead.status === 'Work Alloted' ? 'WAO' : lead.status;
+      // Map Work Alloted to WAO and Fresh Lead to FL1 for counting
+      const statusKey = lead.status === 'Work Alloted' ? 'WAO'
+        : lead.status === 'Fresh Lead' ? 'FL1'
+        : lead.status;
       if (statusKey in counts) {
         counts[statusKey as keyof typeof counts]++;
         if (process.env.NODE_ENV === 'development') {
@@ -849,8 +852,10 @@ export default function DashboardPage() {
 
   // Handle status filter
   const handleStatusFilter = (status: string) => {
-    // Map WAO back to Work Alloted for filtering
-    const actualStatus = status === 'WAO' ? 'Work Alloted' : status as Lead['status'];
+    // Map UI codes back to DB values for filtering
+    const actualStatus = status === 'WAO' ? 'Work Alloted'
+      : status === 'FL1' ? 'Fresh Lead'
+      : status as Lead['status'];
     
     // Check if the status has zero leads
     if (statusCounts[status as keyof typeof statusCounts] === 0) {
@@ -925,7 +930,9 @@ export default function DashboardPage() {
   // Helper function to get button styling
   const getButtonStyle = (status: string) => {
     // Map WAO to Work Alloted for active state checking
-    const actualStatus = status === 'WAO' ? 'Work Alloted' : status;
+    const actualStatus = status === 'WAO' ? 'Work Alloted'
+      : status === 'FL1' ? 'Fresh Lead'
+      : status;
     const isActive = activeFilters.status?.length === 1 && activeFilters.status[0] === actualStatus;
     const isDragging = draggedItem === status;
     
@@ -938,6 +945,12 @@ export default function DashboardPage() {
         inactive: 'bg-blue-600 hover:bg-blue-700 text-white',
         badge: 'bg-blue-500 text-white',
         badgeActive: 'bg-blue-900 text-blue-100'
+      },
+      'FL1': { 
+        active: 'bg-emerald-800 text-white', 
+        inactive: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+        badge: 'bg-emerald-500 text-white',
+        badgeActive: 'bg-emerald-900 text-emerald-100'
       },
       'CNR': { 
         active: 'bg-orange-800 text-white', 
