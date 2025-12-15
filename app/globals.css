@@ -335,3 +335,16 @@ input, textarea, select {
 .cursor-blob.hidden {
   opacity: 0;
 }
+
+/* Utility: force left-to-right text flow even inside contenteditable */
+.force-ltr {
+  direction: ltr !important;
+  unicode-bidi: plaintext !important;
+  text-align: left !important;
+}
+
+/* Prevent dev tools portal from being pinned to the viewport origin */
+script:nth-of-type(11) > nextjs-portal {
+  left: unset !important;
+  top: unset !important;
+}

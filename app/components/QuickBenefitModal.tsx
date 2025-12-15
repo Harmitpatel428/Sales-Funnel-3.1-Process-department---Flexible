@@ -24,10 +24,17 @@ interface ContentEditableEditorProps {
 const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, onChange, placeholder }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [isEmpty, setIsEmpty] = useState(!content || content.trim() === '');
+  const [isFocused, setIsFocused] = useState(false);
 
+  // Only sync external content when not focused to avoid caret jumps
   useEffect(() => {
-    setIsEmpty(!content || content.trim() === '');
-  }, [content]);
+    if (!editorRef.current) return;
+    if (isFocused) return;
+    if (editorRef.current.innerHTML !== (content || '')) {
+      editorRef.current.innerHTML = content || '';
+      setIsEmpty(!content || content.trim() === '');
+    }
+  }, [content, isFocused]);
 
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     const html = (e.currentTarget as HTMLDivElement).innerHTML;
@@ -42,12 +49,14 @@ const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, 
   };
 
   const handleFocus = () => {
+    setIsFocused(true);
     if (isEmpty && editorRef.current) {
       editorRef.current.innerHTML = '';
     }
   };
 
   const handleBlur = () => {
+    setIsFocused(false);
     if (editorRef.current) {
       const html = editorRef.current.innerHTML;
       setIsEmpty(!html || html.trim() === '' || html === '<br>');
@@ -59,12 +68,14 @@ const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, 
       <div
         ref={editorRef}
         contentEditable
-        className="w-full min-h-48 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black whitespace-pre-wrap resize-y overflow-auto"
+        className="w-full min-h-48 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black whitespace-pre-wrap resize-y overflow-auto text-left force-ltr"
+        dir="ltr"
+        style={{ direction: 'ltr', unicodeBidi: 'plaintext', textAlign: 'left' }}
         onInput={handleInput}
         onPaste={handlePaste}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        dangerouslySetInnerHTML={{ __html: content || '' }}
+        suppressContentEditableWarning
       />
       {isEmpty && (
         <div className="absolute top-2 left-3 text-gray-500 text-sm pointer-events-none select-none">
@@ -189,10 +200,10 @@ const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, 
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-gray-900">Template Content - {activeTemplate?.name || 'No Template Selected'}</h3>
               
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-800 mb-2">Benefits Overview</h4>
+              <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm ring-1 ring-gray-100 w-full text-left" dir="ltr">
+                <h4 className="font-medium text-gray-800 mb-2 text-left" dir="ltr">Benefits Overview</h4>
                 <div
-                  className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap"
+                  className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap text-left"
                   dangerouslySetInnerHTML={{ 
                     __html: DOMPurify.sanitize(activeTemplate?.content.overview || '') || 'This section will contain benefits overview...' 
                   }}

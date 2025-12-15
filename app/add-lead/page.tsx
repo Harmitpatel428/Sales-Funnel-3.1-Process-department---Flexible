@@ -46,6 +46,58 @@ export default function AddLeadPage() {
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
+  const sanitizePhone = (num?: string) => (num ? num.replace(/[^0-9]/g, '').slice(0, 10) : '');
+  const buildMobileNumbersFromLead = (leadData: any): MobileNumber[] => {
+    const mobileNumbers: MobileNumber[] = [
+      { id: '1', number: '', name: '', isMain: true },
+      { id: '2', number: '', name: '', isMain: false },
+      { id: '3', number: '', name: '', isMain: false }
+    ];
+
+    if (leadData?.mobileNumbers && Array.isArray(leadData.mobileNumbers)) {
+      leadData.mobileNumbers.forEach((mobile: { id?: string; number?: string; name?: string; isMain?: boolean }, index: number) => {
+        if (index < 3) {
+          mobileNumbers[index] = {
+            id: mobile.id || String(index + 1),
+            number: sanitizePhone(mobile.number),
+            name: mobile.name || '',
+            isMain: mobile.isMain || index === 0
+          };
+        }
+      });
+    }
+
+    const fallbackCandidates = [
+      sanitizePhone(leadData?.mobileNumber),
+      sanitizePhone(leadData?.phoneNumber),
+      sanitizePhone(leadData?.phone_no),
+      sanitizePhone(leadData?.phoneNo),
+      sanitizePhone(leadData?.phone),
+      sanitizePhone(leadData?.primaryPhone),
+      sanitizePhone(leadData?.primary_phone),
+      sanitizePhone(leadData?.Phone),
+      sanitizePhone(leadData?.Mobile),
+      sanitizePhone(leadData?.contactNumber),
+      sanitizePhone(leadData?.contactNo)
+    ].filter(Boolean);
+
+    fallbackCandidates.forEach((num) => {
+      const nextSlot = mobileNumbers.findIndex(m => !m.number);
+      if (nextSlot !== -1) {
+        mobileNumbers[nextSlot] = {
+          ...mobileNumbers[nextSlot],
+          number: num,
+          isMain: nextSlot === 0 ? true : mobileNumbers[nextSlot].isMain
+        };
+      }
+    });
+
+    if (!mobileNumbers.some(m => m.isMain)) {
+      mobileNumbers[0].isMain = true;
+    }
+
+    return mobileNumbers;
+  };
 
   // Extract address from notes helper function
   const extractAddressFromNotes = (notes: string) => {
@@ -122,40 +174,34 @@ export default function AddLeadPage() {
           const { address, cleanNotes } = extractAddressFromNotes(leadData.notes || '');
           
           // Handle mobile numbers - convert old format to new format if needed
-          const mobileNumbers: MobileNumber[] = [
-            { id: '1', number: '', name: '', isMain: true },
-            { id: '2', number: '', name: '', isMain: false },
-            { id: '3', number: '', name: '', isMain: false }
-          ];
-          
-          if (leadData.mobileNumbers && Array.isArray(leadData.mobileNumbers)) {
-            // New format - use existing mobile numbers but ensure we have 3 slots
-            leadData.mobileNumbers.forEach((mobile: { id?: string; number?: string; name?: string; isMain?: boolean }, index: number) => {
-              if (index < 3) { // Only process first 3 mobile numbers
-                mobileNumbers[index] = {
-                  id: mobile.id || String(index + 1),
-                  number: mobile.number || '',
-                  name: mobile.name || '',
-                  isMain: mobile.isMain || false
-                };
-              }
-            });
-          } else if (leadData.mobileNumber) {
-            // Old format - convert to new format
-            mobileNumbers[0] = { id: '1', number: leadData.mobileNumber, name: '', isMain: true };
-          }
+          const mobileNumbers: MobileNumber[] = buildMobileNumbersFromLead(leadData);
           
           if (process.env.NODE_ENV === 'development') {
             console.log('Mobile numbers being set:', mobileNumbers); // Debug log
             console.log('Lead data discom:', leadData.discom); // Debug log for discom
           }
           
+          // Determine primary mobile number with all known key variants to hydrate the legacy field
+          const primaryMobileNumber = mobileNumbers.find(m => m.isMain && m.number)?.number
+            || sanitizePhone(leadData.mobileNumber)
+            || sanitizePhone(leadData.phoneNumber)
+            || sanitizePhone(leadData.phone_no)
+            || sanitizePhone(leadData.phoneNo)
+            || sanitizePhone(leadData.phone)
+            || sanitizePhone(leadData.primaryPhone)
+            || sanitizePhone(leadData.primary_phone)
+            || sanitizePhone(leadData.Phone)
+            || sanitizePhone(leadData.Mobile)
+            || sanitizePhone(leadData.contactNumber)
+            || sanitizePhone(leadData.contactNo)
+            || '';
+
           // Handle custom unit type for editing
           const unitType = leadData.unitType || 'New';
           const isCustomUnitType = !['New', 'Existing', 'Other'].includes(unitType);
           
           setFormData({
-            mobileNumber: leadData.mobileNumber || '', // Keep for backward compatibility
+            mobileNumber: primaryMobileNumber, // Keep for backward compatibility
             mobileNumbers: mobileNumbers,
             companyLocation: leadData.companyLocation || address, // Use existing or extracted address
             unitType: isCustomUnitType ? 'Other' : unitType,
@@ -199,28 +245,7 @@ export default function AddLeadPage() {
           const { address, cleanNotes } = extractAddressFromNotes(leadData.notes || '');
           
           // Handle mobile numbers - convert old format to new format if needed
-          const mobileNumbers: MobileNumber[] = [
-            { id: '1', number: '', name: '', isMain: true },
-            { id: '2', number: '', name: '', isMain: false },
-            { id: '3', number: '', name: '', isMain: false }
-          ];
-          
-          if (leadData.mobileNumbers && Array.isArray(leadData.mobileNumbers)) {
-            // New format - use existing mobile numbers but ensure we have 3 slots
-            leadData.mobileNumbers.forEach((mobile: { id?: string; number?: string; name?: string; isMain?: boolean }, index: number) => {
-              if (index < 3) { // Only process first 3 mobile numbers
-                mobileNumbers[index] = {
-                  id: mobile.id || String(index + 1),
-                  number: mobile.number || '',
-                  name: mobile.name || '',
-                  isMain: mobile.isMain || false
-                };
-              }
-            });
-          } else if (leadData.mobileNumber) {
-            // Old format - convert to new format
-            mobileNumbers[0] = { id: '1', number: leadData.mobileNumber, name: '', isMain: true };
-          }
+          const mobileNumbers: MobileNumber[] = buildMobileNumbersFromLead(leadData);
           
           if (process.env.NODE_ENV === 'development') {
             console.log('Mobile numbers being set:', mobileNumbers); // Debug log
@@ -472,9 +497,26 @@ export default function AddLeadPage() {
       }
     });
 
+    if (formData.status === 'WOA' && (!formData.followUpDate || !formData.followUpDate.trim())) {
+      newErrors.followUpDate = 'Next Follow-up Date is required when status is WOA';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
+
+  // Enforce follow-up date requirement reactively when status is WOA (Waiting On Approval)
+  useEffect(() => {
+    setErrors(prev => {
+      const updated = { ...prev };
+      if (formData.status === 'WOA' && (!formData.followUpDate || !formData.followUpDate.trim())) {
+        updated.followUpDate = 'Next Follow-up Date is required when status is WOA';
+      } else if (updated.followUpDate && formData.status !== 'WOA') {
+        delete updated.followUpDate;
+      }
+      return updated;
+    });
+  }, [formData.status, formData.followUpDate]);
 
   // Handle mobile number changes - only allow numeric input with max 10 digits
   const handleMobileNumberChange = (index: number, value: string) => {
@@ -1294,6 +1336,7 @@ export default function AddLeadPage() {
                   <option value="Hotlead">Hotlead</option>
                   <option value="Mandate Sent">Mandate Sent</option>
                   <option value="Documentation">Documentation</option>
+                  <option value="WOA">WOA (Waiting On Approval)</option>
                   <option value="Others">Others</option>
                 </select>
               </div>
@@ -1341,7 +1384,7 @@ export default function AddLeadPage() {
               <div className="space-y-1">
                 <label htmlFor="followUpDate" className="block text-[11px] font-medium text-black">
                   Next Follow-up Date
-                  {['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation', 'Meeting Requested', 'Work Confirmation Pending'].includes(formData.status) && (
+                  {['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation', 'Meeting Requested', 'Work Confirmation Pending', 'WOA'].includes(formData.status) && (
                     <span className="text-red-500">*</span>
                   )}
                 </label>
@@ -1385,6 +1428,7 @@ export default function AddLeadPage() {
                       errors.followUpDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     disabled={isSubmitting}
+                    required={formData.status === 'WOA'}
                   />
                 </div>
                 {errors.followUpDate && (
