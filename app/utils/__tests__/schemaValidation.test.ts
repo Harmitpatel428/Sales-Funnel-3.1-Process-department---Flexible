@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   isLead,
@@ -69,6 +70,9 @@ const createValidColumnConfig = (): ColumnConfig => ({
   defaultValue: '',
   description: 'Test column description'
 });
+
+// Local type alias for header config shape used in tests
+type HeaderConfig = { kva: string; clientName: string; status: string };
 
 const createValidHeaderConfig = (): HeaderConfig => ({
   kva: 'KVA',

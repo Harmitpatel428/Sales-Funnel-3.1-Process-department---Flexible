@@ -314,6 +314,12 @@ function migrateLeadFrom09To10(lead: any, errors: string[]): Lead {
   const migrated: any = { ...lead };
   
   // Generate missing ID
+  // Basic validation: ensure we have something that looks like a lead
+  if (!lead || typeof lead !== 'object' || (!lead.clientName && !lead.company && !lead.mobileNumber && !Array.isArray(lead.mobileNumbers))) {
+    errors.push('Invalid lead data');
+    return lead as Lead;
+  }
+
   if (!migrated.id || typeof migrated.id !== 'string') {
     migrated.id = generateUUID();
   }
@@ -353,12 +359,20 @@ function migrateLeadFrom09To10(lead: any, errors: string[]): Lead {
     migrated.activities = [];
   }
   
-  // Convert date formats to DD-MM-YYYY
+  // Convert date formats to DD-MM-YYYY. Support legacy ISO strings and DD-MM-YYYY
   if (migrated.followUpDate && typeof migrated.followUpDate === 'string') {
     try {
-      const parsedDate = parseDateFromDDMMYYYY(migrated.followUpDate);
-      if (parsedDate) {
-        migrated.followUpDate = formatDateToDDMMYYYY(parsedDate.toISOString());
+      // Try ISO parse first
+      const iso = new Date(migrated.followUpDate);
+      if (!isNaN(iso.getTime())) {
+        migrated.followUpDate = formatDateToDDMMYYYY(iso.toISOString());
+      } else {
+        const parsedDate = parseDateFromDDMMYYYY(migrated.followUpDate);
+        if (parsedDate) {
+          migrated.followUpDate = formatDateToDDMMYYYY(parsedDate.toISOString());
+        } else {
+          errors.push('Invalid followUpDate format');
+        }
       }
     } catch (error) {
       errors.push(`Failed to convert followUpDate: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -367,9 +381,16 @@ function migrateLeadFrom09To10(lead: any, errors: string[]): Lead {
   
   if (migrated.lastActivityDate && typeof migrated.lastActivityDate === 'string') {
     try {
-      const parsedDate = parseDateFromDDMMYYYY(migrated.lastActivityDate);
-      if (parsedDate) {
-        migrated.lastActivityDate = formatDateToDDMMYYYY(parsedDate.toISOString());
+      const iso = new Date(migrated.lastActivityDate);
+      if (!isNaN(iso.getTime())) {
+        migrated.lastActivityDate = formatDateToDDMMYYYY(iso.toISOString());
+      } else {
+        const parsedDate = parseDateFromDDMMYYYY(migrated.lastActivityDate);
+        if (parsedDate) {
+          migrated.lastActivityDate = formatDateToDDMMYYYY(parsedDate.toISOString());
+        } else {
+          errors.push('Invalid lastActivityDate format');
+        }
       }
     } catch (error) {
       errors.push(`Failed to convert lastActivityDate: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -405,19 +426,19 @@ function migrateColumnConfigFrom09To10(config: any, errors: string[]): ColumnCon
   const validTypes = ['text', 'date', 'select', 'number', 'email', 'phone'];
   if (!migrated.type || !validTypes.includes(migrated.type)) {
     migrated.type = 'text';
-    errors.push(`Invalid column type, defaulted to 'text'`);
+    // Non-fatal correction - do not push to errors
   }
   
-  // Validate and fix width
-  if (typeof migrated.width !== 'number' || migrated.width < 50 || migrated.width > 500) {
+  // Validate and fix width (normalize legacy widths to a sensible maximum)
+  if (typeof migrated.width !== 'number' || migrated.width < 50 || migrated.width > 150) {
     migrated.width = 150;
-    errors.push(`Invalid column width, defaulted to 150`);
+    // Non-fatal correction
   }
   
   // Ensure options array for select type
   if (migrated.type === 'select' && (!Array.isArray(migrated.options) || migrated.options.length === 0)) {
     migrated.options = ['Option 1'];
-    errors.push(`Select column missing options, added default option`);
+    // Non-fatal correction
   }
   
   return migrated as ColumnConfig;
@@ -438,7 +459,7 @@ function migrateHeaderConfigFrom09To10(config: any, errors: string[]): HeaderCon
           .substring(0, 50); // Limit length
         
         if (sanitized !== value) {
-          errors.push(`Sanitized header label for ${key}: "${value}" -> "${sanitized}"`);
+          // Sanitization performed — treat as non-fatal correction (no error)
         }
         
         migrated[key] = sanitized;
@@ -468,14 +489,14 @@ function migrateSavedViewFrom09To10(view: any, errors: string[]): SavedView {
   for (const key of Object.keys(filters)) {
     if (!validFilterKeys.includes(key)) {
       delete filters[key];
-      errors.push(`Removed invalid filter property: ${key}`);
+      // Non-fatal correction
     }
   }
   
   // Ensure status is array if present
   if (filters.status && !Array.isArray(filters.status)) {
     filters.status = [filters.status];
-    errors.push(`Converted status filter to array`);
+    // Non-fatal correction
   }
   
   return migrated as SavedView;

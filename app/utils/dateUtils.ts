@@ -46,21 +46,30 @@ export function formatDateToDDMMYYYY(date: Date | string | null | undefined): st
     return '';
   }
 
+  // If already in DD-MM-YYYY format, return as-is
+  if (typeof date === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(date)) {
+    return date;
+  }
+
   let dateObj: Date;
   if (typeof date === 'string') {
     dateObj = new Date(date);
     if (isNaN(dateObj.getTime())) {
       return '';
     }
+    // Use UTC getters to avoid timezone shifts when parsing ISO strings
+    const day = dateObj.getUTCDate().toString().padStart(2, '0');
+    const month = (dateObj.getUTCMonth() + 1).toString().padStart(2, '0');
+    const year = dateObj.getUTCFullYear().toString();
+    return `${day}-${month}-${year}`;
   } else {
     dateObj = date;
+    // For Date objects, use local date components to match typical Date construction behavior
+    const day = dateObj.getDate().toString().padStart(2, '0');
+    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+    const year = dateObj.getFullYear().toString();
+    return `${day}-${month}-${year}`;
   }
-
-  const day = dateObj.getDate().toString().padStart(2, '0');
-  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-  const year = dateObj.getFullYear().toString();
-
-  return `${day}-${month}-${year}`;
 }
 
 /**
@@ -113,18 +122,19 @@ export function validateDateString(dateString: string): { valid: boolean; error?
     return { valid: false, error: `Invalid month: ${month}. Month must be between 01 and 12` };
   }
 
-  // Validate day range
-  if (day < 1 || day > 31) {
+  // Validate day against actual month length
+  const daysInMonth = getDaysInMonth(month, year);
+
+  if (day < 1) {
     return { valid: false, error: `Invalid day: ${day}. Day must be between 01 and 31` };
   }
 
-  // Validate day against actual month length
-  const daysInMonth = getDaysInMonth(month, year);
   if (day > daysInMonth) {
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
+
     return { 
       valid: false, 
       error: `Invalid date: ${monthNames[month - 1]} ${day} does not exist. ${monthNames[month - 1]} has ${daysInMonth} days` 
@@ -178,11 +188,13 @@ export function normalizeToUTCMidnight(date: Date): Date {
  * @returns Date normalized to UTC midnight or null if invalid
  */
 export function parseAndNormalizeDate(dateString: string): Date | null {
-  const date = parseDateFromDDMMYYYY(dateString);
-  if (!date) {
+  if (!validateDateString(dateString).valid) {
     return null;
   }
-  return normalizeToUTCMidnight(date);
+
+  const [day, month, year] = dateString.split('-').map(Number);
+  // Create a Date at UTC midnight for the given date string
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 // Date Comparison Utilities
@@ -194,14 +206,20 @@ export function parseAndNormalizeDate(dateString: string): Date | null {
  * @returns -1 if date1 < date2, 0 if equal, 1 if date1 > date2
  */
 export function compareDatesUTC(date1: Date | string, date2: Date | string): number {
-  const d1 = typeof date1 === 'string' ? parseAndNormalizeDate(date1) : normalizeToUTCMidnight(date1);
-  const d2 = typeof date2 === 'string' ? parseAndNormalizeDate(date2) : normalizeToUTCMidnight(date2);
+  // Treat null/undefined inputs as incomparable
+  if (date1 == null || date2 == null) {
+    return 0;
+  }
+
+  const d1 = typeof date1 === 'string' ? parseAndNormalizeDate(date1) : normalizeToUTCMidnight(date1 as Date);
+  const d2 = typeof date2 === 'string' ? parseAndNormalizeDate(date2) : normalizeToUTCMidnight(date2 as Date);
   
   if (!d1 || !d2) {
     return 0;
   }
   
-  return d1.getTime() - d2.getTime();
+  const diff = d1.getTime() - d2.getTime();
+  return diff;
 }
 
 /**

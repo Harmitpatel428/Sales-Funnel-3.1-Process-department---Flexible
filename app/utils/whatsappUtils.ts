@@ -46,7 +46,7 @@ export const getMainPhoneNumber = (lead: any): string | null => {
   if (firstNumber) return firstNumber;
   
   // Fallback to legacy mobileNumber field
-  return lead.mobileNumber || null;
+  return lead.mobileNumber || lead.phoneNumber || lead.phone_no || lead.phone || null;
 };
 
 /**

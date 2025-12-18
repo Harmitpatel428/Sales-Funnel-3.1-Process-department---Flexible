@@ -26,7 +26,7 @@ const CONFIG = {
     'scripts'
   ],
   outputDirs: {
-    dist: 'dist',
+    dist: 'dist_v2_1_0',
     out: 'out',
     delivery: 'delivery'
   },
@@ -401,8 +401,17 @@ function cleanBuildDirectories() {
   
   for (const dir of dirsToClean) {
     if (dirExists(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true });
-      cleanedDirs.push(dir);
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+        cleanedDirs.push(dir);
+      } catch (error) {
+        if (error.code === 'EBUSY' || error.code === 'EPERM') {
+          logWarning(`Could not fully clean ${dir}: ${error.message}. Continuing anyway...`);
+          cleanedDirs.push(`${dir} (partial)`);
+        } else {
+          throw error;
+        }
+      }
     }
   }
   
@@ -485,7 +494,7 @@ function buildElectronInstaller() {
   
   // Find installer .exe file using exact name from package.json
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const productName = packageJson.productName || packageJson.name;
+  const productName = (packageJson.build && packageJson.build.productName) || packageJson.productName || packageJson.name;
   const version = packageJson.version;
   const expectedInstallerName = `${productName} Setup ${version}.exe`;
   

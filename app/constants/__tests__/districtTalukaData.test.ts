@@ -203,7 +203,7 @@ describe('District Taluka Data', () => {
       
       // Set NODE_ENV to development to enable validation
       const originalEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'development';
+      (process.env as any).NODE_ENV = 'development';
       
       validateDataset();
       
@@ -211,7 +211,7 @@ describe('District Taluka Data', () => {
       expect(consoleSpy).toHaveBeenCalled();
       
       // Restore environment
-      process.env.NODE_ENV = originalEnv;
+      (process.env as any).NODE_ENV = originalEnv;
       
       consoleSpy.mockRestore();
       consoleErrorSpy.mockRestore();

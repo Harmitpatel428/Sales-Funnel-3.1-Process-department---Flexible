@@ -501,6 +501,11 @@ export default function AddLeadPage() {
       newErrors.followUpDate = 'Next Follow-up Date is required when status is WOA';
     }
 
+    // EXPLICIT: Fresh Lead (FL1) should never require a follow-up date — ensure any followUpDate errors are removed
+    if (formData.status === 'Fresh Lead' && newErrors.followUpDate) {
+      delete newErrors.followUpDate;
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -511,6 +516,9 @@ export default function AddLeadPage() {
       const updated = { ...prev };
       if (formData.status === 'WOA' && (!formData.followUpDate || !formData.followUpDate.trim())) {
         updated.followUpDate = 'Next Follow-up Date is required when status is WOA';
+      } else if (formData.status === 'Fresh Lead') {
+        // Explicit exemption: clear follow-up validation for Fresh Lead
+        if (updated.followUpDate) delete updated.followUpDate;
       } else if (updated.followUpDate && formData.status !== 'WOA') {
         delete updated.followUpDate;
       }

@@ -119,6 +119,11 @@ export const validateLeadField = (fieldName: keyof Lead, value: any, lead?: Lead
       const followUpError = validateDate(value, false);
       if (followUpError) return followUpError;
       
+      // FL1 (Fresh Lead) should never require a follow-up date
+      if (lead?.status === 'Fresh Lead') {
+        return null;
+      }
+      
       // Additional validation for follow-up date based on status
       if (lead) {
         const statusesRequiringFollowUp = ['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation'];

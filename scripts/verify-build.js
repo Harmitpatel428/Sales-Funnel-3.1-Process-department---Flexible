@@ -105,21 +105,21 @@ function findFile(pattern, directory) {
 function verifyInstallerExists() {
   logInfo('Verifying installer exists...');
   
-  if (!fs.existsSync('dist')) {
-    logError('dist/ directory not found. Run the build first: npm run package:client');
+  if (!fs.existsSync('dist_v2_1_0')) {
+    logError('dist_v2_1_0/ directory not found. Run the build first: npm run package:client');
   }
   
   // Build expected filename from package.json
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const productName = packageJson.productName || packageJson.name;
+  const productName = (packageJson.build && packageJson.build.productName) || packageJson.productName || packageJson.name;
   const version = packageJson.version;
   const expectedInstallerName = `${productName} Setup ${version}.exe`;
   
-  const installerPath = path.join('dist', expectedInstallerName);
+  const installerPath = path.join('dist_v2_1_0', expectedInstallerName);
   if (!fileExists(installerPath)) {
     logError(`Expected installer not found: ${expectedInstallerName}`);
-    logError('Available files in dist/:');
-    const distFiles = fs.readdirSync('dist');
+    logError('Available files in dist_v2_1_0/:');
+    const distFiles = fs.readdirSync('dist_v2_1_0');
     distFiles.forEach(file => console.log(`  - ${file}`));
     throw new Error(`Installer not found: ${expectedInstallerName}`);
   }
@@ -203,7 +203,7 @@ function verifyDeliveryPackage() {
   // Check installer
   // Check for installer file with exact name
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const productName = packageJson.productName || packageJson.name;
+  const productName = (packageJson.build && packageJson.build.productName) || packageJson.productName || packageJson.name;
   const version = packageJson.version;
   const expectedInstallerName = `${productName} Setup ${version}.exe`;
   
@@ -324,7 +324,7 @@ function verifyBuildConfiguration() {
   }
   
   // Verify version number matches installer name
-  const productName = packageJson.productName || packageJson.name;
+  const productName = (packageJson.build && packageJson.build.productName) || packageJson.productName || packageJson.name;
   const version = packageJson.version;
   const expectedInstallerName = `${productName} Setup ${version}.exe`;
   

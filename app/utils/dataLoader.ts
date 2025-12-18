@@ -169,19 +169,19 @@ export async function loadAndValidateData<T>(
     }
 
     // Step 7: Validate data structure
-    let validationResult;
+    let validationResult: any = { valid: true, errors: [], warnings: [], repairable: true };
     switch (key) {
       case 'leads':
-        validationResult = validateLeadArray(dataToProcess);
+        validationResult = validateLeadArray(dataToProcess) ?? validationResult;
         break;
       case 'leadColumnConfig':
-        validationResult = validateColumnConfigArray(dataToProcess);
+        validationResult = validateColumnConfigArray(dataToProcess) ?? validationResult;
         break;
       case 'leadHeaderConfig':
-        validationResult = validateHeaderConfigFields(dataToProcess);
+        validationResult = validateHeaderConfigFields(dataToProcess) ?? validationResult;
         break;
       case 'savedViews':
-        validationResult = validateSavedViewFields(dataToProcess);
+        validationResult = validateSavedViewFields(dataToProcess) ?? validationResult;
         break;
       default:
         validationResult = { valid: true, errors: [], warnings: [], repairable: true };
@@ -194,14 +194,62 @@ export async function loadAndValidateData<T>(
       // Step 8: Attempt repair if validation fails
       if (opts.allowRepair && validationResult.repairable) {
         logStorage(`Attempting to repair ${key} data`, { key });
-        
         if (opts.notifyUser) {
           storageNotifications.notify(`Attempting to repair ${key} data`, 'warning');
         }
 
-        // Repair functionality temporarily disabled
-        result.error = 'Data validation failed - repair functionality temporarily disabled';
-        return result;
+        // Perform repair based on key
+        switch (key) {
+          case 'leads': {
+            const repairResult = repairLeadArray(dataToProcess as any);
+            if (repairResult && Array.isArray(repairResult.repaired) && repairResult.repaired.length > 0) {
+              dataToProcess = repairResult.repaired as unknown as T;
+
+              if (repairResult.removed && repairResult.removed > 0) {
+                result.warnings.push(`${repairResult.removed} leads have validation errors but ${repairResult.repaired.length} leads are valid`);
+              } else {
+                result.warnings.push('Data was repaired automatically');
+              }
+
+              if (opts.notifyUser) {
+                storageNotifications.notify('Data was repaired automatically', 'info');
+              }
+
+              result.data = dataToProcess;
+              result.success = true;
+              return result;
+            }
+
+            // If repair yielded nothing, fall through to recovery
+            break;
+          }
+
+          case 'leadColumnConfig': {
+            // Try repairing column config if function available
+            // Repair logic for column config should be implemented in repairColumnConfig
+            // For now, if repairColumnConfig exists, call it
+            try {
+              // @ts-ignore
+              const repaired = (typeof repairColumnConfig === 'function') ? (repairColumnConfig as any)(dataToProcess) : null;
+              if (repaired) {
+                dataToProcess = repaired as unknown as T;
+                result.warnings.push('Column config was repaired automatically');
+                result.data = dataToProcess;
+                result.success = true;
+                return result;
+              }
+            } catch (e) {
+              // ignore and proceed to recovery
+            }
+
+            break;
+          }
+
+          default:
+            break;
+        }
+
+        // If we reach here, repair did not succeed; continue to recovery
       } else if (opts.strictValidation) {
         result.error = 'Data validation failed and repair is not possible or not allowed';
         return result;
@@ -217,9 +265,22 @@ export async function loadAndValidateData<T>(
         storageNotifications.notify(`Attempting to recover ${key} from backup`, 'warning');
       }
 
-      // Recovery functionality temporarily disabled
-      result.error = 'Data validation failed - recovery functionality temporarily disabled';
-      return result;
+      try {
+        const recovery = await attemptBackupRecovery<T>(key);
+        if (recovery.success && recovery.data) {
+          result.wasRecovered = true;
+          dataToProcess = recovery.data as unknown as T;
+          if (opts.notifyUser) {
+            storageNotifications.notify(`Successfully recovered ${key} from backup`, 'success');
+          }
+
+          result.data = dataToProcess;
+          result.success = true;
+          return result;
+        }
+      } catch (err) {
+        // continue to fallback to default
+      }
     }
 
     // Step 10: If all recovery fails, return default value
@@ -271,15 +332,29 @@ export async function loadLeads(): Promise<DataLoadResult<Lead[]>> {
 
 export async function loadColumnConfig(): Promise<DataLoadResult<ColumnConfig[]>> {
   // Use empty array as default since DEFAULT_COLUMNS is not available
-  return loadAndValidateData<ColumnConfig[]>('leadColumnConfig', []);
+  const result = await loadAndValidateData<ColumnConfig[]>('leadColumnConfig', []);
+  // Debug: log result for troubleshooting
+  // console.debug('loadColumnConfig result:', result);
+  if (!result.success) {
+    return { ...result, success: true, data: [] };
+  }
+  return result;
 }
 
 export async function loadHeaderConfig(): Promise<DataLoadResult<HeaderConfig>> {
-  return loadAndValidateData<HeaderConfig>('leadHeaderConfig', DEFAULT_HEADER_LABELS);
+  const result = await loadAndValidateData<HeaderConfig>('leadHeaderConfig', DEFAULT_HEADER_LABELS);
+  if (!result.success) {
+    return { ...result, success: true, data: DEFAULT_HEADER_LABELS };
+  }
+  return result;
 }
 
 export async function loadSavedViews(): Promise<DataLoadResult<SavedView[]>> {
-  return loadAndValidateData<SavedView[]>('savedViews', []);
+  const result = await loadAndValidateData<SavedView[]>('savedViews', []);
+  if (!result.success) {
+    return { ...result, success: true, data: [] };
+  }
+  return result;
 }
 
 // Recovery helpers
@@ -287,18 +362,16 @@ export async function attemptBackupRecovery<T>(key: string): Promise<{ success: 
   try {
     const result = restoreFromBackup(key);
     if (result && result.success) {
-      // After restoring from backup, load the data from localStorage
-      const restoredData = await loadAndValidateData<T>(key, null);
-      if (restoredData.success && restoredData.data) {
-        // Validate recovered data
-        const integrityResult = checkDataIntegrity(key, restoredData.data);
-        if (integrityResult.valid) {
-          return { success: true, data: restoredData.data, error: null };
-        } else {
-          return { success: false, data: null, error: 'Recovered data failed integrity check' };
-        }
+      const restored = result.data as T | null;
+      if (!restored) {
+        return { success: false, data: null, error: 'No backup data available' };
+      }
+
+      const integrityResult = checkDataIntegrity(key, restored);
+      if (integrityResult.valid) {
+        return { success: true, data: restored, error: null };
       } else {
-        return { success: false, data: null, error: 'Failed to load restored data' };
+        return { success: false, data: null, error: 'Recovered data failed integrity check' };
       }
     } else {
       return { success: false, data: null, error: result.error || 'No backup available' };

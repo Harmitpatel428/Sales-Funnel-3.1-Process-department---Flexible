@@ -112,6 +112,17 @@ export function validateLeadFields(lead: any): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
   let repairable = true;
+  // Handle null/undefined or non-object inputs gracefully
+  if (!lead || typeof lead !== 'object') {
+    errors.push({
+      field: 'lead',
+      message: 'Lead must be an object',
+      severity: 'critical',
+      actualValue: lead,
+      expectedType: 'object'
+    });
+    return { valid: false, errors, warnings, repairable: false };
+  }
   
   // Check required fields
   const requiredFields = ['id', 'clientName', 'mobileNumbers', 'status', 'followUpDate', 'lastActivityDate', 'isDone', 'isDeleted', 'isUpdated', 'activities'];
@@ -609,6 +620,10 @@ export function validateLeadArray(data: any): ValidationResult {
     });
     return { valid: false, errors, warnings, repairable: false };
   }
+  // Large data sets may be suspicious; warn but don't fail validation
+  if (data.length > 10000) {
+    warnings.push(`Large data array with ${data.length} items`);
+  }
   
   let validLeads = 0;
   let invalidLeads = 0;
@@ -664,16 +679,19 @@ export function validateColumnConfigArray(data: any): ValidationResult {
   
   let validConfigs = 0;
   let invalidConfigs = 0;
-  const fieldKeys = new Set<string>();
+  // Map fieldKey -> id to allow identical objects (same id) while still detecting collisions
+  const fieldKeyToId = new Map<string, string>();
   
   data.forEach((config: any, index: number) => {
     const configValidation = validateColumnConfigFields(config);
+    // console.debug('validateColumnConfigFields result', index, configValidation);
     if (configValidation.valid) {
       validConfigs++;
-      
-      // Check for duplicate fieldKeys
+
+      // Check for duplicate fieldKeys across different IDs
       if (config.fieldKey) {
-        if (fieldKeys.has(config.fieldKey)) {
+        const existingId = fieldKeyToId.get(config.fieldKey);
+        if (existingId && existingId !== config.id) {
           errors.push({
             field: `[${index}].fieldKey`,
             message: `Duplicate field key: ${config.fieldKey}`,
@@ -682,7 +700,7 @@ export function validateColumnConfigArray(data: any): ValidationResult {
             expectedType: 'unique string'
           });
         } else {
-          fieldKeys.add(config.fieldKey);
+          fieldKeyToId.set(config.fieldKey, config.id);
         }
       }
     } else {
@@ -726,6 +744,14 @@ export function validateColumnConfigArray(data: any): ValidationResult {
 // Data repair functions
 export function repairLead(lead: any): Lead | null {
   if (!lead || typeof lead !== 'object') return null;
+  // If the object lacks any meaningful lead data, consider it unrecoverable
+  const hasMeaningful = (
+    (lead.clientName && typeof lead.clientName === 'string' && lead.clientName.trim() !== '') ||
+    (Array.isArray(lead.mobileNumbers) && lead.mobileNumbers.length > 0) ||
+    (lead.mobileNumber && typeof lead.mobileNumber === 'string' && lead.mobileNumber.trim() !== '') ||
+    (lead.status && typeof lead.status === 'string')
+  );
+  if (!hasMeaningful) return null;
   
   try {
     const repaired: any = { ...lead };
@@ -932,7 +958,7 @@ export function checkDataIntegrity(key: string, data: any): ValidationResult {
       if (nullCount === data.length) {
         errors.push({
           field: 'data',
-          message: 'All array items are null or undefined',
+          message: 'Array contains only null or undefined items',
           severity: 'error',
           actualValue: nullCount,
           expectedType: 'array with valid items'
@@ -941,7 +967,7 @@ export function checkDataIntegrity(key: string, data: any): ValidationResult {
     }
     
     // Validate based on schema metadata
-    if (metadata.requiredFields.length > 0 && typeof data === 'object') {
+    if (metadata.requiredFields.length > 0 && typeof data === 'object' && !Array.isArray(data)) {
       for (const field of metadata.requiredFields) {
         if (!(field in data)) {
           errors.push({

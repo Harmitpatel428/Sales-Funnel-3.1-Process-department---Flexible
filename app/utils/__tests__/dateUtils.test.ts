@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+/// <reference types="vitest" />
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   parseDateFromDDMMYYYY,
   formatDateToDDMMYYYY,

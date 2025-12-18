@@ -17,6 +17,8 @@ const eslintConfig = [
       ".next/**",
       "out/**",
       "build/**",
+      "dist/**",
+      "electron/**",
       "next-env.d.ts",
     ],
   },
@@ -46,6 +48,13 @@ const eslintConfig = [
     rules: {
       'react/no-inline-styles': 'off',
       '@next/next/no-css-tags': 'off'
+    }
+  },
+  // Allow legacy scripts and config files to use require() imports (Node tools)
+  {
+    files: ['scripts/**', 'next.config.ts', 'electron/**'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
     }
   }
 ];

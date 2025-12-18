@@ -178,7 +178,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
 
       // Add to staged columns for immediate UI feedback
       setStagedColumns(prev => {
-        let newStagedColumns = [...prev];
+        const newStagedColumns = [...prev];
         
         // Handle column insertion based on operation
         if (operation?.type === 'addBefore' && operation.fieldKey) {
