@@ -32,7 +32,7 @@ export interface Activity {
   description: string;
   timestamp: string;
   employeeName?: string;
-  activityType?: 'call'|'email'|'meeting'|'follow_up'|'note'|'status_change'|'edit'|'created'|'other';
+  activityType?: 'call' | 'email' | 'meeting' | 'follow_up' | 'note' | 'status_change' | 'edit' | 'created' | 'other';
   duration?: number;
   metadata?: Record<string, any>;
 }
@@ -88,7 +88,7 @@ export interface Lead {
   budget?: string;
   termLoan?: string;
   timeline?: string;
-  status: 'New' | 'CNR' | 'Busy' | 'Follow-up' | 'Deal Close' | 'Work Alloted' | 'Hotlead' | 'Mandate Sent' | 'Documentation' | 'Others' | 'WOA' | 'Fresh Lead';
+  status: 'New' | 'CNR' | 'Busy' | 'Follow-up' | 'Deal Close' | 'Work Alloted' | 'Hotlead' | 'Mandate Sent' | 'Documentation' | 'Others' | 'Fresh Lead';
   contactOwner?: string;
   lastActivityDate: string;
   followUpDate: string;

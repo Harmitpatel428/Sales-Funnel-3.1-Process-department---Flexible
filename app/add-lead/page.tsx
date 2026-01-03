@@ -1358,7 +1358,6 @@ export default function AddLeadPage() {
                   <option value="Hotlead">Hotlead</option>
                   <option value="Mandate Sent">Mandate Sent</option>
                   <option value="Documentation">Documentation</option>
-                  <option value="WOA">WOA (Waiting On Approval)</option>
                   <option value="Others">Others</option>
                 </select>
               </div>
@@ -1405,7 +1404,7 @@ export default function AddLeadPage() {
               <div className="space-y-1">
                 <label htmlFor="followUpDate" className="block text-[11px] font-medium text-black">
                   Next Follow-up Date
-                  {['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation', 'Meeting Requested', 'Work Confirmation Pending', 'WOA'].includes(formData.status) && (
+                  {['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation', 'Meeting Requested', 'Work Confirmation Pending'].includes(formData.status) && (
                     <span className="text-red-500">*</span>
                   )}
                 </label>
@@ -1448,7 +1447,7 @@ export default function AddLeadPage() {
                     className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${errors.followUpDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     disabled={isSubmitting}
-                    required={formData.status === 'WOA'}
+                    required={false}
                   />
                 </div>
                 {errors.followUpDate && (
