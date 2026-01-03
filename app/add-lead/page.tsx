@@ -1216,7 +1216,7 @@ export default function AddLeadPage() {
                             type="text"
                             value={mobile.name}
                             onChange={(e) => handleMobileNameChange(index, e.target.value)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black placeholder:text-black"
                             placeholder={`Contact ${index + 1}`}
                             disabled={isSubmitting}
                           />
@@ -1226,7 +1226,7 @@ export default function AddLeadPage() {
                             type="text"
                             value={mobile?.number || ''}
                             onChange={(e) => handleMobileNumberChange(index, e.target.value)}
-                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black ${errors[`mobileNumber_${index}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black placeholder:text-black ${errors[`mobileNumber_${index}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
                               }`}
                             placeholder={`Mobile ${index + 1}`}
                             disabled={isSubmitting}
@@ -1324,7 +1324,7 @@ export default function AddLeadPage() {
                     placeholder="Enter custom unit type..."
                     value={customUnitType}
                     onChange={(e) => setCustomUnitType(e.target.value)}
-                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs mt-1 ${errors.unitType ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs mt-1 placeholder:text-black ${errors.unitType ? 'border-red-500 bg-red-50' : 'border-gray-300'
                       }`}
                     disabled={isSubmitting}
                     required

@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Lead } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
+import { useCases } from '../context/CaseContext';
+import { useUsers } from '../context/UserContext';
 import QuickBenefitModal from './QuickBenefitModal';
 import { getGlobalTemplate, saveGlobalTemplate, resolveToTemplate, getResolvedScriptForLead } from '../utils/callScript';
 
@@ -40,6 +43,44 @@ export default function LeadDetailModal({
   const showQuickBenefitModalRef = useRef(false);
   // Track which lead the current script was built for to avoid showing another lead's script
   const lastBuiltForLeadId = useRef<string | null>(null);
+
+  const router = useRouter();
+  const { createCase } = useCases();
+  const { canConvertToCase } = useUsers();
+  const [isConverting, setIsConverting] = useState(false);
+  const canConvert = canConvertToCase();
+
+  const handleConvertToCase = async () => {
+    if (!canConvert) {
+      alert("You don't have permission to convert leads to cases.");
+      return;
+    }
+
+    if (confirm('Are you sure you want to convert this lead to a processed case? This action cannot be undone.')) {
+      setIsConverting(true);
+      try {
+        // Use custom field 'Scheme Type' if available, otherwise default to 'General'
+        // Type casting to access dynamic fields safely
+        const leadAny = lead as any;
+        const schemeType = leadAny['Scheme Type'] || leadAny['Scheme'] || 'General';
+
+        const result = createCase(lead.id, schemeType);
+
+        if (result.success && result.caseId) {
+          // Close modal and navigate to new case
+          onClose();
+          router.push(`/case-details?id=${result.caseId}`);
+        } else {
+          alert(`Failed to convert: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('Conversion error:', error);
+        alert('An error occurred during conversion.');
+      } finally {
+        setIsConverting(false);
+      }
+    }
+  };
 
   // Update refs when modal states change
   useEffect(() => {
@@ -127,7 +168,7 @@ export default function LeadDetailModal({
 
     // Clean the phone number (remove any non-digit characters)
     const cleanNumber = mainPhoneNumber.replace(/[^0-9]/g, '');
-    
+
     // Check if number is valid (should be 10 digits for Indian numbers)
     if (cleanNumber.length !== 10) {
       alert(`Invalid phone number: ${mainPhoneNumber}. Please check the number format.`);
@@ -136,7 +177,7 @@ export default function LeadDetailModal({
 
     // Create WhatsApp URL
     const whatsappUrl = `https://wa.me/91${cleanNumber}`;
-    
+
     // Open WhatsApp in new tab
     window.open(whatsappUrl, '_blank');
   };
@@ -145,7 +186,7 @@ export default function LeadDetailModal({
   const handleSaveSettings = () => {
     localStorage.setItem('consultantName', consultantName);
     setShowSettingsModal(false);
-    
+
     // Regenerate script with new consultant name if script modal is open
     if (showScriptModal) {
       handleScriptGeneration(lead);
@@ -156,9 +197,9 @@ export default function LeadDetailModal({
   // Build the default script template using the exact Gujarati template and lead data
   // NOTE: moved to util file for testability
   // keep a local shim that delegates to util (import below)
-  
+
   // import replaced below - see top of file
-  
+
 
   // NOTE: placeholder replacement handled in utils/getResolvedScriptForLead
 
@@ -196,21 +237,21 @@ export default function LeadDetailModal({
   // Helper function to format date to DD-MM-YYYY
   const formatDateToDDMMYYYY = (dateString: string): string => {
     if (!dateString) return '';
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's a Date object or ISO string, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       return `${day}-${month}-${year}`;
     } catch {
       return dateString; // Return original if conversion fails
@@ -220,7 +261,7 @@ export default function LeadDetailModal({
   // Helper function to format different field types
   const formatFieldValue = (value: unknown, type: string): string => {
     if (value === undefined || value === null || value === '') return 'N/A';
-    
+
     switch (type) {
       case 'date':
         return formatDateToDDMMYYYY(String(value));
@@ -268,7 +309,7 @@ export default function LeadDetailModal({
   // Get current column configuration
   const visibleColumns = getVisibleColumns();
   const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('🔍 LeadDetailModal - visibleColumns:', visibleColumns.length);
     console.log('🔍 LeadDetailModal - customColumns:', customColumns.length);
@@ -298,187 +339,186 @@ export default function LeadDetailModal({
           {/* Modal Content */}
           <div className="max-h-[80vh] overflow-y-auto">
             <div className="space-y-2">
-            {/* Permanent Fields Section */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {/* Mobile Numbers */}
-              <div className="bg-gray-50 p-2 rounded-md">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-medium text-black">Main Phone</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const phoneNumber = getPrimaryPhoneNumber(lead);
-                      copyToClipboard(phoneNumber, 'mainPhone');
-                    }}
-                    className="text-gray-400 hover:text-black transition-colors"
-                    title="Copy main phone number"
-                    aria-label="Copy main phone number"
-                  >
-                    {copiedField === 'mainPhone' ? (
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                  </button>
+              {/* Permanent Fields Section */}
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {/* Mobile Numbers */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-medium text-black">Main Phone</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const phoneNumber = getPrimaryPhoneNumber(lead);
+                        copyToClipboard(phoneNumber, 'mainPhone');
+                      }}
+                      className="text-gray-400 hover:text-black transition-colors"
+                      title="Copy main phone number"
+                      aria-label="Copy main phone number"
+                    >
+                      {copiedField === 'mainPhone' ? (
+                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs font-medium text-black">
+                    {(() => {
+                      return getPrimaryPhoneNumber(lead);
+                    })()}
+                  </p>
                 </div>
-                <p className="text-xs font-medium text-black">
-                  {(() => {
-                    return getPrimaryPhoneNumber(lead);
-                  })()}
-                </p>
-              </div>
 
-              {/* Unit Type */}
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Unit Type</label>
-                <p className="text-xs font-medium text-black">{lead.unitType}</p>
-              </div>
+                {/* Unit Type */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Unit Type</label>
+                  <p className="text-xs font-medium text-black">{lead.unitType}</p>
+                </div>
 
-              {/* Status */}
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Status</label>
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${ 
-                      lead.status === 'New' ? 'bg-blue-100 text-blue-800' :
-                      lead.status === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
+                {/* Status */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Status</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${lead.status === 'New' ? 'bg-blue-100 text-blue-800' :
+                    lead.status === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
                       lead.status === 'CNR' ? 'bg-orange-100 text-orange-800' :
-                      lead.status === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
-                      lead.status === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
-                      lead.status === 'Deal Close' ? 'bg-green-100 text-green-800' :
-                      lead.status === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
-                      lead.status === 'Hotlead' ? 'bg-red-100 text-red-800' :
-                      lead.status === 'Others' ? 'bg-gray-100 text-black' :
-                      'bg-gray-100 text-black'
+                        lead.status === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
+                          lead.status === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
+                            lead.status === 'Deal Close' ? 'bg-green-100 text-green-800' :
+                              lead.status === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
+                                lead.status === 'Hotlead' ? 'bg-red-100 text-red-800' :
+                                  lead.status === 'Others' ? 'bg-gray-100 text-black' :
+                                    'bg-gray-100 text-black'
                     }`}>
-                      {lead.status === 'Work Alloted' ? 'WAO' : lead.status === 'Fresh Lead' ? 'FL1' : lead.status}
-                    </span>
-              </div>
+                    {lead.status === 'Work Alloted' ? 'WAO' : lead.status === 'Fresh Lead' ? 'FL1' : lead.status}
+                  </span>
+                </div>
 
-              {/* Follow-up Date */}
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Follow-up Date</label>
-                <p className="text-xs font-medium text-black">
-                  {lead.followUpDate ? formatDateToDDMMYYYY(lead.followUpDate) : 'N/A'}
-                </p>
-              </div>
-
-              {/* Address */}
-              {lead.companyLocation && (
+                {/* Follow-up Date */}
                 <div className="bg-gray-50 p-2 rounded-md">
-                  <label className="block text-xs font-medium text-black mb-1">Address</label>
-                  <p className="text-xs font-medium text-black">{lead.companyLocation}</p>
+                  <label className="block text-xs font-medium text-black mb-1">Follow-up Date</label>
+                  <p className="text-xs font-medium text-black">
+                    {lead.followUpDate ? formatDateToDDMMYYYY(lead.followUpDate) : 'N/A'}
+                  </p>
+                </div>
+
+                {/* Address */}
+                {lead.companyLocation && (
+                  <div className="bg-gray-50 p-2 rounded-md">
+                    <label className="block text-xs font-medium text-black mb-1">Address</label>
+                    <p className="text-xs font-medium text-black">{lead.companyLocation}</p>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {lead.notes && (
+                  <div className="bg-gray-50 p-2 rounded-md">
+                    <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
+                    <p className="text-xs font-medium text-black break-words">{lead.notes}</p>
+                  </div>
+                )}
+
+                {/* Last Activity Date */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
+                  <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(lead.lastActivityDate)}</p>
+                </div>
+              </div>
+
+              {/* Additional Numbers */}
+              {lead.mobileNumbers && lead.mobileNumbers.length > 0 && (
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">All Mobile Numbers</label>
+                  <div className="space-y-1">
+                    {lead.mobileNumbers.filter(m => m.number && m.number.trim()).map((mobile, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white px-2 py-1 rounded border">
+                        <div className="flex-1">
+                          <div className="text-xs font-medium text-black">
+                            {mobile.name ? `${mobile.name}` : `Mobile ${index + 1}`}
+                          </div>
+                          <div className="text-xs text-black">{mobile.number}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {mobile.isMain && (
+                            <span className="px-2 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
+                              Main
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(mobile.number, `mobile${index + 1}`)}
+                            className="text-gray-400 hover:text-black transition-colors"
+                            title="Copy mobile number"
+                            aria-label={`Copy mobile number ${index + 1}`}
+                          >
+                            {copiedField === `mobile${index + 1}` ? (
+                              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Notes */}
-              {lead.notes && (
+              {/* Dynamic Fields Section */}
+              {customColumns.length > 0 && (
                 <div className="bg-gray-50 p-2 rounded-md">
-                  <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
-                  <p className="text-xs font-medium text-black break-words">{lead.notes}</p>
+                  <label className="block text-xs font-medium text-black mb-1">Additional Information</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {customColumns.map((column) => {
+                      const value = (lead as unknown as Record<string, unknown>)[column.fieldKey] as unknown;
+                      const displayValue = formatFieldValue(value, column.type);
+
+                      return (
+                        <div key={column.fieldKey} className="bg-white p-2 rounded border">
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="text-xs font-medium text-black">{column.label}</div>
+                            {displayValue !== 'N/A' && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(String(value), column.fieldKey)}
+                                className="text-gray-400 hover:text-black transition-colors"
+                                title={`Copy ${column.label}`}
+                                aria-label={`Copy ${column.label} to clipboard`}
+                              >
+                                {copiedField === column.fieldKey ? (
+                                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-xs text-black">{displayValue}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              {/* Last Activity Date */}
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
-                <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(lead.lastActivityDate)}</p>
-              </div>
-            </div>
-
-            {/* Additional Numbers */}
-            {lead.mobileNumbers && lead.mobileNumbers.length > 0 && (
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">All Mobile Numbers</label>
-                <div className="space-y-1">
-                  {lead.mobileNumbers.filter(m => m.number && m.number.trim()).map((mobile, index) => (
-                    <div key={index} className="flex items-center justify-between bg-white px-2 py-1 rounded border">
-                      <div className="flex-1">
-                        <div className="text-xs font-medium text-black">
-                          {mobile.name ? `${mobile.name}` : `Mobile ${index + 1}`}
-                        </div>
-                        <div className="text-xs text-black">{mobile.number}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {mobile.isMain && (
-                          <span className="px-2 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
-                            Main
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(mobile.number, `mobile${index + 1}`)}
-                          className="text-gray-400 hover:text-black transition-colors"
-                          title="Copy mobile number"
-                          aria-label={`Copy mobile number ${index + 1}`}
-                        >
-                          {copiedField === `mobile${index + 1}` ? (
-                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+              {/* Final Conclusion */}
+              {lead.finalConclusion && (
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Final Conclusion</label>
+                  <p className="text-xs font-medium text-black break-words">{lead.finalConclusion}</p>
                 </div>
-              </div>
-            )}
-
-            {/* Dynamic Fields Section */}
-            {customColumns.length > 0 && (
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Additional Information</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {customColumns.map((column) => {
-                    const value = (lead as unknown as Record<string, unknown>)[column.fieldKey] as unknown;
-                    const displayValue = formatFieldValue(value, column.type);
-
-                    return (
-                      <div key={column.fieldKey} className="bg-white p-2 rounded border">
-                        <div className="flex justify-between items-center mb-1">
-                          <div className="text-xs font-medium text-black">{column.label}</div>
-                          {displayValue !== 'N/A' && (
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(String(value), column.fieldKey)}
-                              className="text-gray-400 hover:text-black transition-colors"
-                              title={`Copy ${column.label}`}
-                              aria-label={`Copy ${column.label} to clipboard`}
-                            >
-                              {copiedField === column.fieldKey ? (
-                                <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              ) : (
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        <div className="text-xs text-black">{displayValue}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Final Conclusion */}
-            {lead.finalConclusion && (
-              <div className="bg-gray-50 p-2 rounded-md">
-                <label className="block text-xs font-medium text-black mb-1">Final Conclusion</label>
-                <p className="text-xs font-medium text-black break-words">{lead.finalConclusion}</p>
-              </div>
-            )}
+              )}
 
             </div>
           </div>
@@ -486,7 +526,7 @@ export default function LeadDetailModal({
           {/* Modal Footer */}
           <div className="flex justify-between items-center mt-3 pt-2 border-t">
             <div className="flex space-x-2">
-              <button 
+              <button
                 type="button"
                 onClick={() => {
                   // Build dynamic fields info
@@ -500,7 +540,7 @@ export default function LeadDetailModal({
 
                   const allInfo = `Phone: ${(() => {
                     const phoneNumber = getPrimaryPhoneNumber(lead);
-                    const contactName = lead.mobileNumbers && lead.mobileNumbers.length > 0 
+                    const contactName = lead.mobileNumbers && lead.mobileNumbers.length > 0
                       ? lead.mobileNumbers.find(m => m.isMain)?.name || lead.clientName || 'N/A'
                       : lead.clientName || 'N/A';
                     return `${phoneNumber} - ${contactName}`;
@@ -534,8 +574,8 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                   </>
                 )}
               </button>
-              
-              <button 
+
+              <button
                 type="button"
                 onClick={() => handleScriptGeneration(lead)}
                 className="px-3 py-1 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors flex items-center space-x-1"
@@ -558,21 +598,21 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                   </>
                 )}
               </button>
-              
-              <button 
+
+              <button
                 type="button"
                 onClick={() => handleWhatsAppRedirect(lead)}
                 className="px-3 py-1 text-xs font-medium text-white bg-green-600 border border-transparent rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors flex items-center space-x-1"
                 aria-label="Open WhatsApp chat"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488" />
                 </svg>
                 <span>WhatsApp</span>
               </button>
             </div>
             <div className="flex space-x-2">
-              <button 
+              <button
                 type="button"
                 onClick={onClose}
                 className="px-3 py-1 text-xs font-medium text-black bg-gray-100 border border-gray-300 rounded hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors"
@@ -580,7 +620,33 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
               >
                 Close
               </button>
-              <button 
+
+              {/* Conversion Button */}
+              {canConvert && !lead.convertedToCaseId && (
+                <button
+                  type="button"
+                  onClick={handleConvertToCase}
+                  disabled={isConverting}
+                  className="px-3 py-1 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors disabled:opacity-50"
+                  aria-label="Convert to Case"
+                >
+                  {isConverting ? 'Converting...' : 'Convert to Case'}
+                </button>
+              )}
+
+              {/* View Case Button (if already converted) */}
+              {lead.convertedToCaseId && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/case-details?id=${lead.convertedToCaseId}`)}
+                  className="px-3 py-1 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors"
+                  aria-label="View Case"
+                >
+                  View Case
+                </button>
+              )}
+
+              <button
                 type="button"
                 onClick={() => onEdit(lead)}
                 className="px-3 py-1 text-xs font-medium text-white bg-blue-600 border border-transparent rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
@@ -602,7 +668,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
           </div>
         </div>
       </div>
-      
+
       {/* Script Preview Modal */}
       {showScriptModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -719,7 +785,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                 </button>
               </div>
             </div>
-            
+
             <div className="mb-4">
               <div className="bg-gray-50 p-4 rounded-lg border">
                 {isEditingScript ? (
@@ -729,7 +795,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                     aria-label="Edit call script"
                     title="Edit call script"
                     placeholder="Edit call script..."
-                    className="w-full min-h-[220px] bg-white border border-gray-300 rounded-md p-3 text-black text-base leading-relaxed gujarati-text focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 whitespace-pre-wrap"
+                    className="w-full min-h-[220px] bg-white border border-gray-300 rounded-md p-3 text-black text-base leading-relaxed gujarati-text focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 whitespace-pre-wrap placeholder-black"
                   />
                 ) : (
                   <p className="text-gray-800 leading-relaxed gujarati-text text-lg whitespace-pre-line text-left" dir="ltr">
@@ -738,7 +804,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                 )}
               </div>
             </div>
-            
+
             <div className="flex justify-between">
               <div className="flex space-x-3">
                 <button
@@ -790,7 +856,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
           </div>
         </div>
       )}
-      
+
       {/* Settings Modal */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -809,7 +875,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                 </svg>
               </button>
             </div>
-            
+
             <div className="mb-4">
               <label htmlFor="consultantName" className="block text-sm font-medium text-gray-700 mb-2">
                 Subsidy Consultant Name
@@ -826,7 +892,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                 This name will be used in generated call scripts
               </p>
             </div>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
@@ -848,7 +914,7 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
           </div>
         </div>
       )}
-      
+
       {/* Quick Benefit Modal */}
       <QuickBenefitModal
         isOpen={showQuickBenefitModal}

@@ -100,6 +100,9 @@ export interface Lead {
   activities?: Activity[];
   mandateStatus?: 'Pending' | 'In Progress' | 'Completed';
   documentStatus?: 'Pending Documents' | 'Documents Submitted' | 'Documents Reviewed' | 'Signed Mandate';
+  // Process Management: Lead → Case conversion
+  convertedToCaseId?: string;    // If set, lead has been converted to a case
+  convertedAt?: string;          // Timestamp of conversion
 }
 
 /**

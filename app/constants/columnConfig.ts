@@ -4,7 +4,7 @@ import { Lead } from '../types/shared';
 // @deprecated Use getColumnOrder() from ColumnContext instead for dynamic column ordering
 export const COLUMN_ORDER: (keyof Lead)[] = [
   'kva',
-  'connectionDate', 
+  'connectionDate',
   'consumerNumber',
   'company',
   'clientName',
@@ -53,7 +53,9 @@ export const DEFAULT_HEADER_LABELS: Record<keyof Lead, string> = {
   isUpdated: 'Is Updated',
   activities: 'Activities',
   mandateStatus: 'Mandate Status',
-  documentStatus: 'Document Status'
+  documentStatus: 'Document Status',
+  convertedToCaseId: 'Converted To Case ID',
+  convertedAt: 'Converted At'
 };
 
 // Field types for validation and rendering
@@ -86,7 +88,9 @@ export const FIELD_TYPES: Record<keyof Lead, 'text' | 'date' | 'select' | 'numbe
   isUpdated: 'select',
   activities: 'text',
   mandateStatus: 'select',
-  documentStatus: 'select'
+  documentStatus: 'select',
+  convertedToCaseId: 'text',
+  convertedAt: 'date'
 };
 
 // Fields that support sorting
@@ -346,6 +350,20 @@ export const COLUMN_METADATA: Record<keyof Lead, {
     width: 150,
     description: 'Document status',
     options: ['Pending Documents', 'Documents Submitted', 'Documents Reviewed', 'Signed Mandate']
+  },
+  convertedToCaseId: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Converted Case ID'
+  },
+  convertedAt: {
+    type: 'date',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Date converted to case'
   }
 };
 
@@ -445,15 +463,15 @@ export const validateColumnName = (name: string, existingColumns: string[], fiel
   if (!name || name.trim().length === 0) {
     return 'Column name is required';
   }
-  
+
   if (name.length > 50) {
     return 'Column name must be 50 characters or less';
   }
-  
+
   if (existingColumns.includes(name) && existingColumns.indexOf(name) !== existingColumns.indexOf(fieldKey || '')) {
     return 'Column name already exists';
   }
-  
+
   return null;
 };
 
@@ -461,12 +479,12 @@ export const validateColumnType = (type: string): string | null => {
   if (!type) {
     return 'Column type is required';
   }
-  
+
   const validTypes = ['text', 'email', 'phone', 'number', 'date', 'select'];
   if (!validTypes.includes(type)) {
     return 'Invalid column type';
   }
-  
+
   return null;
 };
 
@@ -474,11 +492,11 @@ export const validateColumnDeletion = (fieldKey: string, requiredFields: string[
   if (requiredFields.includes(fieldKey)) {
     return 'Cannot delete required columns';
   }
-  
+
   if (!fieldKey) {
     return 'Field key is required';
   }
-  
+
   return null;
 };
 
@@ -505,7 +523,7 @@ export const restoreDataFromBackup = (backup: any[]): any[] => {
 export const getColumnWidth = (fieldKey: keyof Lead): string => {
   const metadata = COLUMN_METADATA[fieldKey];
   if (!metadata) return 'w-20';
-  
+
   if (metadata.width <= 80) return 'w-8';
   if (metadata.width <= 100) return 'w-10';
   if (metadata.width <= 120) return 'w-12';
@@ -524,20 +542,20 @@ export const validateColumnConfig = (config: any): string | null => {
   if (!config.fieldKey || !config.label) {
     return 'Field key and label are required';
   }
-  
+
   if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(config.fieldKey)) {
     return 'Field key must start with a letter and contain only letters, numbers, and underscores';
   }
-  
+
   const validTypes = ['text', 'email', 'phone', 'number', 'date', 'select'];
   if (!validTypes.includes(config.type)) {
     return 'Invalid column type';
   }
-  
+
   if (config.type === 'select' && (!config.options || config.options.length === 0)) {
     return 'Select columns must have at least one option';
   }
-  
+
   return null;
 };
 
@@ -562,7 +580,7 @@ export const formatColumnValue = (value: any, type: string): string => {
   if (value === null || value === undefined) {
     return '';
   }
-  
+
   switch (type) {
     case 'date':
       if (typeof value === 'string' && value.match(/^\d{2}-\d{2}-\d{4}$/)) {

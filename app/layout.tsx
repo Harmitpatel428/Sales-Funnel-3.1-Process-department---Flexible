@@ -6,6 +6,10 @@ import { PasswordProvider } from "./context/PasswordContext";
 import { ColumnProvider } from "./context/ColumnContext";
 import { HeaderProvider } from "./context/HeaderContext";
 import { NavigationProvider } from "./context/NavigationContext";
+import { UserProvider } from "./context/UserContext";
+import { CaseProvider } from "./context/CaseContext";
+import { DocumentProvider } from "./context/DocumentContext";
+import { TimelineProvider } from "./context/TimelineContext";
 import NavigationWrapper from "./components/NavigationWrapper";
 import EmployeeSetupWrapper from "./components/EmployeeSetupWrapper";
 
@@ -21,8 +25,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Enterprise Lead Management System",
-  description: "Professional Enterprise Lead Management & CRM System",
+  title: "Enterprise Lead & Process Management System",
+  description: "Professional Enterprise Lead Management & Process CRM System",
 };
 
 
@@ -37,22 +41,30 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
       >
         <LeadProvider>
-          <PasswordProvider>
-            <ColumnProvider>
-              <HeaderProvider>
-                <NavigationProvider>
-                  <EmployeeSetupWrapper>
-                    <div className="flex flex-col h-screen">
-                      <NavigationWrapper />
-                      <main className="flex-1 overflow-y-auto p-0">
-                        {children}
-                      </main>
-                    </div>
-                  </EmployeeSetupWrapper>
-                </NavigationProvider>
-              </HeaderProvider>
-            </ColumnProvider>
-          </PasswordProvider>
+          <UserProvider>
+            <CaseProvider>
+              <DocumentProvider>
+                <TimelineProvider>
+                  <PasswordProvider>
+                    <ColumnProvider>
+                      <HeaderProvider>
+                        <NavigationProvider>
+                          <EmployeeSetupWrapper>
+                            <div className="flex flex-col h-screen">
+                              <NavigationWrapper />
+                              <main className="flex-1 overflow-y-auto p-0">
+                                {children}
+                              </main>
+                            </div>
+                          </EmployeeSetupWrapper>
+                        </NavigationProvider>
+                      </HeaderProvider>
+                    </ColumnProvider>
+                  </PasswordProvider>
+                </TimelineProvider>
+              </DocumentProvider>
+            </CaseProvider>
+          </UserProvider>
         </LeadProvider>
       </body>
     </html>

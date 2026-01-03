@@ -11,21 +11,21 @@ let port = 3000;
 // Express server setup for production
 function createServer() {
   const expressApp = express();
-  
+
   // Serve static files from the packaged app
   const staticPath = path.join(process.resourcesPath, 'app');
   expressApp.use(express.static(staticPath));
-  
+
   // Fallback route for client-side routing
   expressApp.get('*', (req, res) => {
     res.sendFile(path.join(staticPath, 'index.html'));
   });
-  
+
   // Start server
   server = expressApp.listen(port, () => {
     console.log(`Express server running on port ${port}`);
   });
-  
+
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.log(`Port ${port} is in use, trying port ${port + 1}...`);
@@ -51,7 +51,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      spellcheck: false // Performance optimization for low-end systems
+      spellcheck: false,
+      preload: path.join(__dirname, 'preload.js')
     },
     title: 'Enterprise Lead Management System',
     show: false // Don't show until ready
@@ -195,4 +196,70 @@ app.on('web-contents-created', (event, contents) => {
   contents.on('new-window', (event, navigationUrl) => {
     event.preventDefault();
   });
+});
+
+// ============================================================================
+// IPC Handlers for File System Access
+// ============================================================================
+const fs = require('fs').promises;
+const { ipcMain } = require('electron');
+
+// Get Documents path
+ipcMain.handle('get-documents-path', async () => {
+  return app.getPath('userData'); // Use userData for app-specific files
+});
+
+// Join path segments
+ipcMain.handle('join-path', async (event, ...args) => {
+  return path.join(...args);
+});
+
+// Create directory
+ipcMain.handle('create-directory', async (event, dirPath) => {
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating directory:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Save file
+ipcMain.handle('save-file', async (event, filePath, content) => {
+  try {
+    // If content is base64 string (from file upload)
+    if (typeof content === 'string' && content.includes('base64,')) {
+      const base64Data = content.split('base64,')[1];
+      const buffer = Buffer.from(base64Data, 'base64');
+      await fs.writeFile(filePath, buffer);
+    } else {
+      await fs.writeFile(filePath, content);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Read file (returns base64 for images/docs)
+ipcMain.handle('read-file', async (event, filePath) => {
+  try {
+    const buffer = await fs.readFile(filePath);
+    return { success: true, data: buffer.toString('base64') };
+  } catch (error) {
+    console.error('Error reading file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if file exists
+ipcMain.handle('file-exists', async (event, filePath) => {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 });

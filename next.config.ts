@@ -4,24 +4,24 @@ const nextConfig: NextConfig = {
   // Export configuration for Electron
   output: 'export',
   trailingSlash: true,
-  
+
   // Performance optimizations
   experimental: {
     optimizePackageImports: ['framer-motion', 'lucide-react', 'recharts', 'dompurify', 'gsap'],
     webpackBuildWorker: true,
   },
-  
+
   // Image optimization
   images: {
     unoptimized: true,
     formats: ['image/webp', 'image/avif'],
     minimumCacheTTL: 60,
   },
-  
+
   // Compression and optimization
   compress: true,
   poweredByHeader: false,
-  
+
   // Bundle optimization
   webpack: (config, { isServer, dev }) => {
     if (!isServer) {
@@ -69,11 +69,11 @@ const nextConfig: NextConfig = {
             },
           },
         };
-        
+
         // Enable tree-shaking
         config.optimization.usedExports = true;
       }
-      
+
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -81,30 +81,8 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
-  
-  
-  // Headers for better caching
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-        ],
-      },
-    ];
-  },
+
+
 };
 
 export default process.env.ANALYZE === 'true'
