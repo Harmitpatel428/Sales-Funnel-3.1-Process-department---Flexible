@@ -2458,35 +2458,53 @@ export default function AllLeadsPage() {
       // Get filtered leads
       const leadsToExport = allLeads;
 
-      // Use dynamic export headers based on current column configuration
+      // COMPREHENSIVE EXPORT: Include ALL lead fields, not just visible columns
+      // Define all exportable fields with their labels
+      const allExportFields = [
+        { fieldKey: 'kva', label: 'KVA' },
+        { fieldKey: 'connectionDate', label: 'Connection Date', type: 'date' },
+        { fieldKey: 'consumerNumber', label: 'Consumer Number' },
+        { fieldKey: 'company', label: 'Company' },
+        { fieldKey: 'clientName', label: 'Client Name' },
+        { fieldKey: 'discom', label: 'Discom' },
+        { fieldKey: 'gidc', label: 'GIDC' },
+        { fieldKey: 'gstNumber', label: 'GST Number' },
+        { fieldKey: 'mobileNumber', label: 'Mobile Number' },
+        { fieldKey: 'mobileNumber2', label: 'Mobile Number 2' },
+        { fieldKey: 'contactName2', label: 'Contact Name 2' },
+        { fieldKey: 'mobileNumber3', label: 'Mobile Number 3' },
+        { fieldKey: 'contactName3', label: 'Contact Name 3' },
+        { fieldKey: 'companyLocation', label: 'Company Location' },
+        { fieldKey: 'unitType', label: 'Unit Type' },
+        { fieldKey: 'termLoan', label: 'Term Loan' },
+        { fieldKey: 'status', label: 'Status' },
+        { fieldKey: 'lastActivityDate', label: 'Last Activity Date', type: 'date' },
+        { fieldKey: 'followUpDate', label: 'Follow Up Date', type: 'date' },
+        { fieldKey: 'notes', label: 'Last Discussion' },
+        { fieldKey: 'finalConclusion', label: 'Final Conclusion' },
+        { fieldKey: 'mandateStatus', label: 'Mandate Status' },
+        { fieldKey: 'documentStatus', label: 'Document Status' },
+      ];
+
+      // Also add any custom columns from visible columns that aren't in the standard list
       const visibleColumns = getVisibleColumns();
-      const headers = visibleColumns.map(column => column.label);
+      const standardFieldKeys = allExportFields.map(f => f.fieldKey);
+      const customColumns = visibleColumns.filter(col => !standardFieldKeys.includes(col.fieldKey));
+
+      // Combine standard fields with custom columns
+      const allFields = [...allExportFields, ...customColumns.map(col => ({
+        fieldKey: col.fieldKey,
+        label: col.label,
+        type: col.type
+      }))];
+
+      const headers = allFields.map(field => field.label);
 
       // Add logging to track export headers
-      console.log('📤 Export Headers:', headers);
-      console.log('📤 Field Key to Label:', visibleColumns.map(c => ({ fieldKey: c.fieldKey, label: c.label })));
+      console.log('📤 Export Headers (ALL FIELDS):', headers);
+      console.log('📤 Total columns:', headers.length);
 
-      // Check if mobile number 2/3 fields are present in visible columns
-      const hasMobileNumber2 = visibleColumns.some(c => c.fieldKey === 'mobileNumber2');
-      const hasMobileNumber3 = visibleColumns.some(c => c.fieldKey === 'mobileNumber3');
-
-      // Check if any leads have multiple mobile numbers
-      const hasMultipleMobileNumbers = leadsToExport.some(lead =>
-        lead.mobileNumbers && lead.mobileNumbers.length > 1
-      );
-      const hasThreeMobileNumbers = leadsToExport.some(lead =>
-        lead.mobileNumbers && lead.mobileNumbers.length > 2
-      );
-
-      // Add mobile number 2/3 columns if not present but needed
-      if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
-        headers.push('Mobile Number 2', 'Contact Name 2');
-      }
-      if (!hasMobileNumber3 && hasThreeMobileNumbers) {
-        headers.push('Mobile Number 3', 'Contact Name 3');
-      }
-
-      // Convert leads to Excel rows with remapped data
+      // Convert leads to Excel rows with ALL data
       const rows = leadsToExport.map(lead => {
         // Get mobile numbers and contacts
         const mobileNumbers = lead.mobileNumbers || [];
@@ -2494,11 +2512,10 @@ export default function AllLeadsPage() {
 
         // Format main mobile number (phone number only, no contact name)
         const mainMobileDisplay = mainMobile.number || '';
-        console.log('🔍 Export Debug - Lead:', lead.clientName, 'Main Mobile:', mainMobileDisplay);
 
-        // Map data according to visible columns
-        const rowData = visibleColumns.map(column => {
-          const fieldKey = column.fieldKey;
+        // Map data for ALL fields
+        const rowData = allFields.map(field => {
+          const fieldKey = field.fieldKey;
           const value = (lead as any)[fieldKey] ?? '';
 
           // Handle special field formatting
@@ -2515,6 +2532,10 @@ export default function AllLeadsPage() {
               return lead.clientName || '';
             case 'discom':
               return lead.discom || '';
+            case 'gidc':
+              return lead.gidc || '';
+            case 'gstNumber':
+              return lead.gstNumber || '';
             case 'mobileNumber':
               return mainMobileDisplay;
             case 'mobileNumber2':
@@ -2525,6 +2546,12 @@ export default function AllLeadsPage() {
               return mobileNumbers[1]?.name || '';
             case 'contactName3':
               return mobileNumbers[2]?.name || '';
+            case 'companyLocation':
+              return lead.companyLocation || '';
+            case 'unitType':
+              return lead.unitType || '';
+            case 'termLoan':
+              return lead.termLoan || '';
             case 'status':
               // Export full status value for round-trip compatibility
               return lead.status || 'New';
@@ -2532,48 +2559,27 @@ export default function AllLeadsPage() {
               return formatDateForExport(lead.lastActivityDate || '');
             case 'followUpDate':
               return formatDateForExport(lead.followUpDate || '');
+            case 'notes':
+              return lead.notes || '';
+            case 'finalConclusion':
+              return lead.finalConclusion || '';
+            case 'mandateStatus':
+              return lead.mandateStatus || '';
+            case 'documentStatus':
+              return lead.documentStatus || '';
             default:
               // Handle custom columns
-              if (column.type === 'date') {
+              if (field.type === 'date') {
                 return formatDateForExport(value);
               }
               return value || '';
           }
         });
 
-        // Add mobile number 2/3 data if not in visible columns but needed
-        if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
-          rowData.push(mobileNumbers[1]?.number || '', mobileNumbers[1]?.name || '');
-        }
-        if (!hasMobileNumber3 && hasThreeMobileNumbers) {
-          rowData.push(mobileNumbers[2]?.number || '', mobileNumbers[2]?.name || '');
-        }
-
         return rowData;
       });
 
-      // Add export validation using helper functions
-      const headerValidation = validateExportHeaders(headers);
-      const requiredValidation = validateRequiredHeaders(headers, leadsToExport);
-      const suggestions = getExportSuggestions(headers, leadsToExport);
-
-      if (headerValidation.warnings.length > 0) {
-        console.warn('⚠️ Export header warnings:', headerValidation.warnings);
-      }
-
-      if (requiredValidation.warnings.length > 0) {
-        console.warn('⚠️ Required header warnings:', requiredValidation.warnings);
-      }
-
-      if (suggestions.length > 0) {
-        console.log('💡 Export suggestions:', suggestions);
-      }
-
-      if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
-        console.warn('⚠️ Mobile Number 2/3 fields missing from visible columns but leads have multiple mobile numbers');
-      }
-
-      console.log('📤 Exporting', leadsToExport.length, 'leads with', headers.length, 'columns');
+      console.log('📤 Exporting', leadsToExport.length, 'leads with', headers.length, 'columns (ALL FIELDS)');
 
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
@@ -2587,7 +2593,7 @@ export default function AllLeadsPage() {
 
       // Show success notification
       setShowToast(true);
-      setToastMessage(`Successfully exported ${leadsToExport.length} leads to Excel format`);
+      setToastMessage(`Successfully exported ${leadsToExport.length} leads with ALL fields (${headers.length} columns)`);
       setToastType('success');
 
       // Auto-hide toast after 5 seconds
