@@ -12,14 +12,14 @@ export default function AddLeadPage() {
   const { addLead, updateLead, leads, addActivity } = useLeads();
   const { getVisibleColumns } = useColumns();
   const { validateLeadField, validateMobileNumbers, validateCustomUnitType } = useValidation();
-  
+
   // Define permanent fields that should always appear in the form
   const permanentFields = ['mobileNumbers', 'mobileNumber', 'unitType', 'status', 'followUpDate', 'companyLocation', 'notes', 'lastActivityDate'];
-  
+
   // Track where the user came from
   const [cameFromHome, setCameFromHome] = useState(false);
   const [sourcePage, setSourcePage] = useState<string>('');
-  
+
   const [formData, setFormData] = useState({
     mobileNumber: '', // Keep for backward compatibility
     mobileNumbers: [
@@ -104,7 +104,7 @@ export default function AddLeadPage() {
     if (!notes || !notes.includes('Address:')) {
       return { address: '', cleanNotes: notes };
     }
-    
+
     // More comprehensive regex to catch different address formats
     const addressMatch = notes.match(/Address:\s*(.+?)(?:\s*\||\s*$)/i);
     if (addressMatch && addressMatch[1]) {
@@ -115,7 +115,7 @@ export default function AddLeadPage() {
       cleanNotes = cleanNotes.replace(/\|\s*$/, '').replace(/\s+$/, '').trim();
       return { address, cleanNotes };
     }
-    
+
     return { address: '', cleanNotes: notes };
   };
 
@@ -128,7 +128,7 @@ export default function AddLeadPage() {
     setToastMessage(message);
     setToastType(type);
     setShowToast(true);
-    
+
     // Auto-hide after 4 seconds
     setTimeout(() => {
       setShowToast(false);
@@ -142,29 +142,29 @@ export default function AddLeadPage() {
     const from = searchParams.get('from');
     const tab = searchParams.get('tab');
     const id = searchParams.get('id');
-    
+
     console.log('🔍 Add-lead page params:', { mode, from, tab, id, leadsCount: leads.length });
-    
+
     // Check if user came from home page
     if (from === 'home') {
       setCameFromHome(true);
     }
-    
+
     // Store source page for navigation back
     if (from) {
       setSourcePage(from);
     }
-    
+
     // Store tab information for proper navigation back
     if (tab) {
       localStorage.setItem('returnTab', tab);
     }
-    
+
     if (mode === 'edit') {
       console.log('🔍 Edit mode detected, looking for lead data...');
       const storedLead = localStorage.getItem('editingLead');
       console.log('🔍 Stored lead in localStorage:', storedLead ? 'exists' : 'not found');
-      
+
       if (storedLead) {
         try {
           const leadData = JSON.parse(storedLead);
@@ -172,15 +172,15 @@ export default function AddLeadPage() {
           setEditingLeadId(leadData.id);
           // Extract address from notes if it exists
           const { address, cleanNotes } = extractAddressFromNotes(leadData.notes || '');
-          
+
           // Handle mobile numbers - convert old format to new format if needed
           const mobileNumbers: MobileNumber[] = buildMobileNumbersFromLead(leadData);
-          
+
           if (process.env.NODE_ENV === 'development') {
             console.log('Mobile numbers being set:', mobileNumbers); // Debug log
             console.log('Lead data discom:', leadData.discom); // Debug log for discom
           }
-          
+
           // Determine primary mobile number with all known key variants to hydrate the legacy field
           const primaryMobileNumber = mobileNumbers.find(m => m.isMain && m.number)?.number
             || sanitizePhone(leadData.mobileNumber)
@@ -199,7 +199,7 @@ export default function AddLeadPage() {
           // Handle custom unit type for editing
           const unitType = leadData.unitType || 'New';
           const isCustomUnitType = !['New', 'Existing', 'Other'].includes(unitType);
-          
+
           setFormData({
             mobileNumber: primaryMobileNumber, // Keep for backward compatibility
             mobileNumbers: mobileNumbers,
@@ -211,23 +211,23 @@ export default function AddLeadPage() {
             finalConclusion: leadData.finalConclusion || '',
             notes: cleanNotes || '', // Use clean notes without address
           });
-          
+
           // Set custom unit type if it's a custom value
           if (isCustomUnitType) {
             setCustomUnitType(unitType);
           }
-          
+
           // Load custom fields from lead data
           const visibleColumns = getVisibleColumns();
           const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
           const customFieldValues: Record<string, any> = {};
-          
+
           customColumns.forEach(column => {
             if (leadData[column.fieldKey as keyof Lead] !== undefined) {
               customFieldValues[column.fieldKey] = leadData[column.fieldKey as keyof Lead];
             }
           });
-          
+
           setCustomFields(customFieldValues);
         } catch (error) {
           console.error('Error parsing stored lead data:', error);
@@ -236,26 +236,26 @@ export default function AddLeadPage() {
         console.log('🔍 No stored lead, but found ID in URL, searching leads...', id);
         const leadData = leads.find(lead => lead.id === id);
         console.log('🔍 Found lead by ID:', leadData ? 'yes' : 'no');
-        
+
         if (leadData) {
           console.log('🔍 Setting up edit mode with lead from context...');
           setIsEditMode(true);
           setEditingLeadId(leadData.id);
           // Extract address from notes if it exists
           const { address, cleanNotes } = extractAddressFromNotes(leadData.notes || '');
-          
+
           // Handle mobile numbers - convert old format to new format if needed
           const mobileNumbers: MobileNumber[] = buildMobileNumbersFromLead(leadData);
-          
+
           if (process.env.NODE_ENV === 'development') {
             console.log('Mobile numbers being set:', mobileNumbers); // Debug log
             console.log('Lead data discom:', leadData.discom); // Debug log for discom
           }
-          
+
           // Handle custom unit type for editing
           const unitType = leadData.unitType || 'New';
           const isCustomUnitType = !['New', 'Existing', 'Other'].includes(unitType);
-          
+
           setFormData({
             mobileNumber: leadData.mobileNumber || '', // Keep for backward compatibility
             mobileNumbers: mobileNumbers,
@@ -267,23 +267,23 @@ export default function AddLeadPage() {
             finalConclusion: leadData.finalConclusion || '',
             notes: cleanNotes || '', // Use clean notes without address
           });
-          
+
           // Set custom unit type if it's a custom value
           if (isCustomUnitType) {
             setCustomUnitType(unitType);
           }
-          
+
           // Load custom fields from lead data
           const visibleColumns = getVisibleColumns();
           const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
           const customFieldValues: Record<string, any> = {};
-          
+
           customColumns.forEach(column => {
             if (leadData[column.fieldKey as keyof Lead] !== undefined) {
               customFieldValues[column.fieldKey] = leadData[column.fieldKey as keyof Lead];
             }
           });
-          
+
           setCustomFields(customFieldValues);
           console.log('🔍 Edit mode setup complete with lead from context');
         }
@@ -291,7 +291,7 @@ export default function AddLeadPage() {
         console.log('🔍 No lead data found - neither in localStorage nor by ID');
       }
     }
-    
+
     setIsHydrated(true);
   }, [leads]);
 
@@ -301,7 +301,7 @@ export default function AddLeadPage() {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 useEffect: Attempting auto-detection for mobile:', formData.mobileNumbers[0].number);
       }
-      
+
       const existingLead = leads.find(lead => {
         // Check main mobile number (backward compatibility)
         if (lead.mobileNumber && lead.mobileNumber.trim() === formData.mobileNumbers[0]?.number) {
@@ -310,10 +310,10 @@ export default function AddLeadPage() {
           }
           return true;
         }
-        
+
         // Check mobile numbers array
         if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
-          const hasMatch = lead.mobileNumbers.some(m => 
+          const hasMatch = lead.mobileNumbers.some(m =>
             m.number && m.number.trim() === formData.mobileNumbers[0]?.number
           );
           if (hasMatch) {
@@ -323,10 +323,10 @@ export default function AddLeadPage() {
             return true;
           }
         }
-        
+
         return false;
       });
-      
+
       if (existingLead) {
         if (process.env.NODE_ENV === 'development') {
           console.log('🎉 useEffect: Auto-populating client name:', existingLead.clientName);
@@ -375,19 +375,19 @@ export default function AddLeadPage() {
           console.log('🔍 FORCE LOADING MOBILE NUMBERS:');
           console.log('🔍 leadData.mobileNumbers:', leadData.mobileNumbers);
           console.log('🔍 leadData.mobileNumber:', leadData.mobileNumber);
-          
+
           // Check if mobile numbers are empty and try to load them
           const hasEmptyNumbers = formData.mobileNumbers.every(m => !m.number || m.number.trim() === '');
-          
+
           if (hasEmptyNumbers) {
             console.log('🔍 Mobile numbers are empty, attempting to reload...');
-            
+
             const newMobileNumbers: MobileNumber[] = [
               { id: '1', number: '', name: '', isMain: true },
               { id: '2', number: '', name: '', isMain: false },
               { id: '3', number: '', name: '', isMain: false }
             ];
-            
+
             if (leadData.mobileNumbers && Array.isArray(leadData.mobileNumbers) && leadData.mobileNumbers.length > 0) {
               console.log('🔍 Reloading from mobileNumbers array');
               leadData.mobileNumbers.forEach((mobile: any, index: number) => {
@@ -402,16 +402,16 @@ export default function AddLeadPage() {
               });
             } else if (leadData.mobileNumber && leadData.mobileNumber.trim() !== '') {
               console.log('🔍 Reloading from mobileNumber field');
-              newMobileNumbers[0] = { 
-                id: '1', 
-                number: leadData.mobileNumber.trim(), 
-                name: leadData.clientName || '', 
-                isMain: true 
+              newMobileNumbers[0] = {
+                id: '1',
+                number: leadData.mobileNumber.trim(),
+                name: leadData.clientName || '',
+                isMain: true
               };
             }
-            
+
             console.log('🔍 New mobile numbers:', newMobileNumbers);
-            
+
             // Only update if we found actual numbers
             const hasNumbers = newMobileNumbers.some(m => m.number && m.number.trim() !== '');
             if (hasNumbers) {
@@ -487,7 +487,7 @@ export default function AddLeadPage() {
     // Validate custom fields based on column configuration
     const visibleColumns = getVisibleColumns();
     const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
-    
+
     customColumns.forEach(column => {
       if (column.required) {
         const value = customFields[column.fieldKey];
@@ -530,13 +530,13 @@ export default function AddLeadPage() {
   const handleMobileNumberChange = (index: number, value: string) => {
     // Only allow numeric characters (0-9) and limit to 10 digits
     const numericValue = value.replace(/[^0-9]/g, '').slice(0, 10);
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 Mobile number change:', { index, value, numericValue, leadsCount: leads.length });
     }
-    
+
     setFormData(prev => {
-      let updatedMobileNumbers = prev.mobileNumbers.map((mobile, i) => 
+      let updatedMobileNumbers = prev.mobileNumbers.map((mobile, i) =>
         i === index ? { ...mobile, number: numericValue } : mobile
       );
 
@@ -546,7 +546,7 @@ export default function AddLeadPage() {
           console.log('🎯 Auto-detection triggered for mobile:', numericValue);
           console.log('📊 Available leads:', leads.length);
         }
-        
+
         // Try to find existing lead with this mobile number
         const existingLead = leads.find(lead => {
           // Check main mobile number (backward compatibility)
@@ -556,10 +556,10 @@ export default function AddLeadPage() {
             }
             return true;
           }
-          
+
           // Check mobile numbers array
           if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
-            const hasMatch = lead.mobileNumbers.some(m => 
+            const hasMatch = lead.mobileNumbers.some(m =>
               m.number && m.number.trim() === numericValue
             );
             if (hasMatch) {
@@ -569,18 +569,18 @@ export default function AddLeadPage() {
               return true;
             }
           }
-          
+
           return false;
         });
-        
+
         if (existingLead) {
           if (process.env.NODE_ENV === 'development') {
             console.log('🎉 Auto-populating client name:', existingLead.clientName);
           }
-          
+
           // Also auto-populate the first mobile number's name if it's empty
           if (updatedMobileNumbers[0] && !updatedMobileNumbers[0].name.trim()) {
-            updatedMobileNumbers = updatedMobileNumbers.map((mobile, i) => 
+            updatedMobileNumbers = updatedMobileNumbers.map((mobile, i) =>
               i === 0 ? { ...mobile, name: existingLead.clientName } : mobile
             );
           }
@@ -604,7 +604,7 @@ export default function AddLeadPage() {
           return true;
         }
         if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
-          return lead.mobileNumbers.some(m => 
+          return lead.mobileNumbers.some(m =>
             m.number && m.number.trim() === numericValue
           );
         }
@@ -634,7 +634,7 @@ export default function AddLeadPage() {
   const handleMobileNameChange = (index: number, value: string) => {
     setFormData(prev => ({
       ...prev,
-      mobileNumbers: prev.mobileNumbers.map((mobile, i) => 
+      mobileNumbers: prev.mobileNumbers.map((mobile, i) =>
         i === index ? { ...mobile, name: value } : mobile
       )
     }));
@@ -645,7 +645,7 @@ export default function AddLeadPage() {
     // Get column configuration for validation
     const visibleColumns = getVisibleColumns();
     const columnConfig = visibleColumns.find(col => col.fieldKey === fieldKey);
-    
+
     // Basic validation based on column type
     let validatedValue = value;
     if (columnConfig) {
@@ -662,7 +662,7 @@ export default function AddLeadPage() {
         }
       }
     }
-    
+
     setCustomFields(prev => ({
       ...prev,
       [fieldKey]: validatedValue
@@ -687,14 +687,14 @@ export default function AddLeadPage() {
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ): void => {
     const { name, value } = e.target;
-    
+
     // If notes are being changed, automatically extract address
     if (name === 'notes') {
       const { address, cleanNotes } = extractAddressFromNotes(value);
-      
+
       // Auto-capitalize the first letter of the notes
       const capitalizedNotes = cleanNotes.charAt(0).toUpperCase() + cleanNotes.slice(1);
-      
+
       setFormData(prev => ({
         ...prev,
         [name]: capitalizedNotes, // Use capitalized clean notes without address
@@ -709,7 +709,7 @@ export default function AddLeadPage() {
 
         // Auto-populate first mobile number's name when client name is entered
         if (name === 'clientName' && value.trim() && prev.mobileNumbers && prev.mobileNumbers[0] && !prev.mobileNumbers[0].name.trim()) {
-          updatedFormData.mobileNumbers = prev.mobileNumbers.map((mobile, index) => 
+          updatedFormData.mobileNumbers = prev.mobileNumbers.map((mobile, index) =>
             index === 0 ? { ...mobile, name: value.trim() } : mobile
           );
         }
@@ -737,7 +737,7 @@ export default function AddLeadPage() {
   // Handle form submission
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
@@ -751,14 +751,14 @@ export default function AddLeadPage() {
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const year = now.getFullYear();
       const currentDate = day + '-' + month + '-' + year;
-      
+
       if (isEditMode && editingLeadId) {
         // Get main mobile number for backward compatibility
         const mainMobileNumber = formData.mobileNumbers.find(mobile => mobile.isMain)?.number || formData.mobileNumbers[0]?.number || '';
-        
+
         // Prevent overwrite during submit - exclude mobileNumber and companyLocation from customFields
         const { mobileNumber, companyLocation, ...restCustom } = customFields;
-        
+
         // Update existing lead with all current columns (permanent + custom)
         const updatedLead: Lead = {
           id: editingLeadId,
@@ -783,25 +783,25 @@ export default function AddLeadPage() {
           isDeleted: false,
           isUpdated: false,
           mandateStatus: 'Pending',
-          documentStatus: formData.status === 'Mandate Sent' ? 'Signed Mandate' : 
-                         formData.status === 'Documentation' ? 'Pending Documents' : 'Pending Documents',
+          documentStatus: formData.status === 'Mandate Sent' ? 'Signed Mandate' :
+            formData.status === 'Documentation' ? 'Pending Documents' : 'Pending Documents',
           // Include custom field values (excluding mobileNumber and companyLocation)
           ...restCustom
         };
-        
+
         // Simulate API call delay
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         updateLead(updatedLead);
-        
+
         // Log lead edit activity
         addActivity(editingLeadId, 'Lead information updated', {
           activityType: 'edit'
         });
-        
+
         // Clear stored editing data
         localStorage.removeItem('editingLead');
-        
+
         // Check if we came from a modal and should return to it
         const modalReturnData = localStorage.getItem('modalReturnData');
         if (modalReturnData) {
@@ -816,13 +816,13 @@ export default function AddLeadPage() {
               'all-leads': '/all-leads',
               'dashboard': '/dashboard'
             };
-            
+
             // Handle tab-specific navigation for due-today
             let targetRoute = routeMap[modalSourcePage] || '/dashboard';
             if (modalSourcePage === 'due-today' && tab) {
               targetRoute = `/due-today?tab=${tab}`;
             }
-            
+
             router.push(targetRoute);
             localStorage.removeItem('modalReturnData');
             return;
@@ -831,7 +831,7 @@ export default function AddLeadPage() {
             localStorage.removeItem('modalReturnData');
           }
         }
-        
+
         // Navigate back to appropriate page
         if (cameFromHome) {
           router.push('/');
@@ -845,37 +845,37 @@ export default function AddLeadPage() {
             'all-leads': '/all-leads',
             'dashboard': '/dashboard'
           };
-          
+
           // Check if we have tab information for due-today
           const returnTab = localStorage.getItem('returnTab');
           let targetRoute = routeMap[sourcePage] || '/dashboard';
-          
+
           if (sourcePage === 'due-today' && returnTab) {
             targetRoute = `/due-today?tab=${returnTab}`;
             localStorage.removeItem('returnTab'); // Clean up after use
           }
-          
+
           // Show notification if follow-up date was cleared due to Work Alloted status
           if (formData.status === 'Work Alloted' && formData.followUpDate && formData.followUpDate.trim() !== '') {
             showToastNotification('Lead saved. Follow-up date was cleared because status is set to WAO.', 'info');
           }
-          
+
           router.push(targetRoute);
         } else {
           // Add a flag to indicate successful update
           localStorage.setItem('leadUpdated', 'true');
-          
+
           // Show notification if follow-up date was cleared due to Work Alloted status
           if (formData.status === 'Work Alloted' && formData.followUpDate && formData.followUpDate.trim() !== '') {
             showToastNotification('Lead saved. Follow-up date was cleared because status is set to WAO.', 'info');
           }
-          
+
           router.push('/dashboard');
         }
       } else {
         // Add new lead
         const leadId = generateId();
-        
+
         // Auto-populate contact name ONLY for the first mobile number (index 0) if no contact name is provided
         const updatedMobileNumbers = formData.mobileNumbers.map((mobile, index) => {
           // ONLY apply to the first mobile number (index 0) - regardless of isMain status
@@ -885,13 +885,13 @@ export default function AddLeadPage() {
           // For all other mobile numbers (index 1, 2, etc.), keep them exactly as they are
           return mobile;
         });
-        
+
         // Get main mobile number for backward compatibility
         const mainMobileNumber = updatedMobileNumbers.find(mobile => mobile.isMain)?.number || updatedMobileNumbers[0]?.number || '';
-        
+
         // Prevent overwrite during submit - exclude mobileNumber and companyLocation from customFields
         const { mobileNumber, companyLocation, ...restCustom } = customFields;
-        
+
         // Create lead with all current columns (permanent + custom)
         const newLead: Lead = {
           id: leadId,
@@ -916,8 +916,8 @@ export default function AddLeadPage() {
           isDeleted: false,
           isUpdated: false,
           mandateStatus: 'Pending',
-          documentStatus: formData.status === 'Mandate Sent' ? 'Signed Mandate' : 
-                         formData.status === 'Documentation' ? 'Pending Documents' : 'Pending Documents',
+          documentStatus: formData.status === 'Mandate Sent' ? 'Signed Mandate' :
+            formData.status === 'Documentation' ? 'Pending Documents' : 'Pending Documents',
           activities: [{
             id: generateId(),
             leadId: leadId,
@@ -929,23 +929,23 @@ export default function AddLeadPage() {
           // Include custom field values (excluding mobileNumber and companyLocation)
           ...restCustom
         };
-        
+
         // Simulate API call delay
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Get current column configuration to ensure all fields have defaults
         const visibleColumns = getVisibleColumns();
-        
+
         addLead(newLead, visibleColumns);
-        
+
         // Log lead creation activity
         addActivity(newLead.id, 'Lead created', {
           activityType: 'created'
         });
-        
+
         // Set flag to notify dashboard of successful lead addition
         localStorage.setItem('leadAdded', 'true');
-        
+
         // Reset form after successful submission
         setFormData({
           mobileNumber: '', // Keep for backward compatibility
@@ -962,10 +962,10 @@ export default function AddLeadPage() {
           finalConclusion: '',
           notes: '',
         });
-        
+
         // Reset custom fields
         setCustomFields({});
-        
+
         // Navigate back to appropriate page
         if (cameFromHome) {
           router.push('/');
@@ -979,32 +979,32 @@ export default function AddLeadPage() {
             'all-leads': '/all-leads',
             'dashboard': '/dashboard'
           };
-          
+
           // Check if we have tab information for due-today
           const returnTab = localStorage.getItem('returnTab');
           let targetRoute = routeMap[sourcePage] || '/dashboard';
-          
+
           if (sourcePage === 'due-today' && returnTab) {
             targetRoute = `/due-today?tab=${returnTab}`;
             localStorage.removeItem('returnTab'); // Clean up after use
           }
-          
+
           // Show notification if follow-up date was cleared due to Work Alloted status
           if (formData.status === 'Work Alloted' && formData.followUpDate && formData.followUpDate.trim() !== '') {
             showToastNotification('Lead saved. Follow-up date was cleared because status is set to WAO.', 'info');
           }
-          
+
           router.push(targetRoute);
         } else {
           // Show notification if follow-up date was cleared due to Work Alloted status
           if (formData.status === 'Work Alloted' && formData.followUpDate && formData.followUpDate.trim() !== '') {
             showToastNotification('Lead saved. Follow-up date was cleared because status is set to WAO.', 'info');
           }
-          
+
           router.push('/dashboard');
         }
       }
-      
+
     } catch (error) {
       console.error('Error saving lead:', error);
       alert('Error saving lead. Please try again.');
@@ -1018,7 +1018,7 @@ export default function AddLeadPage() {
     if (isEditMode) {
       localStorage.removeItem('editingLead');
     }
-    
+
     // Check if we came from a modal and should return to it
     const modalReturnData = localStorage.getItem('modalReturnData');
     if (modalReturnData) {
@@ -1033,13 +1033,13 @@ export default function AddLeadPage() {
           'all-leads': '/all-leads',
           'dashboard': '/dashboard'
         };
-        
+
         // Handle tab-specific navigation for due-today
         let targetRoute = routeMap[modalSourcePage] || '/dashboard';
         if (modalSourcePage === 'due-today' && tab) {
           targetRoute = `/due-today?tab=${tab}`;
         }
-        
+
         router.push(targetRoute);
         localStorage.removeItem('modalReturnData');
         return;
@@ -1048,7 +1048,7 @@ export default function AddLeadPage() {
         localStorage.removeItem('modalReturnData');
       }
     }
-    
+
     // Navigate back to appropriate page (original logic)
     if (cameFromHome) {
       router.push('/');
@@ -1093,32 +1093,32 @@ export default function AddLeadPage() {
     console.log('🔧 Auto-Detect button clicked!');
     console.log('📱 First mobile number:', formData.mobileNumbers[0]?.number);
     console.log('📊 Available leads:', leads.length);
-    
+
     // Check if first mobile number exists and is complete
     const firstMobileNumber = formData.mobileNumbers[0]?.number?.trim();
-    
+
     if (!firstMobileNumber) {
       console.log('❌ No mobile number entered in first contact box');
       return;
     }
-    
+
     if (firstMobileNumber.length !== 10) {
       console.log('❌ Mobile number is not complete (10 digits required)');
       return;
     }
-    
+
     console.log('🔍 Searching for mobile number:', firstMobileNumber);
-    
+
     // Search through all leads for matching mobile number
     const existingLead = leads.find(lead => {
       console.log('🔍 Checking lead:', lead.clientName, 'with mobile:', lead.mobileNumber);
-      
+
       // Check main mobile number (backward compatibility)
       if (lead.mobileNumber && lead.mobileNumber.trim() === firstMobileNumber) {
         console.log('✅ Found match in main mobile number:', lead.clientName);
         return true;
       }
-      
+
       // Check mobile numbers array
       if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
         const hasMatch = lead.mobileNumbers.some(m => {
@@ -1130,27 +1130,27 @@ export default function AddLeadPage() {
           return true;
         }
       }
-      
+
       return false;
     });
-    
+
     if (existingLead) {
       console.log('🎉 Auto-populating client name:', existingLead.clientName);
       setFormData(prev => ({
         ...prev,
         clientName: existingLead.clientName
       }));
-      
+
       // Also auto-populate the first mobile number's name if it's empty
       if (formData.mobileNumbers[0] && !formData.mobileNumbers[0].name.trim()) {
         setFormData(prev => ({
           ...prev,
-          mobileNumbers: prev.mobileNumbers.map((mobile, index) => 
+          mobileNumbers: prev.mobileNumbers.map((mobile, index) =>
             index === 0 ? { ...mobile, name: existingLead.clientName } : mobile
           )
         }));
       }
-      
+
       console.log('✅ Client name auto-detected:', existingLead.clientName);
     } else {
       console.log('❌ No matching lead found for mobile:', firstMobileNumber);
@@ -1176,7 +1176,7 @@ export default function AddLeadPage() {
             </svg>
           </button>
         </div>
-        
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-2 pb-2" noValidate>
           {/* Basic Information Section */}
@@ -1209,9 +1209,8 @@ export default function AddLeadPage() {
                             type="text"
                             value={mobile?.number || ''}
                             onChange={(e) => handleMobileNumberChange(index, e.target.value)}
-                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black ${
-                              errors[`mobileNumber_${index}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                            }`}
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black ${errors[`mobileNumber_${index}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                              }`}
                             placeholder={`Mobile ${index + 1}`}
                             disabled={isSubmitting}
                             pattern="[0-9]*"
@@ -1223,15 +1222,13 @@ export default function AddLeadPage() {
                           type="button"
                           onClick={() => handleMainMobileNumberChange(index)}
                           disabled={isSubmitting}
-                          className={`flex items-center space-x-1 px-1 py-1 text-xs rounded border transition-all duration-200 ${
-                            mobile.isMain
+                          className={`flex items-center space-x-1 px-1 py-1 text-xs rounded border transition-all duration-200 ${mobile.isMain
                               ? 'border-purple-500 bg-purple-50 text-purple-700'
                               : 'border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:bg-purple-25'
-                          }`}
+                            }`}
                         >
-                          <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${
-                            mobile.isMain ? 'border-purple-500 bg-purple-500' : 'border-gray-400'
-                          }`}>
+                          <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${mobile.isMain ? 'border-purple-500 bg-purple-500' : 'border-gray-400'
+                            }`}>
                             {mobile.isMain && (
                               <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                             )}
@@ -1286,7 +1283,7 @@ export default function AddLeadPage() {
                   disabled={isSubmitting}
                 />
               </div>
-              
+
               <div className="space-y-1">
                 <label htmlFor="unitType" className="block text-[11px] font-medium text-black">
                   Unit Type <span className="text-red-500">*</span>
@@ -1310,9 +1307,8 @@ export default function AddLeadPage() {
                     placeholder="Enter custom unit type..."
                     value={customUnitType}
                     onChange={(e) => setCustomUnitType(e.target.value)}
-                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs mt-1 ${
-                      errors.unitType ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
+                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs mt-1 ${errors.unitType ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
                     disabled={isSubmitting}
                     required
                   />
@@ -1321,7 +1317,7 @@ export default function AddLeadPage() {
                   <p className="text-red-500 text-xs mt-1">{errors.unitType}</p>
                 )}
               </div>
-              
+
               <div className="space-y-1">
                 <label htmlFor="status" className="block text-[11px] font-medium text-black">
                   Lead Status <span className="text-red-500">*</span>
@@ -1349,7 +1345,7 @@ export default function AddLeadPage() {
                   <option value="Others">Others</option>
                 </select>
               </div>
-              
+
               <div className="space-y-1">
                 <label htmlFor="lastActivityDate" className="block text-[11px] font-medium text-black">
                   Last Activity Date
@@ -1381,15 +1377,14 @@ export default function AddLeadPage() {
                         }));
                       }
                     }}
-                    className={`w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${
-                      isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''
-                    }`}
+                    className={`w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''
+                      }`}
                     disabled={isSubmitting || isEditMode}
                     readOnly={isEditMode}
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-1">
                 <label htmlFor="followUpDate" className="block text-[11px] font-medium text-black">
                   Next Follow-up Date
@@ -1433,9 +1428,8 @@ export default function AddLeadPage() {
                       }
                     }}
                     min={new Date().toISOString().split('T')[0]}
-                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${
-                      errors.followUpDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
+                    className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${errors.followUpDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
                     disabled={isSubmitting}
                     required={formData.status === 'WOA'}
                   />
@@ -1483,9 +1477,9 @@ export default function AddLeadPage() {
           {(() => {
             const visibleColumns = getVisibleColumns();
             const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
-            
+
             if (customColumns.length === 0) return null;
-            
+
             return (
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-black border-b border-gray-200 pb-1">
@@ -1498,21 +1492,20 @@ export default function AddLeadPage() {
                         {column.label}
                         {column.required && <span className="text-red-500">*</span>}
                       </label>
-                      
+
                       {column.type === 'text' && (
                         <input
                           type="text"
                           id={column.fieldKey}
                           value={customFields[column.fieldKey] || ''}
                           onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
-                          className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${
-                            errors[`custom_${column.fieldKey}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                          }`}
+                          className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${errors[`custom_${column.fieldKey}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                            }`}
                           placeholder={`Enter ${column.label.toLowerCase()}`}
                           disabled={isSubmitting}
                         />
                       )}
-                      
+
                       {column.type === 'date' && (
                         <input
                           type="date"
@@ -1540,7 +1533,7 @@ export default function AddLeadPage() {
                           disabled={isSubmitting}
                         />
                       )}
-                      
+
                       {column.type === 'select' && (
                         <select
                           id={column.fieldKey}
@@ -1557,7 +1550,7 @@ export default function AddLeadPage() {
                           ))}
                         </select>
                       )}
-                      
+
                       {column.type === 'number' && (
                         <input
                           type="number"
@@ -1569,7 +1562,7 @@ export default function AddLeadPage() {
                           disabled={isSubmitting}
                         />
                       )}
-                      
+
                       {column.type === 'email' && (
                         <input
                           type="email"
@@ -1581,7 +1574,7 @@ export default function AddLeadPage() {
                           disabled={isSubmitting}
                         />
                       )}
-                      
+
                       {column.type === 'phone' && (
                         <input
                           type="tel"
@@ -1597,7 +1590,7 @@ export default function AddLeadPage() {
                           disabled={isSubmitting}
                         />
                       )}
-                      
+
                       {/* Error display for custom fields */}
                       {errors[`custom_${column.fieldKey}` as keyof typeof formData] && (
                         <p className="text-xs text-red-600 flex items-center">
@@ -1613,17 +1606,16 @@ export default function AddLeadPage() {
               </div>
             );
           })()}
-          
+
           {/* Form Actions */}
           <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-200">
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`flex-1 sm:flex-none sm:px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm ${
-                isSubmitting
+              className={`flex-1 sm:flex-none sm:px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm ${isSubmitting
                   ? 'bg-gray-400 cursor-not-allowed text-white'
                   : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-              }`}
+                }`}
             >
               {isSubmitting ? (
                 <span className="flex items-center justify-center">
@@ -1637,7 +1629,7 @@ export default function AddLeadPage() {
                 isEditMode ? 'Update Lead' : 'Add Lead'
               )}
             </button>
-            
+
             <button
               type="button"
               onClick={handleCancel}
@@ -1649,15 +1641,14 @@ export default function AddLeadPage() {
           </div>
         </form>
       </div>
-      
+
       {/* Toast Notification */}
       {showToast && (
         <div className="fixed top-4 right-4 z-50">
-          <div className={`px-4 py-2 rounded-md shadow-lg ${
-            toastType === 'success' ? 'bg-green-500 text-white' :
-            toastType === 'error' ? 'bg-red-500 text-white' :
-            'bg-blue-500 text-white'
-          }`}>
+          <div className={`px-4 py-2 rounded-md shadow-lg ${toastType === 'success' ? 'bg-green-500 text-white' :
+              toastType === 'error' ? 'bg-red-500 text-white' :
+                'bg-blue-500 text-white'
+            }`}>
             {toastMessage}
           </div>
         </div>

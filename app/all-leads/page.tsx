@@ -20,25 +20,25 @@ const PasswordModal = lazy(() => import('../components/PasswordModal'));
 // Shared field mapping constants for import/export
 // @deprecated Use getExportHeaders from '../constants/exportUtils' instead for dynamic headers
 export const EXPORT_HEADERS = [
-  'con.no', 
-  'KVA', 
-  'Connection Date', 
-  'Company Name', 
-  'Client Name', 
+  'con.no',
+  'KVA',
+  'Connection Date',
+  'Company Name',
+  'Client Name',
   'Discom',
   'GIDC',
   'GST Number',
   'Unit Type',
-  'Main Mobile Number', 
-  'Lead Status', 
-  'Last Discussion', 
+  'Main Mobile Number',
+  'Lead Status',
+  'Last Discussion',
   'Address',
   'Next Follow-up Date',
   'Last Activity Date',
   'Term Loan',
-  'Mobile Number 2', 
-  'Contact Name 2', 
-  'Mobile Number 3', 
+  'Mobile Number 2',
+  'Contact Name 2',
+  'Mobile Number 3',
   'Contact Name 3'
 ] as const;
 
@@ -107,7 +107,7 @@ export default function AllLeadsPage() {
   // Memoized to avoid rebuilding on every cell mapping
   const fieldMapping = useMemo(() => {
     const dynamicMapping: Record<string, keyof Lead> = {};
-    
+
     // Load saved mappings from localStorage (highest priority)
     try {
       const savedMappings = localStorage.getItem('importColumnMappings');
@@ -116,8 +116,8 @@ export default function AllLeadsPage() {
         Object.entries(parsedMappings).forEach(([excelHeader, systemField]) => {
           dynamicMapping[normalizeHeader(excelHeader)] = systemField as keyof Lead;
           if (process.env.NODE_ENV === 'development') {
-          console.log(`📌 Applied saved mapping: '${excelHeader}' → '${systemField}'`);
-        }
+            console.log(`📌 Applied saved mapping: '${excelHeader}' → '${systemField}'`);
+          }
         });
       }
     } catch (error) {
@@ -125,20 +125,20 @@ export default function AllLeadsPage() {
         console.warn('Failed to load saved mappings:', error);
       }
     }
-    
+
     // Add current custom header names to the mapping
     Object.entries(headerConfig).forEach(([fieldKey, customLabel]) => {
       const labelLower = customLabel.toLowerCase().trim();
       const normalized = labelLower.replace(/\s+/g, ' '); // Normalize multiple spaces
       dynamicMapping[labelLower] = fieldKey as keyof Lead;
       dynamicMapping[normalized] = fieldKey as keyof Lead;
-      
+
       // Generate header variations using stringUtils
       const variations = getHeaderVariations(customLabel);
       variations.forEach(variation => {
         dynamicMapping[variation] = fieldKey as keyof Lead;
       });
-      
+
       // Add reverse mapping for exported headers
       // If a column label is customized, also map the original default label
       const defaultLabels: Record<string, string> = {
@@ -152,11 +152,11 @@ export default function AllLeadsPage() {
         'lastActivityDate': 'Last Activity Date',
         'followUpDate': 'Follow Up Date'
       };
-      
+
       if (defaultLabels[fieldKey]) {
         const defaultLabel = defaultLabels[fieldKey].toLowerCase();
         dynamicMapping[defaultLabel] = fieldKey as keyof Lead;
-        
+
         // Generate variations for default labels too
         const defaultVariations = getHeaderVariations(defaultLabels[fieldKey]);
         defaultVariations.forEach(variation => {
@@ -164,7 +164,7 @@ export default function AllLeadsPage() {
         });
       }
     });
-    
+
     // Add current column configuration to the mapping
     const visibleColumns = getVisibleColumns();
     visibleColumns.forEach(column => {
@@ -172,7 +172,7 @@ export default function AllLeadsPage() {
       const normalized = labelLower.replace(/\s+/g, ' '); // Normalize multiple spaces
       dynamicMapping[labelLower] = column.fieldKey as keyof Lead;
       dynamicMapping[normalized] = column.fieldKey as keyof Lead;
-      
+
       // Generate header variations using centralized function
       const variations = getHeaderVariations(column.label);
       variations.forEach(variation => {
@@ -203,7 +203,7 @@ export default function AllLeadsPage() {
       'contact name3': 'contactName3',
       'contact3 name': 'contactName3'
     };
-    
+
     Object.entries(mobileNumberMappings).forEach(([header, field]) => {
       dynamicMapping[header] = field as keyof Lead;
     });
@@ -217,34 +217,34 @@ export default function AllLeadsPage() {
       'connection number': 'consumerNumber',
       'consumer number': 'consumerNumber',
       'consumernumber': 'consumerNumber',
-      
+
       // KVA/Name variations
       'kva': 'kva',
       'name': 'kva',
       'full name': 'kva',
       'lead name': 'kva',
       'contact name': 'kva',
-      
+
       // Connection Date variations
       'connection date': 'connectionDate',
       'connectiondate': 'connectionDate',
-      
+
       // Company variations
       'company': 'company',
       'company name': 'company',
       'organization': 'company',
-      
+
       // Company Location variations
       'company location': 'companyLocation',
       'companylocation': 'companyLocation',
       'location': 'companyLocation',
       'address': 'companyLocation',
-      
+
       // Client Name variations
       'client name': 'clientName',
       'clientname': 'clientName',
       'client': 'clientName',
-      
+
       // Mobile Number variations
       'mo.no': 'mobileNumber',
       'mo.no.': 'mobileNumber',
@@ -258,12 +258,12 @@ export default function AllLeadsPage() {
       'contact phone': 'mobileNumber',
       'telephone': 'mobileNumber',
       'main mobile number': 'mobileNumber',
-      
+
       // Unit Type variations
       'unit type': 'unitType',
       'unittype': 'unitType',
       'type': 'unitType',
-      
+
       // Status variations
       'status': 'status',
       'lead status': 'status',
@@ -271,7 +271,7 @@ export default function AllLeadsPage() {
       'leadstatus': 'status',
       'lead_status': 'status',
       'lead-status': 'status',
-      
+
       // Follow-up Date variations
       'follow up date': 'followUpDate',
       'followup date': 'followUpDate',
@@ -296,7 +296,7 @@ export default function AllLeadsPage() {
       'reminderdate': 'followUpDate',
       'reminder_date': 'followUpDate',
       'reminder-date': 'followUpDate',
-      
+
       // Last Activity Date variations
       'last activity date': 'lastActivityDate',
       'lastactivitydate': 'lastActivityDate',
@@ -313,7 +313,7 @@ export default function AllLeadsPage() {
       'last contact date': 'lastActivityDate',
       'lastcontactdate': 'lastActivityDate',
       'last_contact_date': 'lastActivityDate',
-      
+
       // Notes variations
       'notes': 'notes',
       'discussion': 'notes',
@@ -325,19 +325,19 @@ export default function AllLeadsPage() {
       'comments': 'notes',
       'comment': 'notes',
       'description': 'notes',
-      
+
       // GIDC variations
       'gidc': 'gidc',
-      
+
       // Discom variations
       'discom': 'discom',
-      
+
       // GST Number variations
       'gst number': 'gstNumber',
       'gstnumber': 'gstNumber',
       'gst_number': 'gstNumber',
       'gst': 'gstNumber',
-      
+
       // Final Conclusion variations
       'final conclusion': 'finalConclusion',
       'finalconclusion': 'finalConclusion',
@@ -351,18 +351,18 @@ export default function AllLeadsPage() {
         dynamicMapping[header] = field as keyof Lead;
       }
     });
-    
+
     // Add logging for mapping conflicts
-    const duplicates = Object.entries(dynamicMapping).filter(([, v], i, arr) => 
+    const duplicates = Object.entries(dynamicMapping).filter(([, v], i, arr) =>
       arr.findIndex(([, v2]) => v === v2) !== i
     );
-    
+
     if (duplicates.length > 0) {
       if (process.env.NODE_ENV === 'development') {
         console.warn('⚠️ Duplicate mappings detected:', duplicates);
       }
     }
-    
+
     if (process.env.NODE_ENV === 'development') {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔍 Dynamic field mapping built:', dynamicMapping);
@@ -376,7 +376,7 @@ export default function AllLeadsPage() {
   // Fuzzy header matching function
   const fuzzyMatchHeader = useCallback((header: string, dynamicMapping: Record<string, keyof Lead>): { fieldKey: keyof Lead; matchType: 'exact' | 'fuzzy'; score: number } | null => {
     const headerLower = normalizeHeader(header);
-    
+
     // First try exact match
     if (dynamicMapping[headerLower]) {
       return {
@@ -385,11 +385,11 @@ export default function AllLeadsPage() {
         score: 1.0
       };
     }
-    
+
     // Try fuzzy matching with all available field keys
     const availableFields = Object.keys(dynamicMapping);
     const fuzzyMatch = findBestFuzzyMatch(headerLower, availableFields, 0.7);
-    
+
     if (fuzzyMatch) {
       if (process.env.NODE_ENV === 'development') {
         console.log(`🔍 Fuzzy matched '${header}' to '${fuzzyMatch.match}' (score: ${Math.round(fuzzyMatch.score * 100)}%)`);
@@ -403,7 +403,7 @@ export default function AllLeadsPage() {
         };
       }
     }
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log(`❌ No mapping found for header '${header}' (exact or fuzzy)`);
     }
@@ -412,10 +412,10 @@ export default function AllLeadsPage() {
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showLeadModal, setShowLeadModal] = useState(false);
-  
+
   // Bulk delete states
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
-  
+
   // Password modal states
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingDeleteOperation, setPendingDeleteOperation] = useState<{
@@ -423,30 +423,30 @@ export default function AllLeadsPage() {
     lead?: Lead;
     leadIds?: string[];
   } | null>(null);
-  
+
   // Export password modal state
   const [showExportPasswordModal, setShowExportPasswordModal] = useState<boolean>(false);
-  
+
   // Clean up pending delete operation when modal closes
   useEffect(() => {
     if (!showPasswordModal) {
       setPendingDeleteOperation(null);
     }
   }, [showPasswordModal]);
-  
+
   // Toast notification states
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
-  
+
   // Editable table states
   const [validationErrors, setValidationErrors] = useState<Record<string, Record<string, string>>>({});
-  
-  
+
+
   // Import progress tracking state
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
-  
+
   // Session verification state
   const [isSessionVerified, setIsSessionVerified] = useState(false);
 
@@ -456,16 +456,16 @@ export default function AllLeadsPage() {
       const isVerified = sessionStorage.getItem('verified_rowManagement');
       setIsSessionVerified(!!isVerified);
     };
-    
+
     checkSessionStatus();
-    
+
     // Listen for storage changes to update state when verification is added/removed
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'verified_rowManagement') {
         checkSessionStatus();
       }
     };
-    
+
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
@@ -475,7 +475,7 @@ export default function AllLeadsPage() {
     setToastMessage(message);
     setToastType(type);
     setShowToast(true);
-    
+
     // Auto-hide after 3 seconds
     setTimeout(() => {
       setShowToast(false);
@@ -495,7 +495,7 @@ export default function AllLeadsPage() {
       // Get current column configuration to validate dynamic fields
       const visibleColumns = getVisibleColumns();
       const columnConfig = visibleColumns.find(col => col.fieldKey === field);
-      
+
       if (process.env.NODE_ENV === 'development') {
         if (process.env.NODE_ENV === 'development') {
           console.log('🔧 Cell update debug:', { leadId, field, value, columnConfig });
@@ -567,21 +567,21 @@ export default function AllLeadsPage() {
   // Helper function to format date to DD-MM-YYYY
   const formatDateToDDMMYYYY = (dateString: string): string => {
     if (!dateString) return '';
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's a Date object or ISO string, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       return `${day}-${month}-${year}`;
     } catch {
       return dateString; // Return original if conversion fails
@@ -592,18 +592,18 @@ export default function AllLeadsPage() {
   // Dependencies use primitives and debounced search for optimal performance
   const allLeads = useMemo(() => {
     let filtered = leads; // Show all leads regardless of status or deletion status
-    
+
     if (debouncedSearch) {
       filtered = filtered.filter(lead => {
         const searchLower = debouncedSearch.toLowerCase();
-        
+
         // Check if it's a phone number search (only digits)
         if (/^\d+$/.test(debouncedSearch)) {
           const allMobileNumbers = [
             lead.mobileNumber,
             ...(lead.mobileNumbers || []).map(m => m.number)
           ];
-          
+
           for (const mobileNumber of allMobileNumbers) {
             if (mobileNumber) {
               const phoneDigits = mobileNumber.replace(/[^0-9]/g, '');
@@ -613,15 +613,15 @@ export default function AllLeadsPage() {
             }
           }
         }
-        
+
         // Regular text search
         const allMobileNumbers = [
           lead.mobileNumber,
           ...(lead.mobileNumbers || []).map(m => m.number)
         ].filter(Boolean);
-        
+
         const allMobileNames = (lead.mobileNumbers || []).map(m => m.name).filter(Boolean);
-        
+
         const searchableFields = [
           lead.clientName,
           lead.company,
@@ -635,21 +635,21 @@ export default function AllLeadsPage() {
           lead.finalConclusion,
           lead.status
         ].filter(Boolean).map(field => field?.toLowerCase());
-        
+
         return searchableFields.some(field => field?.includes(searchLower));
       });
     }
-    
+
     // Sort leads: deleted leads first, then completed leads, then active leads
     return filtered.sort((a, b) => {
       // If one is deleted and the other isn't, deleted goes first
       if (a.isDeleted && !b.isDeleted) return -1;
       if (!a.isDeleted && b.isDeleted) return 1;
-      
+
       // If both are deleted or both are not deleted, check completion status
       if (a.isDone && !b.isDone) return -1;
       if (!a.isDone && b.isDone) return 1;
-      
+
       // If both have same deletion and completion status, sort by lastActivityDate (most recent first)
       const dateA = new Date(a.lastActivityDate).getTime();
       const dateB = new Date(b.lastActivityDate).getTime();
@@ -690,7 +690,7 @@ export default function AllLeadsPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const returnToModal = urlParams.get('returnToModal');
     const leadId = urlParams.get('leadId');
-    
+
     if (returnToModal === 'true' && leadId) {
       // Find the lead and open the modal
       const lead = leads.find(l => l.id === leadId);
@@ -699,7 +699,7 @@ export default function AllLeadsPage() {
         setShowLeadModal(true);
         document.body.style.overflow = 'hidden';
       }
-      
+
       // Clean up URL parameters
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('returnToModal');
@@ -712,7 +712,7 @@ export default function AllLeadsPage() {
   const handleDeleteClick = (lead: Lead) => {
     // Check if user is already verified for this session
     const isVerified = sessionStorage.getItem('verified_rowManagement');
-    
+
     if (isVerified) {
       // Execute delete operation directly without showing modal
       performSingleDelete(lead.id);
@@ -734,7 +734,7 @@ export default function AllLeadsPage() {
   const performSingleDelete = (leadId: string) => {
     permanentlyDeleteLead(leadId);
     showToastNotification('Lead permanently deleted', 'success');
-    
+
     // Close Lead Detail Modal if it's open
     if (showLeadModal) {
       setShowLeadModal(false);
@@ -750,16 +750,16 @@ export default function AllLeadsPage() {
 
   const handlePasswordSuccess = () => {
     if (!pendingDeleteOperation) return;
-    
+
     if (pendingDeleteOperation.type === 'single' && pendingDeleteOperation.lead) {
       performSingleDelete(pendingDeleteOperation.lead.id);
     } else if (pendingDeleteOperation.type === 'bulk' && pendingDeleteOperation.leadIds) {
       performBulkDelete(pendingDeleteOperation.leadIds);
     }
-    
+
     setShowPasswordModal(false);
     setPendingDeleteOperation(null);
-    
+
     // Update session verification state
     setIsSessionVerified(true);
   };
@@ -790,10 +790,10 @@ export default function AllLeadsPage() {
 
   const handleBulkDeleteClick = () => {
     if (selectedLeads.size === 0) return;
-    
+
     // Check if user is already verified for this session
     const isVerified = sessionStorage.getItem('verified_rowManagement');
-    
+
     if (isVerified) {
       // Execute delete operation directly without showing modal
       performBulkDelete(Array.from(selectedLeads));
@@ -807,18 +807,18 @@ export default function AllLeadsPage() {
   // Bulk restore function
   const handleBulkRestoreClick = () => {
     if (selectedLeads.size === 0) return;
-    
+
     // Restore all selected deleted leads
-    setLeads(prev => 
-      prev.map(lead => 
-        selectedLeads.has(lead.id) && lead.isDeleted 
+    setLeads(prev =>
+      prev.map(lead =>
+        selectedLeads.has(lead.id) && lead.isDeleted
           ? { ...lead, isDeleted: false }
           : lead
       )
     );
-    
+
     setSelectedLeads(new Set());
-    
+
     // Show success message
     alert(`${selectedLeads.size} leads have been restored successfully!`);
   };
@@ -862,25 +862,25 @@ export default function AllLeadsPage() {
   const convertExcelDate = (value: string | number | Date | null | undefined): string => {
     const inputValue = value;
     const inputType = typeof value;
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📅 Date conversion started:', { value: inputValue, type: inputType });
     }
-    
+
     if (!value) {
       if (process.env.NODE_ENV === 'development') {
         console.log('📅 Empty value, returning empty string');
       }
       return '';
     }
-    
+
     // If it's already a string, return as is
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (process.env.NODE_ENV === 'development') {
         console.log('📅 Processing string value:', trimmed);
       }
-      
+
       // Check if it's already in DD-MM-YYYY format
       if (trimmed.match(/^\d{2}-\d{2}-\d{4}$/)) {
         if (process.env.NODE_ENV === 'development') {
@@ -931,7 +931,7 @@ export default function AllLeadsPage() {
         return trimmed; // Return original if can't parse
       }
     }
-    
+
     // If it's a number (Excel serial date), convert it
     if (typeof value === 'number') {
       if (process.env.NODE_ENV === 'development') {
@@ -940,12 +940,21 @@ export default function AllLeadsPage() {
       // Excel serial date (days since 1900-01-01, but Excel incorrectly treats 1900 as leap year)
       const excelEpoch = new Date(1900, 0, 1);
       const date = new Date(excelEpoch.getTime() + (value - 2) * 24 * 60 * 60 * 1000);
-      
+
       if (!isNaN(date.getTime())) {
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = date.getDate();
+        const month = date.getMonth() + 1;
         const year = date.getFullYear();
-        const converted = `${day}-${month}-${year}`;
+
+        // Validate date components before formatting
+        if (isNaN(day) || isNaN(month) || isNaN(year) || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('⚠️ Invalid date components:', { day, month, year });
+          }
+          return '';
+        }
+
+        const converted = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
         if (process.env.NODE_ENV === 'development') {
           console.log(`✅ Converting Excel serial: ${value} → DD-MM-YYYY: ${converted}`);
         }
@@ -954,24 +963,43 @@ export default function AllLeadsPage() {
         if (process.env.NODE_ENV === 'development') {
           console.warn('⚠️ Invalid Excel serial date:', value);
         }
+        return '';
       }
     }
-    
+
     // If it's a Date object
     if (value instanceof Date) {
       if (process.env.NODE_ENV === 'development') {
         console.log('📅 Processing Date object:', value);
       }
-      const day = String(value.getDate()).padStart(2, '0');
-      const month = String(value.getMonth() + 1).padStart(2, '0');
+
+      // Validate date object
+      if (isNaN(value.getTime())) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ Invalid Date object');
+        }
+        return '';
+      }
+
+      const day = value.getDate();
+      const month = value.getMonth() + 1;
       const year = value.getFullYear();
-      const converted = `${day}-${month}-${year}`;
+
+      // Validate date components before formatting
+      if (isNaN(day) || isNaN(month) || isNaN(year) || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ Invalid date components:', { day, month, year });
+        }
+        return '';
+      }
+
+      const converted = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
       if (process.env.NODE_ENV === 'development') {
         console.log(`✅ Converting Date object → DD-MM-YYYY: ${converted}`);
       }
       return converted;
     }
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.error('❌ Date conversion failed - unsupported value type:', { value: inputValue, type: inputType });
     }
@@ -990,18 +1018,18 @@ export default function AllLeadsPage() {
     if (!lead.mandateStatus) lead.mandateStatus = 'Pending';
     if (!lead.documentStatus) lead.documentStatus = 'Pending Documents';
     if (!lead.mobileNumbers) lead.mobileNumbers = [];
-    
+
     // Apply column-based defaults for all visible columns and validate custom fields
     const visibleColumns = getVisibleColumns();
     const validationErrors: string[] = [];
-    
+
     visibleColumns.forEach(column => {
       const currentValue = (lead as any)[column.fieldKey];
-      
+
       // Set default value if undefined
       if (currentValue === undefined) {
         let defaultValue = column.defaultValue;
-        
+
         if (defaultValue === undefined) {
           switch (column.type) {
             case 'date':
@@ -1022,7 +1050,7 @@ export default function AllLeadsPage() {
               defaultValue = '';
           }
         }
-        
+
         (lead as any)[column.fieldKey] = defaultValue;
       } else {
         // Validate existing values for custom fields (skip during import for performance)
@@ -1035,14 +1063,14 @@ export default function AllLeadsPage() {
             options: column.options,
             allowPast: column.allowPast
           });
-          
+
           if (validationError) {
             validationErrors.push(`${column.label}: ${validationError}`);
           }
         }
       }
     });
-    
+
     // Add validation errors to lead if any
     if (validationErrors.length > 0) {
       (lead as any).validationErrors = validationErrors;
@@ -1057,7 +1085,7 @@ export default function AllLeadsPage() {
         console.log('Initialized mobileNumbers array');
       }
     }
-    
+
     while (lead.mobileNumbers.length < count) {
       lead.mobileNumbers.push({
         id: String(lead.mobileNumbers.length + 1),
@@ -1069,7 +1097,7 @@ export default function AllLeadsPage() {
         console.log('Added slot', lead.mobileNumbers.length, 'isMain:', lead.mobileNumbers[lead.mobileNumbers.length - 1]?.isMain);
       }
     }
-    
+
     // Ensure main mobile number is in slot 0 if we have one
     if (lead.mobileNumber && (!lead.mobileNumbers[0] || !lead.mobileNumbers[0].number)) {
       lead.mobileNumbers[0] = {
@@ -1100,19 +1128,19 @@ export default function AllLeadsPage() {
     // First, try to map using dynamic field mapping (includes custom headers and columns)
     const dynamicMapping = fieldMapping;
     const fieldKey = dynamicMapping[headerLower];
-    
+
     if (fieldKey) {
       if (process.env.NODE_ENV === 'development') {
         console.log('🎯 DYNAMIC MAPPING FOUND:', headerLower, '->', fieldKey);
       }
-      
+
       // Get column configuration for type-specific handling
       const visibleColumns = getVisibleColumns();
       const columnConfig = visibleColumns.find(col => col.fieldKey === fieldKey);
-      
+
       // Apply the value based on field type
-      if (columnConfig?.type === 'date' || 
-          ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fieldKey)) {
+      if (columnConfig?.type === 'date' ||
+        ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fieldKey)) {
         // Handle date fields
         if (value && value !== '') {
           const dateValue = isExcelDate(value) ? convertExcelDate(value) : String(value);
@@ -1170,14 +1198,14 @@ export default function AllLeadsPage() {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔍 FUZZY MAPPING FOUND:', headerLower, '->', fuzzyMatch.fieldKey, `(${fuzzyMatch.matchType}, score: ${Math.round(fuzzyMatch.score * 100)}%)`);
       }
-      
+
       // Get column configuration for type-specific handling
       const visibleColumns = getVisibleColumns();
       const columnConfig = visibleColumns.find(col => col.fieldKey === fuzzyMatch.fieldKey);
-      
+
       // Apply the value based on field type
-      if (columnConfig?.type === 'date' || 
-          ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fuzzyMatch.fieldKey)) {
+      if (columnConfig?.type === 'date' ||
+        ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fuzzyMatch.fieldKey)) {
         // Handle date fields
         if (value && value !== '') {
           const dateValue = isExcelDate(value) ? convertExcelDate(value) : String(value);
@@ -1233,7 +1261,7 @@ export default function AllLeadsPage() {
     if (process.env.NODE_ENV === 'development') {
       console.log('⚠️ No dynamic mapping found, trying legacy mappings for:', headerLower);
     }
-    
+
     // Special handling for discom headers - check if header contains "discom" in any case
     if (headerLower.includes('discom')) {
       if (process.env.NODE_ENV === 'development') {
@@ -1251,7 +1279,7 @@ export default function AllLeadsPage() {
       }
       return; // Exit early to avoid switch statement
     }
-    
+
     // Handle complex mobile number array logic that can't be easily mapped dynamically
     switch (headerLower) {
       // Main mobile number - complex array logic
@@ -1276,12 +1304,12 @@ export default function AllLeadsPage() {
         if (process.env.NODE_ENV === 'development') {
           console.log('Lead mobileNumber after setting: "' + lead.mobileNumber + '"');
         }
-        
+
         // Also populate the mobileNumbers array with the main mobile number
         if (!lead.mobileNumbers) {
           lead.mobileNumbers = [];
         }
-        
+
         // Ensure we have at least one slot
         if (lead.mobileNumbers.length === 0) {
           lead.mobileNumbers.push({
@@ -1331,15 +1359,15 @@ export default function AllLeadsPage() {
           console.log('Current lead.mobileNumber:', lead.mobileNumber);
           console.log('Current lead.mobileNumbers:', lead.mobileNumbers);
         }
-        
+
         // Use helper function to ensure proper initialization
         ensureMobileNumberSlots(lead, 2);
-        
+
         // Set the second mobile number (index 1)
-        lead.mobileNumbers![1] = { 
-          id: '2', 
-          number: String(value), 
-          name: lead.mobileNumbers![1]?.name || '', 
+        lead.mobileNumbers![1] = {
+          id: '2',
+          number: String(value),
+          name: lead.mobileNumbers![1]?.name || '',
           isMain: false
         };
         if (process.env.NODE_ENV === 'development') {
@@ -1362,16 +1390,16 @@ export default function AllLeadsPage() {
           console.log('*** MOBILE NUMBER 3 MAPPING ***');
           console.log('Setting mobileNumber3 to: "' + String(value) + '"');
         }
-        
+
         // Use helper function to ensure proper initialization
         ensureMobileNumberSlots(lead, 3);
-        
+
         // Set the third mobile number (index 2)
-        lead.mobileNumbers![2] = { 
-          id: '3', 
-          number: String(value), 
-          name: lead.mobileNumbers![2]?.name || '', 
-          isMain: false 
+        lead.mobileNumbers![2] = {
+          id: '3',
+          number: String(value),
+          name: lead.mobileNumbers![2]?.name || '',
+          isMain: false
         };
         if (process.env.NODE_ENV === 'development') {
           console.log('Set mobile number 3:', lead.mobileNumbers![2]);
@@ -1399,16 +1427,16 @@ export default function AllLeadsPage() {
           console.log('Current lead.mobileNumber:', lead.mobileNumber);
           console.log('Current lead.mobileNumbers:', lead.mobileNumbers);
         }
-        
+
         // Use helper function to ensure proper initialization
         ensureMobileNumberSlots(lead, 2);
-        
+
         // Set the second contact name (index 1)
-        lead.mobileNumbers![1] = { 
-          id: '2', 
-          number: lead.mobileNumbers![1]?.number || '', 
-          name: String(value), 
-          isMain: false 
+        lead.mobileNumbers![1] = {
+          id: '2',
+          number: lead.mobileNumbers![1]?.number || '',
+          name: String(value),
+          isMain: false
         };
         if (process.env.NODE_ENV === 'development') {
           console.log('Set contact name 2:', lead.mobileNumbers![1]);
@@ -1428,16 +1456,16 @@ export default function AllLeadsPage() {
           console.log('*** CONTACT NAME 3 MAPPING ***');
           console.log('Setting contact name 3 to: "' + String(value) + '"');
         }
-        
+
         // Use helper function to ensure proper initialization
         ensureMobileNumberSlots(lead, 3);
-        
+
         // Set the third contact name (index 2)
-        lead.mobileNumbers![2] = { 
-          id: '3', 
-          number: lead.mobileNumbers![2]?.number || '', 
-          name: String(value), 
-          isMain: false 
+        lead.mobileNumbers![2] = {
+          id: '3',
+          number: lead.mobileNumbers![2]?.number || '',
+          name: String(value),
+          isMain: false
         };
         if (process.env.NODE_ENV === 'development') {
           console.log('Set contact name 3:', lead.mobileNumbers![2]);
@@ -1456,7 +1484,7 @@ export default function AllLeadsPage() {
         }
         const statusValue = String(value).toLowerCase().trim();
         if (statusValue === 'new') {
-              lead.status = 'New';
+          lead.status = 'New';
           if (process.env.NODE_ENV === 'development') {
             console.log('✅ Mapped to New');
           }
@@ -1471,7 +1499,7 @@ export default function AllLeadsPage() {
             console.log('✅ Mapped to Busy');
           }
         } else if (statusValue === 'follow-up' || statusValue === 'followup' || statusValue === 'follow up') {
-              lead.status = 'Follow-up';
+          lead.status = 'Follow-up';
           if (process.env.NODE_ENV === 'development') {
             console.log('✅ Mapped to Follow-up');
           }
@@ -1522,13 +1550,13 @@ export default function AllLeadsPage() {
             if (process.env.NODE_ENV === 'development') {
               console.log('✅ Flexible mapping: Busy');
             }
-            } else if (statusValue.includes('follow')) {
-              lead.status = 'Follow-up';
+          } else if (statusValue.includes('follow')) {
+            lead.status = 'Follow-up';
             if (process.env.NODE_ENV === 'development') {
               console.log('✅ Flexible mapping: Follow-up');
             }
           } else if (statusValue.includes('deal') || statusValue.includes('close')) {
-              lead.status = 'Deal Close';
+            lead.status = 'Deal Close';
             if (process.env.NODE_ENV === 'development') {
               console.log('✅ Flexible mapping: Deal Close');
             }
@@ -1557,7 +1585,7 @@ export default function AllLeadsPage() {
             if (process.env.NODE_ENV === 'development') {
               console.log('✅ Flexible mapping: Others');
             }
-            } else {
+          } else {
             lead.status = 'New'; // Default fallback
             if (process.env.NODE_ENV === 'development') {
               console.log('⚠️ Default mapping: New');
@@ -1695,42 +1723,42 @@ export default function AllLeadsPage() {
         }
         break;
     }
-    
+
     // Fallback: Check for partial matches for mobile number 2 and contact name 2
     if (headerLower.includes('mobile') && headerLower.includes('2') && !headerLower.includes('name')) {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 FALLBACK: Mobile Number 2 detected via partial match:', headerLower);
       }
-      
+
       // Use helper function to ensure proper initialization
       ensureMobileNumberSlots(lead, 2);
-      
-      lead.mobileNumbers![1] = { 
-        id: '2', 
-        number: String(value), 
-        name: lead.mobileNumbers![1]?.name || '', 
-        isMain: false 
+
+      lead.mobileNumbers![1] = {
+        id: '2',
+        number: String(value),
+        name: lead.mobileNumbers![1]?.name || '',
+        isMain: false
       };
       return;
     }
-    
+
     if (headerLower.includes('contact') && headerLower.includes('2') && headerLower.includes('name')) {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 FALLBACK: Contact Name 2 detected via partial match:', headerLower);
       }
-      
+
       // Use helper function to ensure proper initialization
       ensureMobileNumberSlots(lead, 2);
-      
-      lead.mobileNumbers![1] = { 
-        id: '2', 
-        number: lead.mobileNumbers![1]?.number || '', 
-        name: String(value), 
-        isMain: false 
+
+      lead.mobileNumbers![1] = {
+        id: '2',
+        number: lead.mobileNumbers![1]?.number || '',
+        name: String(value),
+        isMain: false
       };
       return;
     }
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('=== END MAPPING DEBUG ===');
     }
@@ -1739,10 +1767,10 @@ export default function AllLeadsPage() {
   // Helper functions for header detection
   const isEmptyRow = (row: any[]): boolean => {
     if (!row || row.length === 0) return true;
-    return row.every(cell => 
-      cell === null || 
-      cell === undefined || 
-      cell === '' || 
+    return row.every(cell =>
+      cell === null ||
+      cell === undefined ||
+      cell === '' ||
       (typeof cell === 'string' && cell.trim() === '')
     );
   };
@@ -1750,28 +1778,28 @@ export default function AllLeadsPage() {
 
   const detectHeaderRowIndex = (rows: any[][]): number => {
     if (!rows || rows.length === 0) return 0;
-    
+
     let bestIndex = 0;
     let bestScore = 0;
-    
+
     // Check first 10 rows for header patterns
     const maxRowsToCheck = Math.min(10, rows.length);
-    
+
     for (let i = 0; i < maxRowsToCheck; i++) {
       const row = rows[i];
       if (!row || isEmptyRow(row)) continue;
-      
+
       const score = getHeaderPatternScore(row);
       if (score > bestScore) {
         bestScore = score;
         bestIndex = i;
       }
     }
-    
+
     if (process.env.NODE_ENV === 'development') {
       if (process.env.NODE_ENV === 'development') {
-      console.log(`🔍 Detected header row at index ${bestIndex} with confidence ${Math.round((bestScore / 10) * 100)}%`);
-    }
+        console.log(`🔍 Detected header row at index ${bestIndex} with confidence ${Math.round((bestScore / 10) * 100)}%`);
+      }
     }
     return bestIndex;
   };
@@ -1783,31 +1811,31 @@ export default function AllLeadsPage() {
       const workbook = XLSX.read(content, { type: 'string' });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) return [];
-      
+
       const worksheet = workbook.Sheets[sheetName];
       if (!worksheet) return [];
-      
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
         raw: false,
         defval: ''
       });
-      
+
       if (jsonData.length < 2) return [];
-      
+
       // Convert to rows for header detection
       const rows = jsonData as any[][];
-      
+
       // Use intelligent header detection
       const headerRowIndex = detectHeaderRowIndex(rows);
       const headers = (rows[headerRowIndex] as string[]).map(h => String(h ?? '').trim());
       const dataRows = rows.slice(headerRowIndex + 1);
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('CSV Headers (detected):', headers);
         console.log('CSV Data rows:', dataRows.length);
       }
-      
+
       // Show import mapping preview for CSV
       showImportMappingPreview(headers);
 
@@ -1832,7 +1860,7 @@ export default function AllLeadsPage() {
       const headerRowIndex = detectHeaderRowIndex(rows);
       const headers = (rows[headerRowIndex] as string[]).map(h => String(h ?? '').trim());
       const dataRows = rows.slice(headerRowIndex + 1);
-      
+
       return dataRows.map((values) => {
         const lead: Partial<Lead> = {};
         headers.forEach((header, index) => {
@@ -1850,15 +1878,15 @@ export default function AllLeadsPage() {
     if (process.env.NODE_ENV === 'development') {
       console.log('Starting Excel parsing...');
     }
-    
+
     try {
       if (process.env.NODE_ENV === 'development') {
         console.log('Starting Excel parsing with XLSX library');
       }
-      
+
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        
+
         reader.onload = (e) => {
           try {
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
@@ -1866,34 +1894,34 @@ export default function AllLeadsPage() {
               console.log('File read successfully, size:', e.target?.result);
               console.log('Data converted to Uint8Array, length:', data.length);
             }
-            
+
             // Validate XLSX library is loaded
             if (typeof XLSX === 'undefined') {
               throw new Error('XLSX library not loaded');
             }
-            
+
             // Log XLSX version for debugging
             if (process.env.NODE_ENV === 'development') {
               console.log('📚 XLSX library version:', XLSX.version);
             }
-            
+
             const workbook = XLSX.read(data, { type: 'array' });
             if (process.env.NODE_ENV === 'development') {
               console.log('Workbook read, sheet names:', workbook.SheetNames);
             }
-            
+
             // Validate workbook structure
             if (!workbook.SheetNames || !Array.isArray(workbook.SheetNames) || workbook.SheetNames.length === 0) {
               throw new Error('Invalid workbook structure: no sheets found');
             }
-            
+
             if (process.env.NODE_ENV === 'development') {
-              console.log('📊 Sheet structure:', { 
-                sheetNames: workbook.SheetNames, 
-                sheetCount: workbook.SheetNames.length 
+              console.log('📊 Sheet structure:', {
+                sheetNames: workbook.SheetNames,
+                sheetCount: workbook.SheetNames.length
               });
             }
-            
+
             // Get the first sheet
             const sheetName = workbook.SheetNames[0];
             if (!sheetName) {
@@ -1908,9 +1936,9 @@ export default function AllLeadsPage() {
             if (process.env.NODE_ENV === 'development') {
               console.log('Worksheet loaded:', sheetName);
             }
-            
+
             // Convert to JSON with proper date handling
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, {
               header: 1,
               raw: false,
               defval: '',
@@ -1919,12 +1947,12 @@ export default function AllLeadsPage() {
             if (process.env.NODE_ENV === 'development') {
               console.log('JSON data:', jsonData);
             }
-            
+
             if (jsonData.length < 2) {
               reject(new Error('No data rows found in Excel file'));
               return;
             }
-            
+
             // Use intelligent header detection instead of assuming row 0 is headers
             if (process.env.NODE_ENV === 'development') {
               console.log('🔍 Detecting header row...');
@@ -1932,40 +1960,40 @@ export default function AllLeadsPage() {
             const headerRowIndex = detectHeaderRowIndex(jsonData as any[][]);
             const headers = (jsonData[headerRowIndex] as string[]).map(h => String(h ?? '').trim());
             const dataRows = jsonData.slice(headerRowIndex + 1);
-            
+
             if (process.env.NODE_ENV === 'development') {
               console.log('📊 Detected headers:', headers);
               console.log('📊 Data starts at row:', headerRowIndex + 1);
               console.log('📊 Processing', dataRows.length, 'data rows');
             }
-            
+
             // Update import statistics (commented out to avoid runtime issues)
             // setImportStats(prev => updateImportStats(prev, 'totalRows', jsonData.length));
             // setImportStats(prev => updateImportStats(prev, 'headerRowIndex', headerRowIndex));
             // setImportStats(prev => updateImportStats(prev, 'dataRowsProcessed', dataRows.length));
-            
+
             // Show import mapping preview
             showImportMappingPreview(headers);
-            
+
             // Set import progress
             setIsImporting(true);
             setImportProgress({ current: 0, total: dataRows.length });
-            
+
             const leads = dataRows.map((row: unknown, index: number) => {
               const rowArray = row as any[];
               const lead: Partial<Lead> = {};
-              
+
               // Update progress every 10 rows
               if (index % 10 === 0) {
                 setImportProgress({ current: index, total: dataRows.length });
               }
-              
+
               headers.forEach((header, colIndex) => {
                 const value = rowArray[colIndex];
                 if (value !== undefined && value !== null && value !== '') {
                   if (process.env.NODE_ENV === 'development') {
                     console.log(`Processing row ${index + 1}, header: "${header}", value: "${value}"`);
-                    
+
                     // Special debug for discom headers
                     if (header && header.toLowerCase().includes('discom')) {
                       console.log('=== DISCOM HEADER DEBUG ===');
@@ -1975,7 +2003,7 @@ export default function AllLeadsPage() {
                       console.log('Value length:', value ? value.toString().length : 'undefined');
                       console.log('=== END DISCOM HEADER DEBUG ===');
                     }
-                    
+
                     // Special debug for follow-up date headers
                     if (header && (header.toLowerCase().includes('follow') || header.toLowerCase().includes('next'))) {
                       console.log('=== FOLLOW-UP DATE HEADER DEBUG ===');
@@ -1985,7 +2013,7 @@ export default function AllLeadsPage() {
                       console.log('Value length:', value ? value.toString().length : 'undefined');
                       console.log('=== END FOLLOW-UP DATE HEADER DEBUG ===');
                     }
-                    
+
                     // Special debug for last activity date headers
                     if (header && (header.toLowerCase().includes('activity') || header.toLowerCase().includes('last'))) {
                       console.log('=== LAST ACTIVITY DATE HEADER DEBUG ===');
@@ -1996,7 +2024,7 @@ export default function AllLeadsPage() {
                       console.log('=== END LAST ACTIVITY DATE HEADER DEBUG ===');
                     }
                   }
-                  
+
                   mapHeaderToField(lead, header, value);
                 }
               });
@@ -2026,13 +2054,13 @@ export default function AllLeadsPage() {
             if (process.env.NODE_ENV === 'development') {
               console.log('All leads processed:', leads);
             }
-            
+
             // Reset import progress
             setIsImporting(false);
             setImportProgress({ current: 0, total: 0 });
-            
+
             resolve(leads);
-    } catch (error) {
+          } catch (error) {
             console.error('Excel parsing error:', error);
             reject(new Error(`Error parsing Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`));
           }
@@ -2042,7 +2070,7 @@ export default function AllLeadsPage() {
           console.error('FileReader error');
           reject(new Error('Failed to read file'));
         };
-        
+
         if (process.env.NODE_ENV === 'development') {
           console.log('Starting file read...');
         }
@@ -2059,21 +2087,21 @@ export default function AllLeadsPage() {
     if (process.env.NODE_ENV !== 'development') {
       return; // Skip preview in production for performance
     }
-    
+
     const dynamicMapping = fieldMapping;
     const visibleColumns = getVisibleColumns();
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📊 Import Mapping Preview:');
       console.log('Excel Headers:', headers);
       console.log('Available Mappings:', Object.keys(dynamicMapping).length);
     }
-    
+
     const mappingPreview = headers.map(header => {
       const headerLower = header.toLowerCase().trim();
       const mappedField = dynamicMapping[headerLower];
       const columnConfig = visibleColumns.find(col => col.fieldKey === mappedField);
-      
+
       return {
         excelHeader: header,
         mappedField: mappedField || 'UNMAPPED',
@@ -2082,11 +2110,11 @@ export default function AllLeadsPage() {
         isMapped: !!mappedField
       };
     });
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📊 Mapping Preview:', mappingPreview);
     }
-    
+
     // Enhanced validation for critical fields
     const criticalFields = ['clientName', 'mobileNumber', 'status'];
     const criticalMappings = criticalFields.map(field => {
@@ -2099,11 +2127,11 @@ export default function AllLeadsPage() {
         mappedHeader: mappedHeader?.excelHeader || null
       };
     });
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📊 Critical Field Mapping:', criticalMappings);
     }
-    
+
     // Check for missing critical fields
     const missingCritical = criticalMappings.filter(m => !m.isMapped);
     if (missingCritical.length > 0) {
@@ -2111,21 +2139,21 @@ export default function AllLeadsPage() {
         console.warn('⚠️ Critical fields missing from import:', missingCritical.map(m => m.label));
       }
     }
-    
+
     const mappedCount = mappingPreview.filter(m => m.isMapped).length;
     const unmappedCount = mappingPreview.filter(m => !m.isMapped).length;
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log(`📊 Mapping Summary: ${mappedCount} mapped, ${unmappedCount} unmapped`);
     }
-    
+
     // Enhanced suggestions for unmapped headers
     const unmappedHeaders = mappingPreview.filter(m => !m.isMapped);
     if (unmappedHeaders.length > 0) {
       const suggestions = unmappedHeaders.map(unmapped => {
         const header = unmapped.excelHeader.toLowerCase();
         const suggestions: string[] = [];
-        
+
         // Fuzzy matching suggestions
         if (header.includes('client') || header.includes('name')) {
           suggestions.push('Client Name');
@@ -2145,49 +2173,49 @@ export default function AllLeadsPage() {
         if (header.includes('kva') || header.includes('name')) {
           suggestions.push('KVA');
         }
-        
+
         return {
           header: unmapped.excelHeader,
           suggestions: suggestions.length > 0 ? suggestions : ['No suggestions available']
         };
       });
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('📊 Unmapped Header Suggestions:', suggestions);
       }
-      
+
       const unmappedList = unmappedHeaders.map(h => h.excelHeader).join(', ');
       const availableColumns = visibleColumns.map(col => col.label).join(', ');
-      
+
       let message = `⚠️ ${unmappedCount} headers could not be mapped: ${unmappedList}`;
-      
+
       if (missingCritical.length > 0) {
         message += `\n\n❌ Missing critical fields: ${missingCritical.map(m => m.label).join(', ')}`;
       }
-      
+
       message += `\n\nAvailable column labels: ${availableColumns}`;
-      
+
       // Add specific suggestions
       const specificSuggestions = suggestions.filter(s => s.suggestions[0] !== 'No suggestions available');
       if (specificSuggestions.length > 0) {
-        message += `\n\nSuggestions:\n${specificSuggestions.map(s => 
+        message += `\n\nSuggestions:\n${specificSuggestions.map(s =>
           `• "${s.header}" → try "${s.suggestions[0]}"`
         ).join('\n')}`;
       }
-      
+
       message += `\n\nConsider renaming headers to match current column labels for better import results.`;
-      
+
       // Show as toast notification
       setShowToast(true);
       setToastMessage(message);
       setToastType('info');
-      
+
       // Auto-hide after 10 seconds for longer message
       setTimeout(() => {
         setShowToast(false);
       }, 10000);
     }
-    
+
     return mappingPreview;
   };
 
@@ -2210,13 +2238,13 @@ export default function AllLeadsPage() {
 
     try {
       let leads: Partial<Lead>[] = [];
-      
+
       const name = file.name.toLowerCase();
       const type = (file.type || '').toLowerCase();
       const isCSV = type === 'text/csv' || name.endsWith('.csv');
       const isExcel = name.endsWith('.xlsx') || name.endsWith('.xls') ||
         type.includes('spreadsheetml') || type === 'application/vnd.ms-excel';
-      
+
       if (isCSV) {
         if (process.env.NODE_ENV === 'development') {
           console.log('Processing CSV file...');
@@ -2251,51 +2279,109 @@ export default function AllLeadsPage() {
         };
       }) as Lead[];
 
+      // DUPLICATE DETECTION: Check for existing leads before importing
+      // Match by consumer number (primary) or mobile number (secondary)
+      const filteredLeads = leadsWithIds.filter(newLead => {
+        const isDuplicate = leads.some(existingLead => {
+          // Check consumer number match (if both exist and not empty)
+          if (newLead.consumerNumber && existingLead.consumerNumber &&
+            newLead.consumerNumber.trim() !== '' && existingLead.consumerNumber.trim() !== '') {
+            if (newLead.consumerNumber.trim() === existingLead.consumerNumber.trim()) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🚫 Duplicate detected (consumer number):', newLead.consumerNumber);
+              }
+              return true;
+            }
+          }
+
+          // Check mobile number match (if both exist and not empty)
+          if (newLead.mobileNumber && existingLead.mobileNumber &&
+            newLead.mobileNumber.trim() !== '' && existingLead.mobileNumber.trim() !== '') {
+            if (newLead.mobileNumber.trim() === existingLead.mobileNumber.trim()) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🚫 Duplicate detected (mobile number):', newLead.mobileNumber);
+              }
+              return true;
+            }
+          }
+
+          // Check mobile numbers array for matches
+          if (newLead.mobileNumbers && newLead.mobileNumbers.length > 0 &&
+            existingLead.mobileNumbers && existingLead.mobileNumbers.length > 0) {
+            const newNumbers = newLead.mobileNumbers.map(m => m.number.trim()).filter(n => n !== '');
+            const existingNumbers = existingLead.mobileNumbers.map(m => m.number.trim()).filter(n => n !== '');
+
+            for (const newNum of newNumbers) {
+              if (existingNumbers.includes(newNum)) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('🚫 Duplicate detected (mobile numbers array):', newNum);
+                }
+                return true;
+              }
+            }
+          }
+
+          return false;
+        });
+
+        return !isDuplicate; // Keep only non-duplicates
+      });
+
+      const duplicateCount = leadsWithIds.length - filteredLeads.length;
+      if (duplicateCount > 0) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🚫 Skipped ${duplicateCount} duplicate leads`);
+        }
+      }
+
       // Use startTransition to defer re-render and improve import performance
       // For large imports (500+ rows), process in chunks to avoid blocking UI
-      if (leadsWithIds.length > 500) {
+      if (filteredLeads.length > 500) {
         const CHUNK_SIZE = 100;
-        for (let i = 0; i < leadsWithIds.length; i += CHUNK_SIZE) {
-          const chunk = leadsWithIds.slice(i, i + CHUNK_SIZE);
+        for (let i = 0; i < filteredLeads.length; i += CHUNK_SIZE) {
+          const chunk = filteredLeads.slice(i, i + CHUNK_SIZE);
           startTransition(() => {
             setLeads(prev => [...prev, ...chunk]);
           });
-          
+
           // Yield to browser between chunks
-          if (i + CHUNK_SIZE < leadsWithIds.length) {
+          if (i + CHUNK_SIZE < filteredLeads.length) {
             await new Promise(resolve => setTimeout(resolve, 0));
           }
         }
       } else {
         startTransition(() => {
-          setLeads(prev => [...prev, ...leadsWithIds]);
+          setLeads(prev => [...prev, ...filteredLeads]);
         });
       }
-      
+
       // Re-enable persistence after import completes
       // Note: Persistence skipping removed for now
-      
-      // Show success notification
+
+      // Show success notification with duplicate info
       setShowToast(true);
-      setToastMessage(`Successfully imported ${leadsWithIds.length} leads from ${file.name}`);
+      const message = duplicateCount > 0
+        ? `Successfully imported ${filteredLeads.length} leads from ${file.name}. Skipped ${duplicateCount} duplicate(s).`
+        : `Successfully imported ${filteredLeads.length} leads from ${file.name}`;
+      setToastMessage(message);
       setToastType('success');
-      
+
       // Auto-hide toast after 5 seconds
       setTimeout(() => {
         setShowToast(false);
       }, 5000);
-      
+
       // Clear the file input
       event.target.value = '';
     } catch (error) {
       console.error('=== IMPORT ERROR ===');
       console.error('Import error:', error);
-      
+
       // Show error notification
       setShowToast(true);
       setToastMessage(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setToastType('error');
-      
+
       // Auto-hide toast after 5 seconds
       setTimeout(() => {
         setShowToast(false);
@@ -2308,12 +2394,12 @@ export default function AllLeadsPage() {
     if (!dateString || dateString.trim() === '') {
       return '';
     }
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's an ISO date string or Date object, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
@@ -2323,13 +2409,13 @@ export default function AllLeadsPage() {
         }
         return ''; // Return empty string if invalid
       }
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       const formattedDate = `${day}-${month}-${year}`;
-      
+
       // Validate the final string format
       if (!formattedDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
         if (process.env.NODE_ENV === 'development') {
@@ -2337,7 +2423,7 @@ export default function AllLeadsPage() {
         }
         return ''; // Return empty string if format is invalid
       }
-      
+
       return formattedDate;
     } catch {
       if (process.env.NODE_ENV === 'development') {
@@ -2365,30 +2451,30 @@ export default function AllLeadsPage() {
     try {
       // Small delay to ensure pending header edits are saved
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Get filtered leads
       const leadsToExport = allLeads;
-      
+
       // Use dynamic export headers based on current column configuration
       const visibleColumns = getVisibleColumns();
       const headers = visibleColumns.map(column => column.label);
-      
+
       // Add logging to track export headers
       console.log('📤 Export Headers:', headers);
       console.log('📤 Field Key to Label:', visibleColumns.map(c => ({ fieldKey: c.fieldKey, label: c.label })));
-      
+
       // Check if mobile number 2/3 fields are present in visible columns
       const hasMobileNumber2 = visibleColumns.some(c => c.fieldKey === 'mobileNumber2');
       const hasMobileNumber3 = visibleColumns.some(c => c.fieldKey === 'mobileNumber3');
-      
+
       // Check if any leads have multiple mobile numbers
-      const hasMultipleMobileNumbers = leadsToExport.some(lead => 
+      const hasMultipleMobileNumbers = leadsToExport.some(lead =>
         lead.mobileNumbers && lead.mobileNumbers.length > 1
       );
-      const hasThreeMobileNumbers = leadsToExport.some(lead => 
+      const hasThreeMobileNumbers = leadsToExport.some(lead =>
         lead.mobileNumbers && lead.mobileNumbers.length > 2
       );
-      
+
       // Add mobile number 2/3 columns if not present but needed
       if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
         headers.push('Mobile Number 2', 'Contact Name 2');
@@ -2396,22 +2482,22 @@ export default function AllLeadsPage() {
       if (!hasMobileNumber3 && hasThreeMobileNumbers) {
         headers.push('Mobile Number 3', 'Contact Name 3');
       }
-      
+
       // Convert leads to Excel rows with remapped data
       const rows = leadsToExport.map(lead => {
         // Get mobile numbers and contacts
         const mobileNumbers = lead.mobileNumbers || [];
         const mainMobile = mobileNumbers.find(m => m.isMain) || mobileNumbers[0] || { number: lead.mobileNumber || '', name: '' };
-        
+
         // Format main mobile number (phone number only, no contact name)
         const mainMobileDisplay = mainMobile.number || '';
         console.log('🔍 Export Debug - Lead:', lead.clientName, 'Main Mobile:', mainMobileDisplay);
-        
+
         // Map data according to visible columns
         const rowData = visibleColumns.map(column => {
           const fieldKey = column.fieldKey;
           const value = (lead as any)[fieldKey] ?? '';
-          
+
           // Handle special field formatting
           switch (fieldKey) {
             case 'kva':
@@ -2451,7 +2537,7 @@ export default function AllLeadsPage() {
               return value || '';
           }
         });
-        
+
         // Add mobile number 2/3 data if not in visible columns but needed
         if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
           rowData.push(mobileNumbers[1]?.number || '', mobileNumbers[1]?.name || '');
@@ -2459,48 +2545,48 @@ export default function AllLeadsPage() {
         if (!hasMobileNumber3 && hasThreeMobileNumbers) {
           rowData.push(mobileNumbers[2]?.number || '', mobileNumbers[2]?.name || '');
         }
-        
+
         return rowData;
       });
-      
+
       // Add export validation using helper functions
       const headerValidation = validateExportHeaders(headers);
       const requiredValidation = validateRequiredHeaders(headers, leadsToExport);
       const suggestions = getExportSuggestions(headers, leadsToExport);
-      
+
       if (headerValidation.warnings.length > 0) {
         console.warn('⚠️ Export header warnings:', headerValidation.warnings);
       }
-      
+
       if (requiredValidation.warnings.length > 0) {
         console.warn('⚠️ Required header warnings:', requiredValidation.warnings);
       }
-      
+
       if (suggestions.length > 0) {
         console.log('💡 Export suggestions:', suggestions);
       }
-      
+
       if (!hasMobileNumber2 && hasMultipleMobileNumbers) {
         console.warn('⚠️ Mobile Number 2/3 fields missing from visible columns but leads have multiple mobile numbers');
       }
-      
+
       console.log('📤 Exporting', leadsToExport.length, 'leads with', headers.length, 'columns');
-      
+
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-      
+
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Leads');
-      
+
       // Generate Excel file and download
       XLSX.writeFile(wb, `leads-export-all-${new Date().toISOString().split('T')[0]}.xlsx`);
-      
+
       // Show success notification
       setShowToast(true);
       setToastMessage(`Successfully exported ${leadsToExport.length} leads to Excel format`);
       setToastType('success');
-      
+
       // Auto-hide toast after 5 seconds
       setTimeout(() => {
         setShowToast(false);
@@ -2510,7 +2596,7 @@ export default function AllLeadsPage() {
       setShowToast(true);
       setToastMessage('Failed to export leads. Please try again.');
       setToastType('error');
-      
+
       // Auto-hide toast after 5 seconds
       setTimeout(() => {
         setShowToast(false);
@@ -2531,7 +2617,7 @@ export default function AllLeadsPage() {
           </div>
         </div>
       )}
-      
+
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-800 rounded-lg mb-2 p-2">
         {/* Title Section */}
@@ -2543,25 +2629,25 @@ export default function AllLeadsPage() {
             🚷 This page is strictly reserved for Admins Anil Patel & Jitendra Patel - unauthorized access will be monitored.
           </p>
         </div>
-        
+
         {/* Stats and Action Buttons */}
         <div className="flex flex-col lg:flex-row items-center justify-between space-y-1 lg:space-y-0 lg:space-x-1">
           {/* Total Leads Stat Box - Enhanced */}
           <div className="relative group">
             {/* Animated Border Glow */}
             <div className="absolute -inset-1 bg-gradient-to-r from-emerald-400 via-blue-500 to-purple-500 rounded-2xl blur-sm opacity-0 group-hover:opacity-25 transition-all duration-600 animate-pulse"></div>
-            
+
             {/* Main Container */}
             <div className="relative bg-white border-2 border-blue-200 rounded-lg px-3 py-2 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-blue-300 overflow-hidden">
               {/* Animated Background Waves */}
               <div className="absolute inset-0 bg-gradient-to-r from-blue-50/40 via-emerald-50/20 to-purple-50/40 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
               <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              
+
               {/* Floating Dots */}
               <div className="absolute top-4 right-4 w-1 h-1 bg-emerald-400 rounded-full opacity-0 group-hover:opacity-70 animate-bounce animation-delay-1000"></div>
               <div className="absolute bottom-4 left-4 w-1 h-1 bg-blue-400 rounded-full opacity-0 group-hover:opacity-70 animate-bounce animation-delay-2000"></div>
               <div className="absolute top-1/2 right-6 w-0.5 h-0.5 bg-purple-400 rounded-full opacity-0 group-hover:opacity-70 animate-bounce animation-delay-3000"></div>
-              
+
               {/* Content */}
               <div className="relative z-10 text-center">
                 <div className="text-lg md:text-xl font-bold text-blue-600 mb-1 group-hover:text-blue-700 transition-colors duration-300 group-hover:scale-105 transform transition-transform duration-300">
@@ -2571,17 +2657,17 @@ export default function AllLeadsPage() {
                   Total Leads
                 </div>
               </div>
-              
+
               {/* Top and Bottom Accent Lines */}
               <div className="absolute top-0 left-1/2 right-1/2 h-0.5 bg-gradient-to-r from-emerald-400 to-blue-500 transform -translate-x-1/2 scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-center"></div>
               <div className="absolute bottom-0 left-1/2 right-1/2 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 transform -translate-x-1/2 scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-center"></div>
-              
+
               {/* Side Accent Lines */}
               <div className="absolute top-1/2 left-0 w-0.5 h-8 bg-gradient-to-b from-emerald-400 to-blue-500 transform -translate-y-1/2 scale-y-0 group-hover:scale-y-100 transition-transform duration-500 origin-center"></div>
               <div className="absolute top-1/2 right-0 w-0.5 h-8 bg-gradient-to-b from-blue-500 to-purple-500 transform -translate-y-1/2 scale-y-0 group-hover:scale-y-100 transition-transform duration-500 origin-center"></div>
             </div>
           </div>
-          
+
           {/* Action Buttons */}
           <div className="flex flex-wrap justify-center items-center space-x-1">
             {/* Import Button */}
@@ -2604,7 +2690,7 @@ export default function AllLeadsPage() {
                 <span>Import Leads</span>
               </label>
             </div>
-            
+
             {/* Export Button */}
             <button
               onClick={handleExportExcel}
@@ -2615,8 +2701,8 @@ export default function AllLeadsPage() {
               </svg>
               <span>Export All Leads</span>
             </button>
-            
-            
+
+
           </div>
         </div>
       </div>
@@ -2629,7 +2715,7 @@ export default function AllLeadsPage() {
           <div className="flex justify-between items-center mb-1">
             <div className="flex items-center space-x-1">
               <h2 className="text-sm font-semibold text-black">All Leads</h2>
-              
+
               {/* Search Input */}
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
@@ -2663,7 +2749,7 @@ export default function AllLeadsPage() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <button
                 onClick={handleSelectAll}
@@ -2776,7 +2862,7 @@ export default function AllLeadsPage() {
             onSuccess={handlePasswordSuccess}
             title={pendingDeleteOperation?.type === 'bulk' ? 'Delete Multiple Leads' : 'Delete Lead'}
             description={
-              pendingDeleteOperation?.type === 'bulk' 
+              pendingDeleteOperation?.type === 'bulk'
                 ? `You are about to permanently delete ${pendingDeleteOperation.leadIds?.length || 0} leads from the system. This action cannot be undone.`
                 : `You are about to permanently delete this lead from the system: ${pendingDeleteOperation?.lead?.clientName} - ${pendingDeleteOperation?.lead?.company}. This action cannot be undone.`
             }
@@ -2801,11 +2887,10 @@ export default function AllLeadsPage() {
       {/* Toast Notification */}
       {showToast && (
         <div className="fixed top-4 right-4 z-50">
-          <div className={`px-4 py-2 rounded-md shadow-lg ${
-            toastType === 'success' ? 'bg-green-500 text-white' :
-            toastType === 'error' ? 'bg-red-500 text-white' :
-            'bg-blue-500 text-white'
-          }`}>
+          <div className={`px-4 py-2 rounded-md shadow-lg ${toastType === 'success' ? 'bg-green-500 text-white' :
+              toastType === 'error' ? 'bg-red-500 text-white' :
+                'bg-blue-500 text-white'
+            }`}>
             {toastMessage}
           </div>
         </div>
