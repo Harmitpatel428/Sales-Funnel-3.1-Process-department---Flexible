@@ -496,32 +496,49 @@ export default function AddLeadPage() {
         }
       }
     });
+    // Statuses that do NOT require follow-up date and conclusion: WAO (Work Alloted) and Others ONLY
+    const statusesExemptFromFollowUp = ['Work Alloted', 'Others'];
 
-    if (formData.status === 'WOA' && (!formData.followUpDate || !formData.followUpDate.trim())) {
-      newErrors.followUpDate = 'Next Follow-up Date is required when status is WOA';
+    // Require follow-up date for ALL statuses EXCEPT Work Alloted and Others
+    if (!statusesExemptFromFollowUp.includes(formData.status) && (!formData.followUpDate || !formData.followUpDate.trim())) {
+      newErrors.followUpDate = 'Next Follow-up Date is required';
     }
 
-    // EXPLICIT: Fresh Lead (FL1) should never require a follow-up date — ensure any followUpDate errors are removed
-    if (formData.status === 'Fresh Lead' && newErrors.followUpDate) {
+    // Require conclusion/notes for ALL statuses EXCEPT Work Alloted and Others
+    if (!statusesExemptFromFollowUp.includes(formData.status) && (!formData.notes || !formData.notes.trim())) {
+      newErrors.notes = 'Last Discussion is required';
+    }
+
+    // Clear any errors for exempt statuses
+    if (statusesExemptFromFollowUp.includes(formData.status)) {
       delete newErrors.followUpDate;
+      delete newErrors.notes;
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Enforce follow-up date requirement reactively when status is WOA (Waiting On Approval)
+  // Enforce follow-up date requirement reactively - required for ALL statuses EXCEPT WAO and Others
   useEffect(() => {
+    const statusesExemptFromFollowUp = ['Work Alloted', 'Others'];
+
     setErrors(prev => {
       const updated = { ...prev };
-      if (formData.status === 'WOA' && (!formData.followUpDate || !formData.followUpDate.trim())) {
-        updated.followUpDate = 'Next Follow-up Date is required when status is WOA';
-      } else if (formData.status === 'Fresh Lead') {
-        // Explicit exemption: clear follow-up validation for Fresh Lead
+
+      // If status is exempt (WAO or Others), clear any follow-up errors
+      if (statusesExemptFromFollowUp.includes(formData.status)) {
         if (updated.followUpDate) delete updated.followUpDate;
-      } else if (updated.followUpDate && formData.status !== 'WOA') {
-        delete updated.followUpDate;
+        if (updated.notes) delete updated.notes;
+      } else {
+        // All other statuses require follow-up date
+        if (!formData.followUpDate || !formData.followUpDate.trim()) {
+          updated.followUpDate = 'Next Follow-up Date is required';
+        } else {
+          delete updated.followUpDate;
+        }
       }
+
       return updated;
     });
   }, [formData.status, formData.followUpDate]);
@@ -1223,8 +1240,8 @@ export default function AddLeadPage() {
                           onClick={() => handleMainMobileNumberChange(index)}
                           disabled={isSubmitting}
                           className={`flex items-center space-x-1 px-1 py-1 text-xs rounded border transition-all duration-200 ${mobile.isMain
-                              ? 'border-purple-500 bg-purple-50 text-purple-700'
-                              : 'border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:bg-purple-25'
+                            ? 'border-purple-500 bg-purple-50 text-purple-700'
+                            : 'border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:bg-purple-25'
                             }`}
                         >
                           <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${mobile.isMain ? 'border-purple-500 bg-purple-500' : 'border-gray-400'
@@ -1613,8 +1630,8 @@ export default function AddLeadPage() {
               type="submit"
               disabled={isSubmitting}
               className={`flex-1 sm:flex-none sm:px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm ${isSubmitting
-                  ? 'bg-gray-400 cursor-not-allowed text-white'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                ? 'bg-gray-400 cursor-not-allowed text-white'
+                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
                 }`}
             >
               {isSubmitting ? (
@@ -1646,8 +1663,8 @@ export default function AddLeadPage() {
       {showToast && (
         <div className="fixed top-4 right-4 z-50">
           <div className={`px-4 py-2 rounded-md shadow-lg ${toastType === 'success' ? 'bg-green-500 text-white' :
-              toastType === 'error' ? 'bg-red-500 text-white' :
-                'bg-blue-500 text-white'
+            toastType === 'error' ? 'bg-red-500 text-white' :
+              'bg-blue-500 text-white'
             }`}>
             {toastMessage}
           </div>

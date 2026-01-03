@@ -46,12 +46,12 @@ export const validateDate = (value: string, allowPast: boolean = true): string |
   if (!value.trim()) {
     return null; // Date is optional
   }
-  
+
   // Validate DD-MM-YYYY format
   if (!/^\d{2}-\d{2}-\d{4}$/.test(value)) {
     return 'Please enter a valid date (DD-MM-YYYY)';
   }
-  
+
   if (!allowPast) {
     // Check if date is in the past
     try {
@@ -63,7 +63,7 @@ export const validateDate = (value: string, allowPast: boolean = true): string |
         const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         if (date < today) {
           return 'Date cannot be in the past';
         }
@@ -72,7 +72,7 @@ export const validateDate = (value: string, allowPast: boolean = true): string |
       return 'Please enter a valid date (DD-MM-YYYY)';
     }
   }
-  
+
   return null;
 };
 
@@ -118,26 +118,26 @@ export const validateLeadField = (fieldName: keyof Lead, value: any, lead?: Lead
     case 'followUpDate':
       const followUpError = validateDate(value, false);
       if (followUpError) return followUpError;
-      
-      // FL1 (Fresh Lead) should never require a follow-up date
-      if (lead?.status === 'Fresh Lead') {
+
+      // FL1 (Fresh Lead), Work Alloted (WAO), and Others should never require a follow-up date
+      if (lead?.status === 'Fresh Lead' || lead?.status === 'Work Alloted' || lead?.status === 'Others') {
         return null;
       }
-      
-      // Additional validation for follow-up date based on status
-      if (lead) {
-        const statusesRequiringFollowUp = ['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation'];
-        if (statusesRequiringFollowUp.includes(lead.status) && !value.trim()) {
-          return 'Next follow-up date is required for this status';
-        }
+
+      // All other statuses require follow-up date
+      if (lead && (!value || !value.trim())) {
+        return 'Next follow-up date is required';
       }
       return null;
     case 'notes':
-      // Additional validation for notes based on status
+      // Work Alloted (WAO) and Others are the ONLY statuses exempt from notes requirement
       if (lead) {
-        const statusesRequiringNotes = ['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation'];
-        if (statusesRequiringNotes.includes(lead.status) && !value.trim()) {
-          return 'Last discussion is required for this status';
+        if (lead.status === 'Work Alloted' || lead.status === 'Others') {
+          return null;
+        }
+        // All other statuses require notes
+        if (!value || !value.trim()) {
+          return 'Last discussion is required';
         }
       }
       return null;
@@ -174,7 +174,7 @@ export const validateLeadFieldWithContext = (fieldName: string, value: any, lead
 // Validation for mobile numbers array
 export const validateMobileNumbers = (mobileNumbers: any[]): Record<string, string> => {
   const errors: Record<string, string> = {};
-  
+
   mobileNumbers.forEach((mobile, index) => {
     if (mobile.number && mobile.number.trim()) {
       const error = validateMobileNumber(mobile.number);
@@ -183,7 +183,7 @@ export const validateMobileNumbers = (mobileNumbers: any[]): Record<string, stri
       }
     }
   });
-  
+
   return errors;
 };
 
@@ -198,38 +198,38 @@ export const validateCustomUnitType = (unitType: string, customUnitType: string)
 // Header validation functions
 export const validateHeaderName = (name: string, existingHeaders: string[], fieldKey: string): string | null => {
   const trimmedName = name.trim();
-  
+
   // Check for non-empty name
   if (!trimmedName) {
     return 'Header name cannot be empty';
   }
-  
+
   // Check maximum length
   if (trimmedName.length > 50) {
     return 'Header name cannot exceed 50 characters';
   }
-  
+
   // Check for special characters that could break Excel export
   if (!/^[a-zA-Z0-9\s\-_]+$/.test(trimmedName)) {
     return 'Header name can only contain letters, numbers, spaces, hyphens, and underscores';
   }
-  
+
   // Check for duplicates (excluding current field)
-  const duplicateIndex = existingHeaders.findIndex((header, index) => 
+  const duplicateIndex = existingHeaders.findIndex((header, index) =>
     header === trimmedName && index.toString() !== fieldKey
   );
-  
+
   if (duplicateIndex !== -1) {
     return `Header name "${trimmedName}" is already used by another column`;
   }
-  
+
   return null;
 };
 
 export const validateHeaderUniqueness = (headers: Record<string, string>): string[] => {
   const duplicates: string[] = [];
   const seen = new Set<string>();
-  
+
   Object.values(headers).forEach(header => {
     if (seen.has(header)) {
       duplicates.push(header);
@@ -237,7 +237,7 @@ export const validateHeaderUniqueness = (headers: Record<string, string>): strin
       seen.add(header);
     }
   });
-  
+
   return duplicates;
 };
 
@@ -523,7 +523,7 @@ export const validateDynamicField = (fieldKey: string, value: any, fieldType: st
 // Comprehensive validation for forms with dynamic columns
 export const validateFormWithDynamicColumns = (formData: Record<string, any>, visibleColumns: any[]): Record<string, string> => {
   const errors: Record<string, string> = {};
-  
+
   visibleColumns.forEach(column => {
     const value = formData[column.fieldKey];
     const error = validateDynamicField(column.fieldKey, value, column.type, {
@@ -535,31 +535,31 @@ export const validateFormWithDynamicColumns = (formData: Record<string, any>, vi
       allowPast: column.allowPast,
       label: column.label
     });
-    
+
     if (error) {
       errors[column.fieldKey] = error;
     }
   });
-  
+
   return errors;
 };
 
 // Enhanced validation for column constraints
 export const validateColumnConstraints = (constraints: any): string[] => {
   const errors: string[] = [];
-  
+
   if (constraints.maxLength && (constraints.maxLength < 1 || constraints.maxLength > 10000)) {
     errors.push('Maximum length must be between 1 and 10000 characters');
   }
-  
+
   if (constraints.min !== undefined && constraints.max !== undefined && constraints.min > constraints.max) {
     errors.push('Minimum value cannot be greater than maximum value');
   }
-  
+
   if (constraints.options && (!Array.isArray(constraints.options) || constraints.options.length === 0)) {
     errors.push('Options must be a non-empty array');
   }
-  
+
   return errors;
 };
 
@@ -568,7 +568,7 @@ export const validateColumnTypeCompatibility = (oldType: string, newType: string
   if (oldType === newType) {
     return null; // No change needed
   }
-  
+
   // Check if data conversion is possible
   const incompatibleConversions = [
     { from: 'select', to: 'number' },
@@ -576,19 +576,19 @@ export const validateColumnTypeCompatibility = (oldType: string, newType: string
     { from: 'number', to: 'select' },
     { from: 'date', to: 'select' }
   ];
-  
-  const isIncompatible = incompatibleConversions.some(conv => 
+
+  const isIncompatible = incompatibleConversions.some(conv =>
     conv.from === oldType && conv.to === newType
   );
-  
+
   if (isIncompatible) {
     return `Cannot convert from ${oldType} to ${newType} type. Data may be lost.`;
   }
-  
+
   // Check if existing data is compatible with new type
   const incompatibleData = existingData.filter(item => {
     if (!item) return false;
-    
+
     switch (newType) {
       case 'number':
         return isNaN(Number(item));
@@ -602,18 +602,18 @@ export const validateColumnTypeCompatibility = (oldType: string, newType: string
         return false;
     }
   });
-  
+
   if (incompatibleData.length > 0) {
     return `${incompatibleData.length} records have incompatible data for ${newType} type`;
   }
-  
+
   return null;
 };
 
 // Enhanced form validation with real-time feedback
-export const validateFormField = (fieldKey: string, value: any, columnConfig: any, formData?: Record<string, any>): { 
-  valid: boolean; 
-  error: string | null; 
+export const validateFormField = (fieldKey: string, value: any, columnConfig: any, formData?: Record<string, any>): {
+  valid: boolean;
+  error: string | null;
   warning: string | null;
   suggestions: string[];
 } => {
@@ -623,7 +623,7 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
     warning: null as string | null,
     suggestions: [] as string[]
   };
-  
+
   // Basic validation
   const error = validateDynamicField(fieldKey, value, columnConfig.type, {
     required: columnConfig.required,
@@ -634,13 +634,13 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
     allowPast: columnConfig.allowPast,
     label: columnConfig.label
   });
-  
+
   if (error) {
     result.valid = false;
     result.error = error;
     return result;
   }
-  
+
   // Additional validations and suggestions
   if (columnConfig.type === 'email' && value) {
     const email = value.toString().toLowerCase();
@@ -651,7 +651,7 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
       result.suggestions.push('Email should contain a domain');
     }
   }
-  
+
   if (columnConfig.type === 'phone' && value) {
     const phone = value.toString().replace(/[^0-9]/g, '');
     if (phone.length < 10) {
@@ -661,7 +661,7 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
       result.warning = 'Phone number seems too long';
     }
   }
-  
+
   if (columnConfig.type === 'date' && value) {
     const date = new Date(value);
     const today = new Date();
@@ -669,9 +669,12 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
       result.warning = 'Date is in the future';
     }
   }
-  
-  // Cross-field validation
+
   if (formData) {
+    // Work Alloted (WAO) and Others should never require follow-up date
+    if (formData.status === 'Work Alloted' || formData.status === 'Others') {
+      return result;
+    }
     if (fieldKey === 'followUpDate' && formData.status) {
       const statusesRequiringFollowUp = ['Follow-up', 'Hotlead', 'Mandate Sent', 'Documentation'];
       if (statusesRequiringFollowUp.includes(formData.status) && !value) {
@@ -680,7 +683,7 @@ export const validateFormField = (fieldKey: string, value: any, columnConfig: an
       }
     }
   }
-  
+
   return result;
 };
 
@@ -697,25 +700,25 @@ export const validateFormWithEnhancedFeedback = (formData: Record<string, any>, 
     warnings: {} as Record<string, string>,
     suggestions: {} as Record<string, string[]>
   };
-  
+
   visibleColumns.forEach(column => {
     const value = formData[column.fieldKey];
     const validation = validateFormField(column.fieldKey, value, column, formData);
-    
+
     if (!validation.valid && validation.error) {
       result.valid = false;
       result.errors[column.fieldKey] = validation.error;
     }
-    
+
     if (validation.warning) {
       result.warnings[column.fieldKey] = validation.warning;
     }
-    
+
     if (validation.suggestions.length > 0) {
       result.suggestions[column.fieldKey] = validation.suggestions;
     }
   });
-  
+
   return result;
 };
 
@@ -768,17 +771,17 @@ export const useValidation = () => {
 export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[]): { valid: boolean; errors: string[]; warnings: string[] } => {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Validate required fields
   if (!lead.clientName || lead.clientName.trim() === '') {
     errors.push('Client name is required');
   }
-  
+
   // Validate data types and formats
   if (lead.kva && typeof lead.kva !== 'string') {
     warnings.push(`KVA field has unexpected type: ${typeof lead.kva}`);
   }
-  
+
   if (lead.mobileNumbers && Array.isArray(lead.mobileNumbers)) {
     lead.mobileNumbers.forEach((mobile, idx) => {
       if (mobile.number && !/^\d+$/.test(mobile.number)) {
@@ -786,7 +789,7 @@ export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[])
       }
     });
   }
-  
+
   // Check date formats
   const dateFields = ['connectionDate', 'lastActivityDate', 'followUpDate'];
   dateFields.forEach(field => {
@@ -797,7 +800,7 @@ export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[])
       }
     }
   });
-  
+
   // Validate dynamic columns
   visibleColumns.forEach(column => {
     if (column.required) {
@@ -807,7 +810,7 @@ export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[])
       }
     }
   });
-  
+
   return {
     valid: errors.length === 0,
     errors,
@@ -815,7 +818,7 @@ export const validateImportedLead = (lead: Partial<Lead>, visibleColumns: any[])
   };
 };
 
-export const validateImportedLeads = (leads: Partial<Lead>[], visibleColumns: any[]): Array<{lead: Partial<Lead>, errors: string[], warnings: string[], index: number}> => {
+export const validateImportedLeads = (leads: Partial<Lead>[], visibleColumns: any[]): Array<{ lead: Partial<Lead>, errors: string[], warnings: string[], index: number }> => {
   return leads.map((lead, index) => {
     const validation = validateImportedLead(lead, visibleColumns);
     return {
@@ -830,7 +833,7 @@ export const validateImportedLeads = (leads: Partial<Lead>[], visibleColumns: an
 export const getImportSuggestions = (unmappedHeader: string): string[] => {
   const suggestions: string[] = [];
   const header = unmappedHeader.toLowerCase();
-  
+
   // Fuzzy matching suggestions
   if (header.includes('client') || header.includes('name')) {
     suggestions.push('Client Name');
@@ -850,6 +853,6 @@ export const getImportSuggestions = (unmappedHeader: string): string[] => {
   if (header.includes('kva') || header.includes('name')) {
     suggestions.push('KVA');
   }
-  
+
   return suggestions.length > 0 ? suggestions : ['No suggestions available'];
 };

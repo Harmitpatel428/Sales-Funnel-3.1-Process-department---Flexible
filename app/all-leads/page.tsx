@@ -2237,7 +2237,7 @@ export default function AllLeadsPage() {
     }
 
     try {
-      let leads: Partial<Lead>[] = [];
+      let importedLeadsData: Partial<Lead>[] = [];
 
       const name = file.name.toLowerCase();
       const type = (file.type || '').toLowerCase();
@@ -2250,28 +2250,28 @@ export default function AllLeadsPage() {
           console.log('Processing CSV file...');
         }
         const content = await file.text();
-        leads = parseCSV(content);
+        importedLeadsData = parseCSV(content);
       } else if (isExcel) {
         if (process.env.NODE_ENV === 'development') {
           console.log('Processing Excel file...');
         }
-        leads = await parseExcel(file);
+        importedLeadsData = await parseExcel(file);
       } else {
         throw new Error('Unsupported file format. Please select a CSV (.csv) or Excel (.xlsx/.xls) file.');
       }
 
       if (process.env.NODE_ENV === 'development') {
-        console.log('Parsed leads:', leads);
+        console.log('Parsed leads:', importedLeadsData);
       }
 
       // Direct import without preview modal
-      if (leads.length === 0) {
+      if (importedLeadsData.length === 0) {
         throw new Error('No valid data found in the file.');
       }
 
       // Skip persistence during bulk import for performance
       // Note: Persistence skipping removed for now
-      const leadsWithIds = leads.map((lead, index) => {
+      const leadsWithIds = importedLeadsData.map((lead, index) => {
         setDefaultValues(lead, true);
         return {
           ...lead,
@@ -2281,8 +2281,11 @@ export default function AllLeadsPage() {
 
       // DUPLICATE DETECTION: Check for existing leads before importing
       // Match by consumer number (primary) or mobile number (secondary)
+      // Compare against existing leads in the system (from context)
+      const existingLeadsInSystem = leads; // This 'leads' is from useLeads() context
+
       const filteredLeads = leadsWithIds.filter(newLead => {
-        const isDuplicate = leads.some(existingLead => {
+        const isDuplicate = existingLeadsInSystem.some(existingLead => {
           // Check consumer number match (if both exist and not empty)
           if (newLead.consumerNumber && existingLead.consumerNumber &&
             newLead.consumerNumber.trim() !== '' && existingLead.consumerNumber.trim() !== '') {
@@ -2888,8 +2891,8 @@ export default function AllLeadsPage() {
       {showToast && (
         <div className="fixed top-4 right-4 z-50">
           <div className={`px-4 py-2 rounded-md shadow-lg ${toastType === 'success' ? 'bg-green-500 text-white' :
-              toastType === 'error' ? 'bg-red-500 text-white' :
-                'bg-blue-500 text-white'
+            toastType === 'error' ? 'bg-red-500 text-white' :
+              'bg-blue-500 text-white'
             }`}>
             {toastMessage}
           </div>
