@@ -9,6 +9,7 @@ export interface PasswordConfig {
   export: string;
   columnManagement: string;
   rowManagement: string;
+  caseManagement: string;
 }
 
 // Password context type
@@ -30,7 +31,8 @@ const DEFAULT_PASSWORDS: PasswordConfig = {
   headerEdit: 'admin123',
   export: 'admin123',
   columnManagement: 'admin123',
-  rowManagement: 'admin123'
+  rowManagement: 'admin123',
+  caseManagement: 'admin123'
 };
 
 // Password hints
@@ -39,7 +41,8 @@ const PASSWORD_HINTS: Record<keyof PasswordConfig, string> = {
   headerEdit: 'Password for editing table headers',
   export: 'Password for exporting data',
   columnManagement: 'Password for managing columns',
-  rowManagement: 'Password for managing rows'
+  rowManagement: 'Password for managing rows',
+  caseManagement: 'Password for managing cases'
 };
 
 // Security questions
@@ -48,7 +51,8 @@ const SECURITY_QUESTIONS: Record<keyof PasswordConfig, string> = {
   headerEdit: 'What city were you born in?',
   export: 'What is your mother\'s maiden name?',
   columnManagement: 'What was your first car?',
-  rowManagement: 'What is your favorite color?'
+  rowManagement: 'What is your favorite color?',
+  caseManagement: 'What is the name of your first pet?'
 };
 
 // Create context

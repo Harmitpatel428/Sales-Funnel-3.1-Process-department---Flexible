@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback, lazy, Suspense, startTransition } from 'react';
 import { useLeads } from '../context/LeadContext';
+// import { useCases } from '../context/CaseContext';
 import type { Lead } from '../types/shared';
 import { useHeaders } from '../context/HeaderContext';
 import { useColumns } from '../context/ColumnContext';
@@ -96,7 +97,8 @@ const _LEGACY_IMPORT_FIELD_MAPPINGS = {
 
 export default function AllLeadsPage() {
   const router = useRouter();
-  const { leads, setLeads, permanentlyDeleteLead } = useLeads();
+  const { leads, setLeads, permanentlyDeleteLead, updateLead } = useLeads();
+  // const { cases, updateCase } = useCases();
   const { headerConfig } = useHeaders();
   const { getVisibleColumns } = useColumns();
   const [searchInput, setSearchInput] = useState('');
@@ -446,6 +448,19 @@ export default function AllLeadsPage() {
   // Import progress tracking state
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+
+  // Helper function to check if a lead has an associated case (via localStorage)
+  const leadHasCase = useCallback((leadId: string): boolean => {
+    try {
+      const casesJson = localStorage.getItem('processCases');
+      if (!casesJson) return false;
+      const cases = JSON.parse(casesJson);
+      return cases.some((c: { leadId: string }) => c.leadId === leadId);
+    } catch (e) {
+      console.error('Error checking lead case association:', e);
+      return false;
+    }
+  }, []);
 
   // Session verification state
   const [isSessionVerified, setIsSessionVerified] = useState(false);
@@ -2279,95 +2294,109 @@ export default function AllLeadsPage() {
         };
       }) as Lead[];
 
-      // DUPLICATE DETECTION: Check for existing leads before importing
-      // Match by consumer number (primary) or mobile number (secondary)
-      // Compare against existing leads in the system (from context)
-      const existingLeadsInSystem = leads; // This 'leads' is from useLeads() context
+      // ============================================================================
+      // SIMPLE DUPLICATE DETECTION & IMPORT
+      // ============================================================================
+      // - If a match is found (active OR deleted): SKIP IT (duplicate)
+      // - If no match is found: CREATE new lead
 
-      const filteredLeads = leadsWithIds.filter(newLead => {
-        const isDuplicate = existingLeadsInSystem.some(existingLead => {
-          // Check consumer number match (if both exist and not empty)
-          if (newLead.consumerNumber && existingLead.consumerNumber &&
-            newLead.consumerNumber.trim() !== '' && existingLead.consumerNumber.trim() !== '') {
-            if (newLead.consumerNumber.trim() === existingLead.consumerNumber.trim()) {
-              if (process.env.NODE_ENV === 'development') {
-                console.log('🚫 Duplicate detected (consumer number):', newLead.consumerNumber);
-              }
-              return true;
-            }
+      // Helper: Sanitize mobile number to last 10 digits for consistent matching
+      const sanitizeMobileNumber = (phone: string | undefined | null): string => {
+        if (!phone) return '';
+        const digits = phone.replace(/[^0-9]/g, '');
+        return digits.slice(-10);
+      };
+
+      // Build lookup maps for O(1) duplicate detection
+      const mobileToLeadMap = new Map<string, boolean>();
+      const consumerToLeadMap = new Map<string, boolean>();
+
+      leads.forEach(existingLead => {
+        // Map by consumer number (mark as exists)
+        if (existingLead.consumerNumber && existingLead.consumerNumber.trim() !== '') {
+          consumerToLeadMap.set(existingLead.consumerNumber.trim().toLowerCase(), true);
+        }
+
+        // Map by sanitized mobile number
+        const sanitizedMobile = sanitizeMobileNumber(existingLead.mobileNumber);
+        if (sanitizedMobile.length === 10) {
+          mobileToLeadMap.set(sanitizedMobile, true);
+        }
+
+        // Map additional mobile numbers
+        (existingLead.mobileNumbers || []).forEach(m => {
+          const sanitized = sanitizeMobileNumber(m.number);
+          if (sanitized.length === 10) {
+            mobileToLeadMap.set(sanitized, true);
           }
-
-          // Check mobile number match (if both exist and not empty)
-          if (newLead.mobileNumber && existingLead.mobileNumber &&
-            newLead.mobileNumber.trim() !== '' && existingLead.mobileNumber.trim() !== '') {
-            if (newLead.mobileNumber.trim() === existingLead.mobileNumber.trim()) {
-              if (process.env.NODE_ENV === 'development') {
-                console.log('🚫 Duplicate detected (mobile number):', newLead.mobileNumber);
-              }
-              return true;
-            }
-          }
-
-          // Check mobile numbers array for matches
-          if (newLead.mobileNumbers && newLead.mobileNumbers.length > 0 &&
-            existingLead.mobileNumbers && existingLead.mobileNumbers.length > 0) {
-            const newNumbers = newLead.mobileNumbers.map(m => m.number.trim()).filter(n => n !== '');
-            const existingNumbers = existingLead.mobileNumbers.map(m => m.number.trim()).filter(n => n !== '');
-
-            for (const newNum of newNumbers) {
-              if (existingNumbers.includes(newNum)) {
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('🚫 Duplicate detected (mobile numbers array):', newNum);
-                }
-                return true;
-              }
-            }
-          }
-
-          return false;
         });
-
-        return !isDuplicate; // Keep only non-duplicates
       });
 
-      const duplicateCount = leadsWithIds.length - filteredLeads.length;
-      if (duplicateCount > 0) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🚫 Skipped ${duplicateCount} duplicate leads`);
-        }
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📊 Built lookup maps: ${mobileToLeadMap.size} mobile, ${consumerToLeadMap.size} consumer`);
       }
 
-      // Use startTransition to defer re-render and improve import performance
-      // For large imports (500+ rows), process in chunks to avoid blocking UI
-      if (filteredLeads.length > 500) {
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < filteredLeads.length; i += CHUNK_SIZE) {
-          const chunk = filteredLeads.slice(i, i + CHUNK_SIZE);
-          startTransition(() => {
-            setLeads(prev => [...prev, ...chunk]);
-          });
-
-          // Yield to browser between chunks
-          if (i + CHUNK_SIZE < filteredLeads.length) {
-            await new Promise(resolve => setTimeout(resolve, 0));
+      // Check if lead is a duplicate (exists in any form)
+      const isDuplicate = (newLead: Lead): boolean => {
+        // Check consumer number
+        if (newLead.consumerNumber && newLead.consumerNumber.trim() !== '') {
+          if (consumerToLeadMap.has(newLead.consumerNumber.trim().toLowerCase())) {
+            return true;
           }
         }
-      } else {
+
+        // Check main mobile number
+        const newMobileSanitized = sanitizeMobileNumber(newLead.mobileNumber);
+        if (newMobileSanitized.length === 10 && mobileToLeadMap.has(newMobileSanitized)) {
+          return true;
+        }
+
+        // Check additional mobile numbers
+        for (const m of (newLead.mobileNumbers || [])) {
+          const sanitized = sanitizeMobileNumber(m.number);
+          if (sanitized.length === 10 && mobileToLeadMap.has(sanitized)) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      // Process imported leads
+      const leadsToCreate: Lead[] = [];
+      let skippedDuplicateCount = 0;
+
+      leadsWithIds.forEach(newLead => {
+        if (isDuplicate(newLead)) {
+          skippedDuplicateCount++;
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🚫 Skipped duplicate: ${newLead.clientName || newLead.kva || 'Unknown'}`);
+          }
+        } else {
+          leadsToCreate.push(newLead);
+        }
+      });
+
+      // Add new leads to state
+      if (leadsToCreate.length > 0) {
         startTransition(() => {
-          setLeads(prev => [...prev, ...filteredLeads]);
+          setLeads(prev => [...prev, ...leadsToCreate]);
         });
       }
 
-      // Re-enable persistence after import completes
-      // Note: Persistence skipping removed for now
-
-      // Show success notification with duplicate info
+      // Show toast notification
       setShowToast(true);
-      const message = duplicateCount > 0
-        ? `Successfully imported ${filteredLeads.length} leads from ${file.name}. Skipped ${duplicateCount} duplicate(s).`
-        : `Successfully imported ${filteredLeads.length} leads from ${file.name}`;
-      setToastMessage(message);
-      setToastType('success');
+      if (leadsToCreate.length > 0 || skippedDuplicateCount > 0) {
+        let message = `Imported ${leadsToCreate.length} leads.`;
+        if (skippedDuplicateCount > 0) {
+          message += ` Skipped ${skippedDuplicateCount} duplicates.`;
+        }
+        setToastMessage(message);
+        setToastType('success');
+      } else {
+        setToastMessage('No new data to import.');
+        setToastType('info');
+      }
 
       // Auto-hide toast after 5 seconds
       setTimeout(() => {
@@ -2679,25 +2708,28 @@ export default function AllLeadsPage() {
 
           {/* Action Buttons */}
           <div className="flex flex-wrap justify-center items-center space-x-1">
-            {/* Import Button */}
-            <div className="relative">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.xlsm,.csv"
-                onChange={handleFileImport}
-                className="hidden"
-                id="file-import"
-              />
-              <label
-                htmlFor="file-import"
-                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded cursor-pointer flex items-center space-x-1 text-xs font-semibold transition-colors shadow-lg"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-                <span>Import Leads</span>
-              </label>
+            {/* Import Section */}
+            <div className="flex items-center space-x-2">
+              {/* Import Button */}
+              <div className="relative">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.xlsm,.csv"
+                  onChange={handleFileImport}
+                  className="hidden"
+                  id="file-import"
+                />
+                <label
+                  htmlFor="file-import"
+                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded cursor-pointer flex items-center space-x-1 text-xs font-semibold transition-colors shadow-lg"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                  <span>Import Leads</span>
+                </label>
+              </div>
             </div>
 
             {/* Export Button */}

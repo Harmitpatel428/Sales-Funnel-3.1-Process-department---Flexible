@@ -55,7 +55,8 @@ export const DEFAULT_HEADER_LABELS: Record<keyof Lead, string> = {
   mandateStatus: 'Mandate Status',
   documentStatus: 'Document Status',
   convertedToCaseId: 'Converted To Case ID',
-  convertedAt: 'Converted At'
+  convertedAt: 'Converted At',
+  createdAt: 'Created At'
 };
 
 // Field types for validation and rendering
@@ -90,7 +91,8 @@ export const FIELD_TYPES: Record<keyof Lead, 'text' | 'date' | 'select' | 'numbe
   mandateStatus: 'select',
   documentStatus: 'select',
   convertedToCaseId: 'text',
-  convertedAt: 'date'
+  convertedAt: 'date',
+  createdAt: 'date'
 };
 
 // Fields that support sorting
@@ -364,6 +366,13 @@ export const COLUMN_METADATA: Record<keyof Lead, {
     sortable: true,
     width: 120,
     description: 'Date converted to case'
+  },
+  createdAt: {
+    type: 'date',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Date created'
   }
 };
 

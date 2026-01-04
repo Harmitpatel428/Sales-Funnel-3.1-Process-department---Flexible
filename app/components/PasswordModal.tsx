@@ -6,7 +6,7 @@ import { usePasswords } from '../context/PasswordContext';
 interface PasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
-  operation: 'editMode' | 'headerEdit' | 'export' | 'columnManagement' | 'rowManagement';
+  operation: 'editMode' | 'headerEdit' | 'export' | 'columnManagement' | 'rowManagement' | 'caseManagement';
   onSuccess: () => void;
   title?: string;
   description?: string;
@@ -28,12 +28,12 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { 
-    verifyPassword, 
-    getPasswordHint, 
-    getSecurityQuestion, 
+  const {
+    verifyPassword,
+    getPasswordHint,
+    getSecurityQuestion,
     verifySecurityAnswer,
-    isPasswordExpired 
+    isPasswordExpired
   } = usePasswords();
 
   // Reset form when modal opens/closes
@@ -114,7 +114,8 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
     headerEdit: 'Edit Headers',
     export: 'Export Data',
     columnManagement: 'Manage Columns',
-    rowManagement: 'Manage Rows'
+    rowManagement: 'Manage Rows',
+    caseManagement: 'Case Management'
   };
 
   const operationDescriptions = {
@@ -122,12 +123,13 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
     headerEdit: 'Enter password to modify table headers and column settings',
     export: 'Enter password to export lead data to Excel',
     columnManagement: 'Enter password to add, delete, or reorder columns',
-    rowManagement: 'Enter password to perform bulk row operations'
+    rowManagement: 'Enter password to perform bulk row operations',
+    caseManagement: 'Enter password to manage cases'
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div 
+      <div
         className="bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-xl"
         onKeyDown={handleKeyDown}
         tabIndex={-1}

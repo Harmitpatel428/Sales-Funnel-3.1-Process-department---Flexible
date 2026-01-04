@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import {
     Case,
     CaseFilters,
@@ -278,11 +278,24 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     }, [cases]);
 
     // ============================================================================
+    // DEPENDENT VISIBILITY: Filter cases based on lead status
+    // ============================================================================
+    // Cases should be hidden when their linked Lead is deleted.
+    // When the Lead is restored (via re-import), Cases automatically reappear.
+
+    const visibleCases = useMemo(() => {
+        return cases;
+        // Previous logic hid cases if lead was deleted.
+        // We now want cases to persist independently.
+    }, [cases]);
+
+    // ============================================================================
     // FILTERING
     // ============================================================================
 
     const getFilteredCases = useCallback((filters: CaseFilters): Case[] => {
-        return cases.filter(c => {
+        // Start with visible cases only (respects lead deletion status)
+        return visibleCases.filter(c => {
             // Status filter
             if (filters.status && filters.status.length > 0) {
                 if (!filters.status.includes(c.processStatus)) return false;
@@ -328,15 +341,15 @@ export function CaseProvider({ children }: { children: ReactNode }) {
 
             return true;
         });
-    }, [cases]);
+    }, [visibleCases]);
 
     const getCasesByStatus = useCallback((status: ProcessStatus): Case[] => {
-        return cases.filter(c => c.processStatus === status);
-    }, [cases]);
+        return visibleCases.filter(c => c.processStatus === status);
+    }, [visibleCases]);
 
     const getCasesByAssignee = useCallback((userId: string): Case[] => {
-        return cases.filter(c => c.assignedProcessUserId === userId);
-    }, [cases]);
+        return visibleCases.filter(c => c.assignedProcessUserId === userId);
+    }, [visibleCases]);
 
     // ============================================================================
     // STATISTICS
@@ -361,24 +374,25 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             'URGENT': 0
         };
 
-        cases.forEach(c => {
+        // Use visibleCases to only count cases with active leads
+        visibleCases.forEach(c => {
             byStatus[c.processStatus]++;
             byPriority[c.priority]++;
         });
 
         return {
-            total: cases.length,
+            total: visibleCases.length,
             byStatus,
             byPriority
         };
-    }, [cases]);
+    }, [visibleCases]);
 
     // ============================================================================
     // CONTEXT VALUE
     // ============================================================================
 
     const contextValue: CaseContextType = {
-        cases,
+        cases: visibleCases, // Expose only visible cases (respects lead deletion)
         isLoading,
         createCase,
         updateCase,

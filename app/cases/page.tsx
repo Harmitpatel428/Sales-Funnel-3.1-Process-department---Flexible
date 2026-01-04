@@ -6,16 +6,19 @@ import { useCases } from '../context/CaseContext';
 import { useUsers } from '../context/UserContext';
 import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import CaseStatusBadge, { STATUS_ORDER, getStatusConfig } from '../components/CaseStatusBadge';
+import PasswordModal from '../components/PasswordModal';
 import { ProcessStatus, Case } from '../types/processTypes';
 
 export default function CasesPage() {
     const router = useRouter();
-    const { cases, isLoading } = useCases();
+    const { cases, isLoading, deleteCase } = useCases();
     const { currentUser } = useUsers();
 
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'ALL'>('ALL');
     const [assigneeFilter, setAssigneeFilter] = useState<string>('ALL');
+    const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
+    const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
     // Filter cases based on local state
     const filteredCases = useMemo(() => {
@@ -44,6 +47,37 @@ export default function CasesPage() {
 
         return result;
     }, [cases, searchTerm, statusFilter, assigneeFilter]);
+
+    // Handle selection
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            setSelectedCaseIds(new Set(filteredCases.map(c => c.caseId)));
+        } else {
+            setSelectedCaseIds(new Set());
+        }
+    };
+
+    const handleSelectRow = (caseId: string) => {
+        const newSelected = new Set(selectedCaseIds);
+        if (newSelected.has(caseId)) {
+            newSelected.delete(caseId);
+        } else {
+            newSelected.add(caseId);
+        }
+        setSelectedCaseIds(newSelected);
+    };
+
+    const handleDeleteClick = () => {
+        setIsPasswordModalOpen(true);
+    };
+
+    const handlePasswordSuccess = () => {
+        selectedCaseIds.forEach(id => {
+            deleteCase(id);
+        });
+        setSelectedCaseIds(new Set());
+        setIsPasswordModalOpen(false);
+    };
 
     const handleCaseClick = (caseData: Case) => {
         router.push(`/case-details?id=${caseData.caseId}`);
@@ -84,6 +118,22 @@ export default function CasesPage() {
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900">Case Management</h1>
                             <p className="text-sm text-gray-500">Manage and track government subsidy applications</p>
+                        </div>
+
+
+                        {/* Actions */}
+                        <div className="flex gap-2">
+                            {selectedCaseIds.size > 0 && (
+                                <button
+                                    onClick={handleDeleteClick}
+                                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 shadow-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Delete Selected ({selectedCaseIds.size})
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -133,6 +183,14 @@ export default function CasesPage() {
                                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                                     <thead className="bg-gray-50 sticky top-0 z-10">
                                         <tr>
+                                            <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider w-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={filteredCases.length > 0 && selectedCaseIds.size === filteredCases.length}
+                                                    onChange={handleSelectAll}
+                                                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                />
+                                            </th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Case Number</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Client</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Scheme</th>
@@ -148,6 +206,14 @@ export default function CasesPage() {
                                                 onClick={() => handleCaseClick(caseData)}
                                                 className="hover:bg-purple-50 cursor-pointer transition-colors"
                                             >
+                                                <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedCaseIds.has(caseData.caseId)}
+                                                        onChange={() => handleSelectRow(caseData.caseId)}
+                                                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                    />
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
                                                     <div className="flex items-center gap-2">
                                                         {caseData.caseNumber}
@@ -191,7 +257,7 @@ export default function CasesPage() {
                                         ))}
                                         {filteredCases.length === 0 && (
                                             <tr>
-                                                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                                                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                                                     No cases found matching your filters.
                                                 </td>
                                             </tr>
@@ -203,6 +269,15 @@ export default function CasesPage() {
                     </div>
                 </div>
             </div>
-        </RoleGuard>
+
+            <PasswordModal
+                isOpen={isPasswordModalOpen}
+                onClose={() => setIsPasswordModalOpen(false)}
+                operation="caseManagement"
+                onSuccess={handlePasswordSuccess}
+                title="Delete Cases"
+                description={`Are you sure you want to delete ${selectedCaseIds.size} selected case(s)? This action cannot be undone.`}
+            />
+        </RoleGuard >
     );
 }
