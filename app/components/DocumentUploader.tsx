@@ -106,12 +106,48 @@ export default function DocumentUploader({ caseId, schemeType }: DocumentUploade
                     throw new Error(result.error);
                 }
             } else {
-                // Fallback for web dev (no actual file save)
-                console.warn('Electron API not available. File will not be saved to disk.');
-                filePath = `fake/path/${file.name}`;
+                // Browser mode: Read file as base64 and store it for preview
+                const reader = new FileReader();
+                const base64Promise = new Promise<string>((resolve, reject) => {
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                });
+                reader.readAsDataURL(file);
+                const base64Content = await base64Promise;
+
+                filePath = `browser/uploads/${Date.now()}_${file.name}`;
+
+                // Store the base64 data in the document
+                const result = addDocument({
+                    caseId,
+                    documentType: selectedType,
+                    fileName: file.name,
+                    filePath,
+                    fileData: base64Content, // Store base64 for preview
+                    fileSize: file.size,
+                    mimeType: file.type,
+                    status: 'RECEIVED',
+                    uploadedBy: currentUser.userId
+                });
+
+                if (result.success) {
+                    logDocumentAction(
+                        caseId,
+                        'DOCUMENT_UPLOADED',
+                        selectedType,
+                        currentUser.userId,
+                        currentUser.name
+                    );
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                } else {
+                    setError(result.message);
+                }
+
+                setIsUploading(false);
+                return; // Early return for browser mode
             }
 
-            // 7. Add to context
+            // 7. Add to context (Electron mode)
             const result = addDocument({
                 caseId,
                 documentType: selectedType,
@@ -119,7 +155,7 @@ export default function DocumentUploader({ caseId, schemeType }: DocumentUploade
                 filePath,
                 fileSize: file.size,
                 mimeType: file.type,
-                status: 'RECEIVED', // Auto-mark as received upon upload
+                status: 'RECEIVED',
                 uploadedBy: currentUser.userId
             });
 
@@ -172,7 +208,7 @@ export default function DocumentUploader({ caseId, schemeType }: DocumentUploade
                     <select
                         value={selectedType}
                         onChange={(e) => setSelectedType(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-black bg-white"
                     >
                         {REQUIRED_DOCUMENT_TYPES.map(type => (
                             <option key={type} value={type}>{type}</option>

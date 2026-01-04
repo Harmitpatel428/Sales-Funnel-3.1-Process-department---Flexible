@@ -60,7 +60,7 @@ export default function UsersPage() {
         <RoleGuard allowedRoles={['ADMIN']} fallback={<AccessDenied />}>
             <div className="p-6 max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
                     <button
                         onClick={() => {
                             resetForm();
@@ -87,7 +87,7 @@ export default function UsersPage() {
                 {/* Add User Form */}
                 {isEditing && (
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
-                        <h2 className="text-lg font-semibold mb-4">Create New User</h2>
+                        <h2 className="text-lg font-semibold mb-4 text-gray-900">Create New User</h2>
                         <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -124,7 +124,7 @@ export default function UsersPage() {
                                 <select
                                     value={editingUser.role || ''}
                                     onChange={e => setEditingUser({ ...editingUser, role: e.target.value as UserRole })}
-                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 bg-white"
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 bg-white text-black"
                                 >
                                     <option value="">Select Role</option>
                                     <option value="SALES">Sales</option>

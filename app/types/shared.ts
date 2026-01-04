@@ -103,6 +103,7 @@ export interface Lead {
   // Process Management: Lead → Case conversion
   convertedToCaseId?: string;    // If set, lead has been converted to a case
   convertedAt?: string;          // Timestamp of conversion
+  createdAt?: string;            // Timestamp of creation
 }
 
 /**

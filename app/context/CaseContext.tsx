@@ -50,15 +50,28 @@ function generateUUID(): string {
 // VALID STATUS TRANSITIONS
 // ============================================================================
 
+// All statuses available for selection
+const ALL_STATUSES: ProcessStatus[] = [
+    'DOCUMENTS_PENDING',
+    'DOCUMENTS_RECEIVED',
+    'VERIFICATION',
+    'SUBMITTED',
+    'QUERY_RAISED',
+    'APPROVED',
+    'REJECTED',
+    'CLOSED'
+];
+
+// Allow transitions to any status from any current status
 const VALID_STATUS_TRANSITIONS: Record<ProcessStatus, ProcessStatus[]> = {
-    'DOCUMENTS_PENDING': ['DOCUMENTS_RECEIVED', 'CLOSED'],
-    'DOCUMENTS_RECEIVED': ['VERIFICATION', 'DOCUMENTS_PENDING', 'CLOSED'],
-    'VERIFICATION': ['SUBMITTED', 'DOCUMENTS_PENDING', 'CLOSED'],
-    'SUBMITTED': ['QUERY_RAISED', 'APPROVED', 'REJECTED'],
-    'QUERY_RAISED': ['SUBMITTED', 'CLOSED'],
-    'APPROVED': ['CLOSED'],
-    'REJECTED': ['CLOSED'],
-    'CLOSED': [] // Terminal state - no transitions allowed
+    'DOCUMENTS_PENDING': ALL_STATUSES,
+    'DOCUMENTS_RECEIVED': ALL_STATUSES,
+    'VERIFICATION': ALL_STATUSES,
+    'SUBMITTED': ALL_STATUSES,
+    'QUERY_RAISED': ALL_STATUSES,
+    'APPROVED': ALL_STATUSES,
+    'REJECTED': ALL_STATUSES,
+    'CLOSED': ALL_STATUSES
 };
 
 // ============================================================================
@@ -109,7 +122,18 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     // CASE CRUD OPERATIONS
     // ============================================================================
 
-    const createCase = useCallback((leadId: string, schemeType: string): { success: boolean; message: string; caseId?: string } => {
+    const createCase = useCallback((leadId: string, schemeType: string, metadata?: {
+        caseType?: string;
+        benefitTypes?: string[];
+        companyName?: string;
+        companyType?: string;
+        contacts?: Array<{
+            name: string;
+            designation: string;
+            customDesignation?: string;
+            phoneNumber: string;
+        }>;
+    }): { success: boolean; message: string; caseId?: string } => {
         // Find the lead
         const lead = leads.find(l => l.id === leadId);
         if (!lead) {
@@ -134,14 +158,18 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             leadId,
             caseNumber: generateCaseNumber(),
             schemeType,
+            caseType: metadata?.caseType,
+            benefitTypes: metadata?.benefitTypes,
+            companyType: metadata?.companyType,
+            contacts: metadata?.contacts,
             assignedProcessUserId: null,
             processStatus: 'DOCUMENTS_PENDING',
             priority: 'MEDIUM',
             createdAt: now,
             updatedAt: now,
-            // Denormalized lead info
+            // Denormalized lead info - use form data if provided
             clientName: lead.clientName || '',
-            company: lead.company || '',
+            company: metadata?.companyName || lead.company || '',
             mobileNumber: lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
             consumerNumber: lead.consumerNumber,
             kva: lead.kva

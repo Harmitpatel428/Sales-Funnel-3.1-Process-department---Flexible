@@ -93,7 +93,10 @@ export interface Case {
     caseId: string;
     leadId: string;                    // Reference to original lead (immutable)
     caseNumber: string;                // Human-readable case number (e.g., "CASE-2026-0001")
-    schemeType: string;                // Type of government scheme/subsidy
+    schemeType: string;                // Type of government scheme/subsidy (Policy Type)
+    caseType?: string;                 // New, Expansion, Shifting, etc.
+    benefitTypes?: string[];           // Selected benefit types
+    companyType?: string;              // Limited, Pvt Limited, Partnership, etc.
     assignedProcessUserId: string | null;
     processStatus: ProcessStatus;
     priority: CasePriority;
@@ -108,6 +111,14 @@ export interface Case {
     mobileNumber: string;
     consumerNumber?: string;
     kva?: string;
+
+    // Contact persons from forwarding form
+    contacts?: Array<{
+        name: string;
+        designation: string;
+        customDesignation?: string;
+        phoneNumber: string;
+    }>;
 }
 
 /**
@@ -154,6 +165,7 @@ export interface CaseDocument {
     documentType: string;              // e.g., "ID Proof", "GST Certificate"
     fileName: string;
     filePath: string;                  // data/cases/{caseId}/documents/{fileName}
+    fileData?: string;                 // Base64 data URL for browser preview
     fileSize?: number;                 // Size in bytes
     mimeType?: string;
     status: DocumentStatus;
@@ -305,7 +317,18 @@ export interface CaseContextType {
     isLoading: boolean;
 
     // Case CRUD
-    createCase: (leadId: string, schemeType: string) => { success: boolean; message: string; caseId?: string };
+    createCase: (leadId: string, schemeType: string, metadata?: {
+        caseType?: string;
+        benefitTypes?: string[];
+        companyName?: string;
+        companyType?: string;
+        contacts?: Array<{
+            name: string;
+            designation: string;
+            customDesignation?: string;
+            phoneNumber: string;
+        }>;
+    }) => { success: boolean; message: string; caseId?: string };
     updateCase: (caseId: string, updates: Partial<Case>) => { success: boolean; message: string };
     deleteCase: (caseId: string) => { success: boolean; message: string };
     getCaseById: (caseId: string) => Case | undefined;

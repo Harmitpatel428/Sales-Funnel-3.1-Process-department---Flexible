@@ -7,6 +7,7 @@ import { useColumns } from '../context/ColumnContext';
 import { useCases } from '../context/CaseContext';
 import { useUsers } from '../context/UserContext';
 import QuickBenefitModal from './QuickBenefitModal';
+import ForwardToProcessModal from './ForwardToProcessModal';
 import { getGlobalTemplate, saveGlobalTemplate, resolveToTemplate, getResolvedScriptForLead } from '../utils/callScript';
 
 interface LeadDetailModalProps {
@@ -48,37 +49,46 @@ export default function LeadDetailModal({
   const { createCase } = useCases();
   const { canConvertToCase } = useUsers();
   const [isConverting, setIsConverting] = useState(false);
+  const [showForwardModal, setShowForwardModal] = useState(false);
   const canConvert = canConvertToCase();
 
-  const handleConvertToCase = async () => {
+  const handleConvertToCase = () => {
     if (!canConvert) {
-      alert("You don't have permission to convert leads to cases.");
+      alert("You don't have permission to forward leads to process.");
       return;
     }
+    // Open the forward to process form modal
+    setShowForwardModal(true);
+  };
 
-    if (confirm('Are you sure you want to convert this lead to a processed case? This action cannot be undone.')) {
-      setIsConverting(true);
-      try {
-        // Use custom field 'Scheme Type' if available, otherwise default to 'General'
-        // Type casting to access dynamic fields safely
-        const leadAny = lead as any;
-        const schemeType = leadAny['Scheme Type'] || leadAny['Scheme'] || 'General';
+  // Handle form submission from ForwardToProcessModal
+  const handleForwardSubmit = async (formData: any) => {
+    setShowForwardModal(false);
+    setIsConverting(true);
 
-        const result = createCase(lead.id, schemeType);
+    try {
+      // Use form data for scheme type, or fall back to policy type
+      const schemeType = formData.policyType || 'General';
 
-        if (result.success && result.caseId) {
-          // Close modal and navigate to new case
-          onClose();
-          router.push(`/case-details?id=${result.caseId}`);
-        } else {
-          alert(`Failed to convert: ${result.message}`);
-        }
-      } catch (error) {
-        console.error('Conversion error:', error);
-        alert('An error occurred during conversion.');
-      } finally {
-        setIsConverting(false);
+      const result = createCase(lead.id, schemeType, {
+        caseType: formData.caseType,
+        benefitTypes: formData.benefitTypes,
+        companyName: formData.companyName,
+        companyType: formData.companyType,
+        contacts: formData.contacts
+      });
+
+      if (result.success && result.caseId) {
+        onClose();
+        router.push(`/case-details?id=${result.caseId}`);
+      } else {
+        alert(`Failed to forward: ${result.message}`);
       }
+    } catch (error) {
+      console.error('Forward error:', error);
+      alert('An error occurred during forwarding.');
+    } finally {
+      setIsConverting(false);
     }
   };
 
@@ -628,21 +638,21 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                   onClick={handleConvertToCase}
                   disabled={isConverting}
                   className="px-3 py-1 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors disabled:opacity-50"
-                  aria-label="Convert to Case"
+                  aria-label="Forward To Process"
                 >
-                  {isConverting ? 'Converting...' : 'Convert to Case'}
+                  {isConverting ? 'Forwarding...' : 'Forward To Process'}
                 </button>
               )}
 
-              {/* View Case Button (if already converted) */}
+              {/* View Process Button (if already converted) */}
               {lead.convertedToCaseId && (
                 <button
                   type="button"
                   onClick={() => router.push(`/case-details?id=${lead.convertedToCaseId}`)}
                   className="px-3 py-1 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors"
-                  aria-label="View Case"
+                  aria-label="View Process"
                 >
-                  View Case
+                  View Process
                 </button>
               )}
 
@@ -924,6 +934,14 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
           console.log('Template saved:', payload.templateName, 'Content:', payload.content);
           // You can add additional logic here if needed for template processing
         }}
+      />
+
+      {/* Forward To Process Modal */}
+      <ForwardToProcessModal
+        isOpen={showForwardModal}
+        onClose={() => setShowForwardModal(false)}
+        onSubmit={handleForwardSubmit}
+        lead={lead}
       />
     </div>
   );

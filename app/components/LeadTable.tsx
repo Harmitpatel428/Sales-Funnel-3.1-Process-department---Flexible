@@ -37,12 +37,12 @@ interface LeadTableProps {
   highlightedLeadId?: string | null;
 }
 
-const LeadTable = React.memo(function LeadTable({ 
-  filters = {}, 
-  onLeadClick, 
-  selectedLeads = new Set(), 
-  onLeadSelection, 
-  selectAll = false, 
+const LeadTable = React.memo(function LeadTable({
+  filters = {},
+  onLeadClick,
+  selectedLeads = new Set(),
+  onLeadSelection,
+  selectAll = false,
   onSelectAll,
   leads: customLeads,
   showActions = false,
@@ -66,7 +66,7 @@ const LeadTable = React.memo(function LeadTable({
   const [mobileModalOpen, setMobileModalOpen] = useState<string | null>(null);
   const [editingHeader, setEditingHeader] = useState<string | null>(null);
   const [columnManagementOpen, setColumnManagementOpen] = useState(false);
-  const [columnOperation, setColumnOperation] = useState<{type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string} | null>(null);
+  const [columnOperation, setColumnOperation] = useState<{ type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string } | null>(null);
 
   // Virtualization settings
   // Virtual scrolling disabled for <5000 leads to maintain proper HTML table structure
@@ -82,13 +82,13 @@ const LeadTable = React.memo(function LeadTable({
 
   // Force re-render when column configuration changes
   const [columnVersion, setColumnVersion] = useState(0);
-  
+
   useEffect(() => {
     // Track visible column count to force re-render when columns change
     const currentColumns = getVisibleColumns();
     const columnCount = currentColumns.length;
     if (process.env.NODE_ENV === 'development') {
-    console.log('Column configuration updated:', columnCount, 'visible columns');
+      console.log('Column configuration updated:', columnCount, 'visible columns');
     }
     setColumnVersion(columnCount);
   }, [getVisibleColumns]);
@@ -161,16 +161,16 @@ const LeadTable = React.memo(function LeadTable({
 
   const handleColumnAdded = useCallback((column: any) => {
     if (process.env.NODE_ENV === 'development') {
-    console.log('Column added successfully:', column);
+      console.log('Column added successfully:', column);
     }
     onColumnAdded?.(column);
     setColumnManagementOpen(false);
     setColumnOperation(null);
     // Force table re-render
     if (process.env.NODE_ENV === 'development') {
-    console.log('Table will re-render with new column:', column.fieldKey);
+      console.log('Table will re-render with new column:', column.fieldKey);
     }
-    
+
     // Scroll headers into view after a short delay to allow for re-render
     setTimeout(() => {
       const tableContainer = document.querySelector('.table-container');
@@ -182,17 +182,17 @@ const LeadTable = React.memo(function LeadTable({
 
   const handleColumnDeleted = useCallback((fieldKey: string) => {
     if (process.env.NODE_ENV === 'development') {
-    console.log('Column deleted successfully:', fieldKey);
+      console.log('Column deleted successfully:', fieldKey);
     }
     onColumnDeleted?.(fieldKey);
     setColumnManagementOpen(false);
     setColumnOperation(null);
     // Force table re-render
     if (process.env.NODE_ENV === 'development') {
-    console.log('Table will re-render without column:', fieldKey);
+      console.log('Table will re-render without column:', fieldKey);
     }
   }, [onColumnDeleted]);
-  
+
   // Get filtered leads
   // Dependencies use stable primitives: getFilteredLeads is memoized in context,
   // filters is a stable object reference, customLeads from props
@@ -208,7 +208,7 @@ const LeadTable = React.memo(function LeadTable({
   // Helper function to parse dates for sorting
   const parseDateForSorting = useCallback((dateString: string): Date => {
     if (!dateString) return new Date(0); // Return epoch for empty dates
-    
+
     // Handle DD-MM-YYYY format
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       const [day, month, year] = dateString.split('-');
@@ -216,7 +216,7 @@ const LeadTable = React.memo(function LeadTable({
         return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       }
     }
-    
+
     // Handle ISO format or other formats
     const date = new Date(dateString);
     return isNaN(date.getTime()) ? new Date(0) : date;
@@ -225,27 +225,27 @@ const LeadTable = React.memo(function LeadTable({
   // Helper function to parse numeric values for sorting
   const parseNumericForSorting = useCallback((value: string): number => {
     if (!value) return 0;
-    
+
     // Extract numbers from the string
     const numericMatch = value.toString().match(/\d+/);
     return numericMatch ? parseInt(numericMatch[0]) : 0;
   }, []);
-  
+
   // Sort leads based on current sort field and direction
   const sortedLeads = useMemo(() => {
     if (!sortField) return filteredLeads;
-    
+
     // Get the column configuration for the sort field
     const column = getColumnByKey(sortField);
-    
+
     return [...filteredLeads].sort((a, b) => {
       const aValue = a[sortField];
       const bValue = b[sortField];
-      
+
       if (aValue === undefined || bValue === undefined) return 0;
-      
+
       let comparison = 0;
-      
+
       // Handle date fields
       if (column?.type === 'date') {
         const aDate = parseDateForSorting(String(aValue || ''));
@@ -264,11 +264,11 @@ const LeadTable = React.memo(function LeadTable({
       } else {
         comparison = aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
       }
-      
+
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [filteredLeads, sortField, sortDirection, getColumnByKey]);
-  
+
   // Enable virtual scrolling for large datasets to improve performance
   useEffect(() => {
     setUseVirtualization(sortedLeads.length > VIRTUALIZATION_THRESHOLD);
@@ -288,28 +288,28 @@ const LeadTable = React.memo(function LeadTable({
           const htmlRow = row as HTMLElement;
           return htmlRow.offsetHeight > 0 && htmlRow.offsetWidth > 0;
         });
-        
+
         // If we have leads but no visible rows, virtualization might be broken
         if (sortedLeads.length > 0 && visibleRows.length === 0) {
           console.warn('Virtualization may be causing rendering issues, falling back to standard rendering');
           setVirtualizationError(true);
         }
       }, 100);
-      
+
       return () => clearTimeout(checkTimeout);
     }
   }, [useVirtualization, sortedLeads.length]);
-  
+
   // Add render time tracking and performance monitoring
   if (process.env.NODE_ENV === 'development') {
     console.log('LeadTable rendering', sortedLeads.length, 'leads', useVirtualization ? 'with virtualization' : 'standard');
-    
+
     // Performance warning for very large datasets
     if (sortedLeads.length > 10000) {
       console.warn(`Large dataset detected (${sortedLeads.length} leads). Consider implementing pagination or advanced virtualization.`);
     }
   }
-  
+
   // Handle column header click for sorting
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
@@ -321,37 +321,37 @@ const LeadTable = React.memo(function LeadTable({
       setSortDirection('asc');
     }
   }, [sortField, sortDirection]);
-  
+
   // Render sort indicator
   const renderSortIndicator = useCallback((field: SortField) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? ' ↑' : ' ↓';
   }, [sortField, sortDirection]);
-  
+
   // Format date for display in DD-MM-YYYY format
   const formatDate = useCallback((dateString: string) => {
     if (!dateString) return '';
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's a Date object or ISO string, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       return `${day}-${month}-${year}`;
     } catch {
       return dateString; // Return original if conversion fails
     }
   }, []);
-  
+
   // Get status color
   const getStatusColor = useCallback((status: Lead['status']) => {
     switch (status) {
@@ -379,12 +379,12 @@ const LeadTable = React.memo(function LeadTable({
   // Helper function to safely parse mobile numbers
   const getMobileNumbers = useCallback((lead: Lead) => {
     if (!lead.mobileNumbers) return [];
-    
+
     // If it's already an array, return it
     if (Array.isArray(lead.mobileNumbers)) {
       return lead.mobileNumbers;
     }
-    
+
     // If it's a string, try to parse it as JSON
     if (typeof lead.mobileNumbers === 'string') {
       try {
@@ -394,7 +394,7 @@ const LeadTable = React.memo(function LeadTable({
         return [];
       }
     }
-    
+
     return [];
   }, []);
 
@@ -440,9 +440,32 @@ const LeadTable = React.memo(function LeadTable({
 
     // Only add style prop when virtual scrolling is active
     if (style) {
-       
+
       rowProps.style = style;
     }
+
+    // Check if lead is new (created within last 24 hours)
+    const getBadgeStatus = (lead: Lead): 'JUST_ADDED' | 'NEW' | null => {
+      // If manually marked as new via status, treat as New (unless very fresh)
+      const isManualNew = lead.status === 'New';
+
+      if (!lead.createdAt) return isManualNew ? 'NEW' : null;
+
+      try {
+        const created = new Date(lead.createdAt);
+        const now = new Date();
+        const diffInMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+
+        if (diffInMinutes < 20) return 'JUST_ADDED';
+        if (diffInMinutes < 24 * 60) return 'NEW';
+      } catch (e) {
+        return isManualNew ? 'NEW' : null;
+      }
+
+      return isManualNew ? 'NEW' : null;
+    };
+
+    const badgeStatus = getBadgeStatus(lead);
 
     return (
       <tr key={lead.id} {...rowProps}>
@@ -463,19 +486,19 @@ const LeadTable = React.memo(function LeadTable({
         {data.getVisibleColumns().map((column) => {
           const fieldKey = column.fieldKey;
           const value = (lead as any)[fieldKey] ?? '';
-          
+
           // Debug logging for dynamic columns
           if (process.env.NODE_ENV === 'development') {
             if (!(fieldKey in lead)) {
               console.log(`Dynamic column "${fieldKey}" not found in lead data, using default value`);
             }
           }
-          
+
           // Get the column configuration for this field
           const columnConfig = data.getColumnByKey(fieldKey);
           const defaultValue = columnConfig?.defaultValue || '';
           const displayValue = (lead as any)[fieldKey] ?? defaultValue;
-          
+
           // Special handling for mobile number field
           if (fieldKey === 'mobileNumber') {
             return (
@@ -493,7 +516,7 @@ const LeadTable = React.memo(function LeadTable({
                         if (mainIndex >= 0) {
                           const existing = updatedMobileNumbers[mainIndex];
                           if (existing) {
-                            updatedMobileNumbers[mainIndex] = { 
+                            updatedMobileNumbers[mainIndex] = {
                               id: existing.id,
                               number: val,
                               name: existing.name,
@@ -503,7 +526,7 @@ const LeadTable = React.memo(function LeadTable({
                         } else if (updatedMobileNumbers.length > 0) {
                           const existing = updatedMobileNumbers[0];
                           if (existing) {
-                            updatedMobileNumbers[0] = { 
+                            updatedMobileNumbers[0] = {
                               id: existing.id,
                               number: val,
                               name: existing.name,
@@ -539,7 +562,7 @@ const LeadTable = React.memo(function LeadTable({
               </td>
             );
           }
-          
+
           // Special handling for status field
           if (fieldKey === 'status') {
             return (
@@ -563,7 +586,7 @@ const LeadTable = React.memo(function LeadTable({
               </td>
             );
           }
-          
+
           // Special handling for date fields
           if (column.type === 'date') {
             return (
@@ -584,7 +607,7 @@ const LeadTable = React.memo(function LeadTable({
               </td>
             );
           }
-          
+
           // Default handling for other fields
           return (
             <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
@@ -600,8 +623,20 @@ const LeadTable = React.memo(function LeadTable({
                   className="text-xs"
                 />
               ) : (
-                <div className="text-xs text-black truncate" title={displayValue}>
-                  {displayValue || defaultValue || 'N/A'}
+                <div className="flex items-center gap-1">
+                  <div className="text-xs text-black truncate" title={displayValue}>
+                    {displayValue || defaultValue || 'N/A'}
+                  </div>
+                  {fieldKey === 'clientName' && badgeStatus === 'JUST_ADDED' && (
+                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-green-200 shadow-sm animate-pulse whitespace-nowrap">
+                      JUST ADDED
+                    </span>
+                  )}
+                  {fieldKey === 'clientName' && badgeStatus === 'NEW' && (
+                    <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-200 shadow-sm animate-pulse">
+                      NEW
+                    </span>
+                  )}
                 </div>
               )}
             </td>
@@ -625,7 +660,7 @@ const LeadTable = React.memo(function LeadTable({
           Loading {sortedLeads.length} leads...
         </div>
       )}
-      
+
       {/* Count badge and performance indicator */}
       {sortedLeads.length > 0 && (
         <div className="absolute top-0 right-0 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-bl z-20">
@@ -658,7 +693,7 @@ const LeadTable = React.memo(function LeadTable({
               const field = column.fieldKey;
               const isEditing = editingHeader === field;
               const displayName = getDisplayName(field);
-              
+
               // Define column widths based on column configuration
               const getColumnWidth = (column: ColumnConfig) => {
                 // Use column width from configuration, mapping to Tailwind classes
@@ -671,9 +706,9 @@ const LeadTable = React.memo(function LeadTable({
               };
 
               return (
-                <th 
+                <th
                   key={field}
-                  scope="col" 
+                  scope="col"
                   className={`px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider ${!isEditing ? 'cursor-pointer hover:bg-gray-100' : ''} ${getColumnWidth(column)}`}
                   onClick={!isEditing ? () => handleSort(field as SortField) : undefined}
                 >
@@ -713,7 +748,7 @@ const LeadTable = React.memo(function LeadTable({
           </tr>
         </thead>
         {/* Conditional rendering: Virtual scrolling for large lists, standard rendering for small lists */}
-          {sortedLeads.length > 0 ? (
+        {sortedLeads.length > 0 ? (
           (useVirtualization && !virtualizationError) ? (
             // Virtual scrolling enabled for performance with large datasets
             // Note: Virtual scrolling may cause table structure issues in some browsers
@@ -788,8 +823,8 @@ const LeadTable = React.memo(function LeadTable({
               </td>
             </tr>
           </tbody>
-          )}
-        
+        )}
+
         {/* Show warning when fallback occurs */}
         {virtualizationError && (
           <tbody className="bg-yellow-50 divide-y divide-gray-200">
@@ -801,7 +836,7 @@ const LeadTable = React.memo(function LeadTable({
           </tbody>
         )}
       </table>
-      
+
       {/* Mobile Numbers Modal */}
       {mobileModalOpen && (
         <Suspense fallback={<LoadingSpinner text="Loading..." />}>

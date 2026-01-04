@@ -7,7 +7,7 @@ import { useTemplates, Template } from './TemplateManager';
 interface QuickBenefitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (payload: { selectedTemplateId: string; templateName: string; content: TemplateSections; resolvedBenefit: {district: string; taluka: string; category: 'I'|'II'|'III'} | null }) => void;
+  onSave?: (payload: { selectedTemplateId: string; templateName: string; content: TemplateSections; resolvedBenefit: { district: string; taluka: string; category: 'I' | 'II' | 'III' } | null }) => void;
 }
 
 type TemplateSections = {
@@ -78,7 +78,7 @@ const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, 
         suppressContentEditableWarning
       />
       {isEmpty && (
-        <div className="absolute top-2 left-3 text-gray-500 text-sm pointer-events-none select-none">
+        <div className="absolute top-2 left-3 text-gray-800 text-sm pointer-events-none select-none">
           {placeholder}
         </div>
       )}
@@ -89,7 +89,7 @@ const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, 
 const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, onSave }) => {
   const { templates, activeTemplateId, setActiveTemplateId, createTemplate, deleteTemplate, renameTemplate, updateTemplateContent, getTemplateById } = useTemplates();
   const [showBenefitsModal, setShowBenefitsModal] = useState(false);
-  const [resolvedBenefit, setResolvedBenefit] = useState<{district: string; taluka: string; category: 'I'|'II'|'III'} | null>(null);
+  const [resolvedBenefit, setResolvedBenefit] = useState<{ district: string; taluka: string; category: 'I' | 'II' | 'III' } | null>(null);
   const [showContentEditor, setShowContentEditor] = useState(false);
   const [editingContent, setEditingContent] = useState<TemplateSections>({
     overview: ''
@@ -167,7 +167,7 @@ const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, 
   const activeTemplate = getTemplateById(activeTemplateId || '');
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}
     >
@@ -199,13 +199,13 @@ const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, 
             {/* Template sections */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-gray-900">Template Content - {activeTemplate?.name || 'No Template Selected'}</h3>
-              
+
               <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm ring-1 ring-gray-100 w-full text-left" dir="ltr">
                 <h4 className="font-medium text-gray-800 mb-2 text-left" dir="ltr">Benefits Overview</h4>
                 <div
                   className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap text-left"
-                  dangerouslySetInnerHTML={{ 
-                    __html: DOMPurify.sanitize(activeTemplate?.content.overview || '') || 'This section will contain benefits overview...' 
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(activeTemplate?.content.overview || '') || 'This section will contain benefits overview...'
                   }}
                 />
               </div>
@@ -343,7 +343,7 @@ const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, 
 
       {/* Content Editor Modal */}
       {showContentEditor && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
           onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}
         >

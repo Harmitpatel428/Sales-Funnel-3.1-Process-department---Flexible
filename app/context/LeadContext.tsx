@@ -49,12 +49,12 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         const parsedLeads = JSON.parse(stored);
         if (process.env.NODE_ENV === 'development') {
           console.log('🔍 Loading leads from localStorage:', parsedLeads.length, 'leads');
-          console.log('📊 Lead details:', parsedLeads.map((l: Lead) => ({ 
-            id: l.id, 
-            kva: l.kva, 
-            status: l.status, 
-            isDeleted: l.isDeleted, 
-            isDone: l.isDone 
+          console.log('📊 Lead details:', parsedLeads.map((l: Lead) => ({
+            id: l.id,
+            kva: l.kva,
+            status: l.status,
+            isDeleted: l.isDeleted,
+            isDone: l.isDone
           })));
         }
         setLeads(parsedLeads);
@@ -63,7 +63,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           console.log('🔍 No leads found in localStorage');
         }
       }
-      
+
       const storedViews = localStorage.getItem('savedViews');
       if (storedViews) {
         setSavedViews(JSON.parse(storedViews));
@@ -80,7 +80,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   // Persistence will resume automatically after skipPersistence is set to false
   useEffect(() => {
     if (!isHydrated || skipPersistence) return;
-    
+
     const timeoutId = setTimeout(() => {
       try {
         localStorage.setItem('leads', JSON.stringify(leads));
@@ -88,14 +88,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         console.error('Error saving leads to localStorage:', error);
       }
     }, 500); // Increased debounce for better performance
-    
+
     return () => clearTimeout(timeoutId);
   }, [leads, isHydrated]);
 
   // Save views to localStorage whenever they change (debounced)
   useEffect(() => {
     if (!isHydrated) return;
-    
+
     const timeoutId = setTimeout(() => {
       try {
         localStorage.setItem('savedViews', JSON.stringify(savedViews));
@@ -103,7 +103,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         console.error('Error saving views to localStorage:', error);
       }
     }, 500); // Increased debounce for better performance
-    
+
     return () => clearTimeout(timeoutId);
   }, [savedViews, isHydrated]);
 
@@ -115,18 +115,19 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       console.log('📊 Lead isDone:', lead.isDone);
       console.log('📊 Column configs provided:', columnConfigs?.length || 0);
     }
-    
+
     // Apply defaults for all current columns if columnConfigs provided
     const leadWithDefaults = columnConfigs ? getLeadWithDefaults(lead, columnConfigs) : lead;
-    
+
     // Ensure the lead has all required flags set correctly
     const finalLead = {
       ...leadWithDefaults,
       isUpdated: false,
       isDeleted: lead.isDeleted || false,
-      isDone: lead.isDone || false
+      isDone: lead.isDone || false,
+      createdAt: new Date().toISOString()
     };
-    
+
     setLeads(prev => {
       const newLeads = [...prev, finalLead];
       if (process.env.NODE_ENV === 'development') {
@@ -136,22 +137,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       return newLeads;
     });
   };
-  
+
   const updateLead = (updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
     const touchActivity = opts?.touchActivity !== false; // Default to true if not specified
-    setLeads(prev => 
-      prev.map(lead => lead.id === updatedLead.id ? { 
-        ...updatedLead, 
+    setLeads(prev =>
+      prev.map(lead => lead.id === updatedLead.id ? {
+        ...updatedLead,
         isUpdated: true,
         lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate
       } : lead)
     );
   };
-  
+
   const deleteLead = (id: string) => {
     setLeads(prev => {
-      const updated = prev.map(lead => 
-        lead.id === id 
+      const updated = prev.map(lead =>
+        lead.id === id
           ? { ...lead, isDeleted: true, lastActivityDate: new Date().toISOString() }
           : lead
       );
@@ -165,17 +166,17 @@ export function LeadProvider({ children }: { children: ReactNode }) {
 
   const markAsDone = (id: string) => {
     setLeads(prev =>
-      prev.map(l => (l.id === id ? { 
-        ...l, 
+      prev.map(l => (l.id === id ? {
+        ...l,
         isDone: true,
         lastActivityDate: new Date().toISOString() // Update timestamp when marked as done
       } : l))
     );
   };
-  
+
   const addActivity = (
-    leadId: string, 
-    description: string, 
+    leadId: string,
+    description: string,
     options?: {
       activityType?: Activity['activityType'],
       duration?: number,
@@ -192,8 +193,8 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       duration: options?.duration || undefined,
       metadata: options?.metadata
     };
-    
-    setLeads(prev => 
+
+    setLeads(prev =>
       prev.map(lead => {
         if (lead.id === leadId) {
           const activities = lead.activities || [];
@@ -207,22 +208,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       })
     );
   };
-  
+
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 getFilteredLeads called with filters:', filters);
       console.log('📊 Total leads before filtering:', leads.length);
-      console.log('📊 All leads details:', leads.map(l => ({ 
-        id: l.id, 
-        kva: l.kva, 
-        status: l.status, 
-        isDeleted: l.isDeleted, 
+      console.log('📊 All leads details:', leads.map(l => ({
+        id: l.id,
+        kva: l.kva,
+        status: l.status,
+        isDeleted: l.isDeleted,
         isDone: l.isDone,
-        clientName: l.clientName 
+        clientName: l.clientName
       })));
     }
-    
+
     const filtered = leads.filter(lead => {
       // Filter out deleted leads (isDeleted: true) - they should not appear in dashboard
       if (lead.isDeleted) {
@@ -231,7 +232,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
         return false;
       }
-      
+
       // Filter out completed leads (isDone: true)
       if (lead.isDone) {
         if (process.env.NODE_ENV === 'development') {
@@ -239,7 +240,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
         return false;
       }
-      
+
       // For main dashboard (no status filter), show all non-deleted, non-done leads
       // Only filter by status if explicitly provided
       if (filters.status && filters.status.length > 0 && !filters.status.includes(lead.status)) {
@@ -248,12 +249,12 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
         return false;
       }
-      
+
       // Filter by follow-up date range - parse dates as Date objects for accurate comparison
       const leadDate = toDate(lead.followUpDate);
       const startDate = toDate(filters.followUpDateStart);
       const endDate = toDate(filters.followUpDateEnd);
-      
+
       if (startDate && leadDate && leadDate < startDate) {
         if (process.env.NODE_ENV === 'development') {
           console.log('❌ Lead filtered out (follow-up date start):', lead.clientName || lead.kva);
@@ -266,16 +267,16 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
         return false;
       }
-      
+
       // Debug log for invalid dates
       if (lead.followUpDate && !leadDate) {
         console.warn('Invalid followUpDate', lead.id, lead.followUpDate);
       }
-      
+
       // Search term (search in all lead properties dynamically)
       if (filters.searchTerm) {
         const searchTerm = filters.searchTerm.toLowerCase();
-        
+
         // Check if it's a phone number search (only digits)
         if (/^\d+$/.test(filters.searchTerm)) {
           // Search in all mobile numbers
@@ -283,7 +284,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
             lead.mobileNumber, // backward compatibility
             ...(lead.mobileNumbers || []).map(m => m.number)
           ];
-          
+
           for (const mobileNumber of allMobileNumbers) {
             if (mobileNumber) {
               const phoneDigits = mobileNumber.replace(/[^0-9]/g, '');
@@ -295,7 +296,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-          
+
           // Also search in consumer number digits
           if (extractDigits(lead.consumerNumber).includes(filters.searchTerm)) {
             if (process.env.NODE_ENV === 'development') {
@@ -304,30 +305,30 @@ export function LeadProvider({ children }: { children: ReactNode }) {
             return true;
           }
         }
-        
+
         // Dynamic text search through all lead properties
         const nonSearchableKeys = NON_SEARCHABLE_KEYS;
         const searchableValues: string[] = [];
-        
+
         // Include all mobile numbers and mobile names explicitly for compatibility
         const allMobileNumbers = [
           lead.mobileNumber, // backward compatibility
           ...(lead.mobileNumbers || []).map(m => m.number)
         ].filter(Boolean);
-        
+
         const allMobileNames = (lead.mobileNumbers || []).map(m => m.name).filter(Boolean);
-        
+
         // Add mobile numbers and names to searchable values
         searchableValues.push(...allMobileNumbers.map(num => num.toLowerCase()));
         searchableValues.push(...allMobileNames.map(name => name.toLowerCase()));
-        
+
         // Iterate through all enumerable properties of the lead object
         Object.entries(lead).forEach(([key, value]) => {
           // Skip non-searchable fields
           if (nonSearchableKeys.includes(key)) {
             return;
           }
-          
+
           // Handle different value types
           if (value !== null && value !== undefined) {
             if (Array.isArray(value)) {
@@ -342,7 +343,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
             }
           }
         });
-        
+
         const matches = searchableValues.some(value => value.includes(searchTerm));
         if (!matches) {
           if (process.env.NODE_ENV === 'development') {
@@ -351,13 +352,13 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
         return matches;
       }
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('✅ Lead passes all filters:', lead.clientName || lead.kva);
       }
       return true;
     });
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📊 Final filtered leads count:', filtered.length);
     }
@@ -365,15 +366,15 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, [leads]);
 
   const resetUpdatedLeads = () => {
-    setLeads(prev => 
+    setLeads(prev =>
       prev.map(lead => ({ ...lead, isUpdated: false }))
     );
   };
-  
+
   const addSavedView = (view: SavedView) => {
     setSavedViews(prev => [...prev, view]);
   };
-  
+
   const deleteSavedView = (id: string) => {
     setSavedViews(prev => prev.filter(view => view.id !== id));
   };
@@ -382,7 +383,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   const migrateLeadsForNewColumn = (columnConfig: ColumnConfig) => {
     console.log(`🔄 Starting migration for new column: ${columnConfig.fieldKey}`);
     console.log(`📊 Total leads to migrate: ${leads.length}`);
-    
+
     setLeads(prev => {
       const migrated = prev.map(lead => {
         // Check if lead already has this field
@@ -390,9 +391,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           console.log(`⚠️ Lead ${lead.clientName || lead.kva} already has field ${columnConfig.fieldKey}, skipping`);
           return lead;
         }
-        
+
         let defaultValue = columnConfig.defaultValue;
-        
+
         // Set appropriate default value based on column type
         if (defaultValue === undefined) {
           switch (columnConfig.type) {
@@ -414,7 +415,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
               defaultValue = '';
           }
         }
-        
+
         // Preserve existing flags and properties
         const updatedLead = {
           ...lead,
@@ -424,11 +425,11 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           isDone: lead.isDone || false,
           isUpdated: lead.isUpdated || false
         };
-        
+
         console.log(`✅ Migrated lead ${lead.clientName || lead.kva} with field ${columnConfig.fieldKey} = ${defaultValue}`);
         return updatedLead;
       });
-      
+
       console.log(`🎉 Migration complete for column: ${columnConfig.fieldKey}`);
       return migrated;
     });
@@ -444,7 +445,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
 
   const getLeadFieldValue = (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
     const value = (lead as any)[fieldKey];
-    
+
     if (value !== undefined && value !== null) {
       // Handle type conversion based on column configuration
       if (columnConfig) {
@@ -483,7 +484,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       }
       return value;
     }
-    
+
     // Return appropriate default value based on column type
     if (columnConfig) {
       switch (columnConfig.type) {
@@ -500,18 +501,18 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           return defaultValue || '';
       }
     }
-    
+
     return defaultValue || '';
   };
 
   // Additional helper functions for dynamic columns
   const getLeadWithDefaults = (lead: Lead, columnConfigs: ColumnConfig[]): Lead => {
     const leadWithDefaults = { ...lead };
-    
+
     columnConfigs.forEach(column => {
       if (leadWithDefaults[column.fieldKey as keyof Lead] === undefined) {
         let defaultValue = column.defaultValue;
-        
+
         if (defaultValue === undefined) {
           switch (column.type) {
             case 'date':
@@ -532,17 +533,17 @@ export function LeadProvider({ children }: { children: ReactNode }) {
               defaultValue = '';
           }
         }
-        
+
         (leadWithDefaults as any)[column.fieldKey] = defaultValue;
       }
     });
-    
+
     return leadWithDefaults;
   };
 
   const validateLeadAgainstColumns = (lead: Lead, columnConfigs: ColumnConfig[]): string[] => {
     const errors: string[] = [];
-    
+
     columnConfigs.forEach(column => {
       if (column.required) {
         const value = (lead as any)[column.fieldKey];
@@ -551,7 +552,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-    
+
     return errors;
   };
 
