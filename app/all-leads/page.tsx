@@ -2664,7 +2664,7 @@ export default function AllLeadsPage() {
             All Leads
           </h1>
           <p className="text-blue-100 text-xs font-medium">
-            🚷 This page is strictly reserved for Admins Anil Patel & Jitendra Patel - unauthorized access will be monitored.
+            Administrative Access Only
           </p>
         </div>
 

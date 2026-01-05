@@ -211,6 +211,24 @@ input, textarea, select {
   animation-delay: 3s;
 }
 
+/* Gradient Shift Animation for Heading */
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
 .animation-delay-4000 {
   animation-delay: 4s;
 }
