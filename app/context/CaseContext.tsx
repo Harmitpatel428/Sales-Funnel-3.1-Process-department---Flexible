@@ -391,7 +391,8 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     // CONTEXT VALUE
     // ============================================================================
 
-    const contextValue: CaseContextType = {
+    // Memoize context value to prevent unnecessary re-renders
+    const contextValue: CaseContextType = useMemo(() => ({
         cases: visibleCases, // Expose only visible cases (respects lead deletion)
         isLoading,
         createCase,
@@ -405,7 +406,21 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         getCasesByStatus,
         getCasesByAssignee,
         getCaseStats
-    };
+    }), [
+        visibleCases,
+        isLoading,
+        createCase,
+        updateCase,
+        deleteCase,
+        getCaseById,
+        getCaseByLeadId,
+        updateStatus,
+        assignCase,
+        getFilteredCases,
+        getCasesByStatus,
+        getCasesByAssignee,
+        getCaseStats
+    ]);
 
     return (
         <CaseContext.Provider value={contextValue}>

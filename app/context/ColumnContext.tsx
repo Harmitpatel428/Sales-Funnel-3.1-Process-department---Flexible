@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { useLeads } from './LeadContext';
 import { ColumnConfig, ColumnContextType } from '../types/shared';
 
@@ -147,7 +147,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       try {
         const parsed = JSON.parse(savedColumns);
         setColumns(parsed);
-        
+
         // Check if termLoan column is missing and add it
         const hasTermLoan = parsed.some((col: ColumnConfig) => col.fieldKey === 'termLoan');
         if (!hasTermLoan) {
@@ -156,7 +156,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const mergedColumns = [...parsed, termLoanColumn];
             setColumns(mergedColumns);
             localStorage.setItem('leadColumnConfig', JSON.stringify(mergedColumns));
-            
+
             // Migrate existing leads for the new column
             try {
               leadsCtx.migrateLeadsForNewColumn(termLoanColumn);
@@ -183,7 +183,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Starting column addition process:', config);
       }
-      
+
       const id = config.fieldKey || `column_${Date.now()}`;
       const newColumn: ColumnConfig = {
         id,
@@ -217,7 +217,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       const newColumns = [...columns, newColumn];
       saveColumns(newColumns);
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log(`🎉 Column "${newColumn.label}" added successfully with ID: ${newColumn.id}`);
       }
@@ -251,7 +251,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       const newColumns = columns.filter(col => col.fieldKey !== fieldKey);
       saveColumns(newColumns);
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log(`Column "${column.label}" deleted successfully`);
       }
@@ -268,7 +268,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return false;
     }
 
-    const reorderedColumns = newOrder.map(fieldKey => 
+    const reorderedColumns = newOrder.map(fieldKey =>
       columns.find(col => col.fieldKey === fieldKey)
     ).filter(Boolean) as ColumnConfig[];
 
@@ -283,7 +283,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return false;
     }
 
-    const newColumns = columns.map(col => 
+    const newColumns = columns.map(col =>
       col.fieldKey === fieldKey ? { ...col, visible: !col.visible } : col
     );
     saveColumns(newColumns);
@@ -298,7 +298,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     const updatedColumn = { ...columns[columnIndex], ...updates } as ColumnConfig;
-    
+
     // Validate the updated column (but allow fieldKey changes for existing columns)
     const validation = validateColumnConfig(updatedColumn, true);
     if (!validation.valid) {
@@ -309,7 +309,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const newColumns = [...columns];
     newColumns[columnIndex] = updatedColumn;
     saveColumns(newColumns);
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log(`Column "${fieldKey}" updated successfully`);
     }
@@ -317,24 +317,19 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   // Get column by key
-  const getColumnByKey = (fieldKey: string): ColumnConfig | undefined => {
+  const getColumnByKey = useCallback((fieldKey: string): ColumnConfig | undefined => {
     return columns.find(col => col.fieldKey === fieldKey);
-  };
+  }, [columns]);
 
   // Get visible columns
-  const getVisibleColumns = (): ColumnConfig[] => {
+  const getVisibleColumns = useCallback((): ColumnConfig[] => {
     const visible = columns.filter(col => col.visible).sort((a, b) => {
       // Sort by the order they appear in the columns array
       return columns.indexOf(a) - columns.indexOf(b);
     });
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📊 getVisibleColumns called, returning:', visible.length, 'visible columns');
-      console.log('🔍 Visible columns:', visible.map(col => ({ fieldKey: col.fieldKey, label: col.label })));
-    }
-    
+
     return visible;
-  };
+  }, [columns]);
 
   // Validate column configuration
   const validateColumnConfig = (config: Partial<ColumnConfig>, isUpdate: boolean = false): { valid: boolean; errors: string[] } => {
@@ -348,7 +343,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(config.fieldKey)) {
         errors.push('Field key must start with a letter and contain only letters, numbers, and underscores');
       }
-      
+
       // Check if field key already exists (only for new columns, not updates)
       if (!isUpdate && columns.some(col => col.fieldKey === config.fieldKey)) {
         errors.push('A column with this field key already exists');
@@ -437,7 +432,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           description: col.description
         }))
       };
-      
+
       return JSON.stringify(configToExport, null, 2);
     } catch (error) {
       console.error('Error exporting column config:', error);
@@ -449,7 +444,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const importColumnConfig = (configJson: string): { success: boolean; message: string } => {
     try {
       const parsed = JSON.parse(configJson);
-      
+
       if (!parsed.columns || !Array.isArray(parsed.columns)) {
         return { success: false, message: 'Invalid configuration format' };
       }
@@ -483,14 +478,14 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }));
 
       // Check for conflicts with existing columns
-      const conflicts = importedColumns.filter(imported => 
+      const conflicts = importedColumns.filter(imported =>
         columns.some(existing => existing.fieldKey === imported.fieldKey)
       );
 
       if (conflicts.length > 0) {
-        return { 
-          success: false, 
-          message: `Column conflicts detected: ${conflicts.map(c => c.fieldKey).join(', ')}. Please resolve conflicts before importing.` 
+        return {
+          success: false,
+          message: `Column conflicts detected: ${conflicts.map(c => c.fieldKey).join(', ')}. Please resolve conflicts before importing.`
         };
       }
 
@@ -508,7 +503,8 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const contextValue: ColumnContextType = {
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue: ColumnContextType = useMemo(() => ({
     columns,
     addColumn,
     deleteColumn,
@@ -522,7 +518,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     resetColumnToDefault,
     exportColumnConfig,
     importColumnConfig
-  };
+  }), [columns, getColumnByKey, getVisibleColumns]);
 
   return (
     <ColumnContext.Provider value={contextValue}>

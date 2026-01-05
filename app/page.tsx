@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCard3D } from './hooks/useCard3D';
 import { getEmployeeName, calculateWorkStats, getWorkSessions } from './utils/employeeStorage';
@@ -10,46 +10,52 @@ export default function HomePage() {
   const router = useRouter();
   const { cursorBlobRef } = useCard3D();
   const { leads } = useLeads();
-  
+
   // Get employee name and calculate today's work stats
   const employeeName = getEmployeeName();
-  const today = new Date();
-  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  
+
+  // Memoize date calculations to prevent recalculation on every render
+  const { startOfDay, endOfDay } = useMemo(() => {
+    const today = new Date();
+    return {
+      startOfDay: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+      endOfDay: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+    };
+  }, []);
+
   const workStats = useMemo(() => {
     return calculateWorkStats(startOfDay, endOfDay, leads);
   }, [leads, startOfDay, endOfDay]);
-  
+
   const activeSessions = useMemo(() => {
     if (!employeeName) return 0;
     const sessions = getWorkSessions();
-    return sessions.filter(session => 
+    return sessions.filter(session =>
       session.employeeName === employeeName && !session.endTime
     ).length;
   }, [employeeName]);
-  
+
   // Helper function to format duration
-  const formatDuration = (minutes: number): string => {
+  const formatDuration = useCallback((minutes: number): string => {
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
     return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-  };
+  }, []);
 
-  const handleGetStarted = () => {
+  const handleGetStarted = useCallback(() => {
     router.push('/add-lead?from=home');
-  };
+  }, [router]);
 
-  const handleViewDashboard = () => {
+  const handleViewDashboard = useCallback(() => {
     router.push('/dashboard');
-  };
+  }, [router]);
 
   return (
     <div className="min-h-screen w-full bg-black py-8">
       {/* Cursor Blob */}
       <div ref={cursorBlobRef} className="cursor-blob hidden"></div>
-      
+
       <div className="max-w-7xl mx-auto px-8">
         {/* Hero Section */}
         <div className="text-center mb-16 w-full">
@@ -77,7 +83,7 @@ export default function HomePage() {
 
         {/* Features Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16 w-full">
-          <button 
+          <button
             onClick={() => router.push('/dashboard')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-purple-500 hover:shadow-xl transition-all duration-200"
           >
@@ -87,7 +93,7 @@ export default function HomePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                 </svg>
               </div>
-              
+
               <h3 className="text-xl font-bold text-white mb-3">Lead Management</h3>
               <p className="text-gray-300">
                 Easily add, track, and manage all your leads in one centralized location with comprehensive contact information.
@@ -96,7 +102,7 @@ export default function HomePage() {
           </button>
 
 
-          <button 
+          <button
             onClick={() => router.push('/work-tracker')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200"
           >
@@ -113,7 +119,7 @@ export default function HomePage() {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => router.push('/follow-up-mandate')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-green-500 hover:shadow-xl transition-all duration-200"
           >
@@ -130,7 +136,7 @@ export default function HomePage() {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => router.push('/add-lead?from=home')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-yellow-500 hover:shadow-xl transition-all duration-200"
           >
@@ -147,7 +153,7 @@ export default function HomePage() {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => router.push('/dashboard')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-indigo-500 hover:shadow-xl transition-all duration-200"
           >
@@ -164,7 +170,7 @@ export default function HomePage() {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => router.push('/work-tracker')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200"
           >
@@ -178,7 +184,7 @@ export default function HomePage() {
               {employeeName && (
                 <p className="text-sm text-teal-400 mb-4">{employeeName}</p>
               )}
-              
+
               {/* Work Stats Grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-gray-800 rounded-lg p-3">
@@ -198,14 +204,14 @@ export default function HomePage() {
                   <div className="text-lg font-bold text-teal-400">{activeSessions}</div>
                 </div>
               </div>
-              
+
               <div className="text-sm text-teal-400 hover:text-teal-300 transition-colors">
                 View Full Report →
               </div>
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => router.push('/upcoming')}
             className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-cyan-500 hover:shadow-xl transition-all duration-200"
           >
@@ -234,7 +240,7 @@ export default function HomePage() {
               <div className="text-purple-600 font-semibold">Add Lead</div>
               <div className="text-sm text-gray-600 mt-1">Create new lead entry</div>
             </button>
-            
+
             <button
               onClick={() => router.push('/dashboard')}
               className="p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors duration-200"
@@ -242,7 +248,7 @@ export default function HomePage() {
               <div className="text-blue-600 font-semibold">Dashboard</div>
               <div className="text-sm text-gray-600 mt-1">View all leads</div>
             </button>
-            
+
             <button
               onClick={() => router.push('/due-today')}
               className="p-4 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors duration-200"
@@ -250,7 +256,7 @@ export default function HomePage() {
               <div className="text-orange-600 font-semibold">Due Today</div>
               <div className="text-sm text-gray-600 mt-1">Check urgent tasks</div>
             </button>
-            
+
           </div>
         </div>
       </div>

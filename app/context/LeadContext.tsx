@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { parseDateFromDDMMYYYY } from '../utils/dateUtils';
 import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig, Activity } from '../types/shared';
 import { getEmployeeName } from '../utils/employeeStorage';
@@ -107,15 +107,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeoutId);
   }, [savedViews, isHydrated]);
 
-  const addLead = (lead: Lead, columnConfigs?: ColumnConfig[]) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 Adding lead:', lead);
-      console.log('📊 Lead status:', lead.status);
-      console.log('📊 Lead isDeleted:', lead.isDeleted);
-      console.log('📊 Lead isDone:', lead.isDone);
-      console.log('📊 Column configs provided:', columnConfigs?.length || 0);
-    }
-
+  const addLead = useCallback((lead: Lead, columnConfigs?: ColumnConfig[]) => {
     // Apply defaults for all current columns if columnConfigs provided
     const leadWithDefaults = columnConfigs ? getLeadWithDefaults(lead, columnConfigs) : lead;
 
@@ -128,17 +120,10 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString()
     };
 
-    setLeads(prev => {
-      const newLeads = [...prev, finalLead];
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Updated leads count:', newLeads.length);
-        console.log('📊 All leads statuses:', newLeads.map(l => ({ id: l.id, status: l.status, isDeleted: l.isDeleted, isDone: l.isDone })));
-      }
-      return newLeads;
-    });
-  };
+    setLeads(prev => [...prev, finalLead]);
+  }, []);
 
-  const updateLead = (updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
+  const updateLead = useCallback((updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
     const touchActivity = opts?.touchActivity !== false; // Default to true if not specified
     setLeads(prev =>
       prev.map(lead => lead.id === updatedLead.id ? {
@@ -147,24 +132,23 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate
       } : lead)
     );
-  };
+  }, []);
 
-  const deleteLead = (id: string) => {
-    setLeads(prev => {
-      const updated = prev.map(lead =>
+  const deleteLead = useCallback((id: string) => {
+    setLeads(prev =>
+      prev.map(lead =>
         lead.id === id
           ? { ...lead, isDeleted: true, lastActivityDate: new Date().toISOString() }
           : lead
-      );
-      return updated;
-    });
-  };
+      )
+    );
+  }, []);
 
-  const permanentlyDeleteLead = (id: string) => {
+  const permanentlyDeleteLead = useCallback((id: string) => {
     setLeads(prev => prev.filter(lead => lead.id !== id));
-  };
+  }, []);
 
-  const markAsDone = (id: string) => {
+  const markAsDone = useCallback((id: string) => {
     setLeads(prev =>
       prev.map(l => (l.id === id ? {
         ...l,
@@ -172,9 +156,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         lastActivityDate: new Date().toISOString() // Update timestamp when marked as done
       } : l))
     );
-  };
+  }, []);
 
-  const addActivity = (
+  const addActivity = useCallback((
     leadId: string,
     description: string,
     options?: {
@@ -207,7 +191,7 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         return lead;
       })
     );
-  };
+  }, []);
 
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
@@ -365,30 +349,26 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return filtered;
   }, [leads]);
 
-  const resetUpdatedLeads = () => {
+  const resetUpdatedLeads = useCallback(() => {
     setLeads(prev =>
       prev.map(lead => ({ ...lead, isUpdated: false }))
     );
-  };
+  }, []);
 
-  const addSavedView = (view: SavedView) => {
+  const addSavedView = useCallback((view: SavedView) => {
     setSavedViews(prev => [...prev, view]);
-  };
+  }, []);
 
-  const deleteSavedView = (id: string) => {
+  const deleteSavedView = useCallback((id: string) => {
     setSavedViews(prev => prev.filter(view => view.id !== id));
-  };
+  }, []);
 
   // Column integration methods - enhanced to handle different column types
-  const migrateLeadsForNewColumn = (columnConfig: ColumnConfig) => {
-    console.log(`🔄 Starting migration for new column: ${columnConfig.fieldKey}`);
-    console.log(`📊 Total leads to migrate: ${leads.length}`);
-
+  const migrateLeadsForNewColumn = useCallback((columnConfig: ColumnConfig) => {
     setLeads(prev => {
       const migrated = prev.map(lead => {
         // Check if lead already has this field
         if ((lead as any)[columnConfig.fieldKey] !== undefined) {
-          console.log(`⚠️ Lead ${lead.clientName || lead.kva} already has field ${columnConfig.fieldKey}, skipping`);
           return lead;
         }
 
@@ -426,24 +406,21 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           isUpdated: lead.isUpdated || false
         };
 
-        console.log(`✅ Migrated lead ${lead.clientName || lead.kva} with field ${columnConfig.fieldKey} = ${defaultValue}`);
         return updatedLead;
       });
 
-      console.log(`🎉 Migration complete for column: ${columnConfig.fieldKey}`);
       return migrated;
     });
-  };
+  }, []);
 
-  const removeColumnFromLeads = (fieldKey: string) => {
+  const removeColumnFromLeads = useCallback((fieldKey: string) => {
     setLeads(prev => prev.map(lead => {
       const { [fieldKey]: removedField, ...rest } = lead as any;
       return rest;
     }));
-    console.log(`Removed column "${fieldKey}" from ${leads.length} leads`);
-  };
+  }, []);
 
-  const getLeadFieldValue = (lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
+  const getLeadFieldValue = useCallback((lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
     const value = (lead as any)[fieldKey];
 
     if (value !== undefined && value !== null) {
@@ -503,10 +480,10 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     }
 
     return defaultValue || '';
-  };
+  }, []);
 
   // Additional helper functions for dynamic columns
-  const getLeadWithDefaults = (lead: Lead, columnConfigs: ColumnConfig[]): Lead => {
+  const getLeadWithDefaults = useCallback((lead: Lead, columnConfigs: ColumnConfig[]): Lead => {
     const leadWithDefaults = { ...lead };
 
     columnConfigs.forEach(column => {
@@ -539,9 +516,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     });
 
     return leadWithDefaults;
-  };
+  }, []);
 
-  const validateLeadAgainstColumns = (lead: Lead, columnConfigs: ColumnConfig[]): string[] => {
+  const validateLeadAgainstColumns = useCallback((lead: Lead, columnConfigs: ColumnConfig[]): string[] => {
     const errors: string[] = [];
 
     columnConfigs.forEach(column => {
@@ -554,31 +531,53 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     });
 
     return errors;
-  };
+  }, []);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    leads,
+    setLeads,
+    addLead,
+    updateLead,
+    deleteLead,
+    permanentlyDeleteLead,
+    markAsDone,
+    addActivity,
+    getFilteredLeads,
+    resetUpdatedLeads,
+    savedViews,
+    addSavedView,
+    deleteSavedView,
+    migrateLeadsForNewColumn,
+    removeColumnFromLeads,
+    getLeadFieldValue,
+    getLeadWithDefaults,
+    validateLeadAgainstColumns,
+    skipPersistence,
+    setSkipPersistence
+  }), [
+    leads,
+    savedViews,
+    skipPersistence,
+    addLead,
+    updateLead,
+    deleteLead,
+    permanentlyDeleteLead,
+    markAsDone,
+    addActivity,
+    getFilteredLeads,
+    resetUpdatedLeads,
+    addSavedView,
+    deleteSavedView,
+    migrateLeadsForNewColumn,
+    removeColumnFromLeads,
+    getLeadFieldValue,
+    getLeadWithDefaults,
+    validateLeadAgainstColumns
+  ]);
 
   return (
-    <LeadContext.Provider value={{
-      leads,
-      setLeads,
-      addLead,
-      updateLead,
-      deleteLead,
-      permanentlyDeleteLead,
-      markAsDone,
-      addActivity,
-      getFilteredLeads,
-      resetUpdatedLeads,
-      savedViews,
-      addSavedView,
-      deleteSavedView,
-      migrateLeadsForNewColumn,
-      removeColumnFromLeads,
-      getLeadFieldValue,
-      getLeadWithDefaults,
-      validateLeadAgainstColumns,
-      skipPersistence,
-      setSkipPersistence
-    }}>
+    <LeadContext.Provider value={contextValue}>
       {!isHydrated ? (
         <div className="flex items-center justify-center min-h-screen">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo, memo } from 'react';
+import React, { useState, useRef, useMemo, useCallback, memo } from 'react';
 
 interface VirtualListProps<T> {
   items: T[];
@@ -42,9 +42,9 @@ function VirtualList<T>({
   const totalHeight = items.length * itemHeight;
   const offsetY = visibleRange.startIndex * itemHeight;
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
-  };
+  }, []);
 
   // Set CSS custom properties using useEffect to avoid inline styles
   React.useEffect(() => {

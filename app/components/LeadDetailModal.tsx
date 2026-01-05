@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Lead } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
@@ -18,7 +18,7 @@ interface LeadDetailModalProps {
   onDelete?: (lead: Lead) => void;
 }
 
-export default function LeadDetailModal({
+export default React.memo(function LeadDetailModal({
   lead,
   isOpen,
   onClose,
@@ -156,7 +156,7 @@ export default function LeadDetailModal({
   const permanentFields = ['mobileNumbers', 'mobileNumber', 'unitType', 'status', 'followUpDate', 'companyLocation', 'notes', 'lastActivityDate'];
 
   // Copy to clipboard function
-  const copyToClipboard = async (text: string, fieldName: string) => {
+  const copyToClipboard = useCallback(async (text: string, fieldName: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedField(fieldName);
@@ -164,7 +164,7 @@ export default function LeadDetailModal({
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
-  };
+  }, []);
 
   // WhatsApp redirect function
   const handleWhatsAppRedirect = (lead: Lead) => {
@@ -245,7 +245,7 @@ export default function LeadDetailModal({
   };
 
   // Helper function to format date to DD-MM-YYYY
-  const formatDateToDDMMYYYY = (dateString: string): string => {
+  const formatDateToDDMMYYYY = useCallback((dateString: string): string => {
     if (!dateString) return '';
 
     // If already in DD-MM-YYYY format, return as is
@@ -266,10 +266,10 @@ export default function LeadDetailModal({
     } catch {
       return dateString; // Return original if conversion fails
     }
-  };
+  }, []);
 
   // Helper function to format different field types
-  const formatFieldValue = (value: unknown, type: string): string => {
+  const formatFieldValue = useCallback((value: unknown, type: string): string => {
     if (value === undefined || value === null || value === '') return 'N/A';
 
     switch (type) {
@@ -286,10 +286,10 @@ export default function LeadDetailModal({
       default:
         return String(value);
     }
-  };
+  }, [formatDateToDDMMYYYY]);
 
   // Normalize primary phone number across all known key variants so sheet data maps correctly
-  const getPrimaryPhoneNumber = (lead: Lead): string => {
+  const getPrimaryPhoneNumber = useCallback((lead: Lead): string => {
     const fromArray = lead.mobileNumbers && lead.mobileNumbers.length > 0
       ? lead.mobileNumbers.find(m => m.isMain)?.number || lead.mobileNumbers[0]?.number || ''
       : '';
@@ -314,17 +314,14 @@ export default function LeadDetailModal({
       .find(Boolean);
 
     return firstMatch || 'N/A';
-  };
+  }, []);
 
-  // Get current column configuration
-  const visibleColumns = getVisibleColumns();
-  const customColumns = visibleColumns.filter(col => !permanentFields.includes(col.fieldKey));
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('🔍 LeadDetailModal - visibleColumns:', visibleColumns.length);
-    console.log('🔍 LeadDetailModal - customColumns:', customColumns.length);
-    console.log('🔍 LeadDetailModal - permanentFields:', permanentFields);
-  }
+  // Get current column configuration - memoize to prevent recalculation
+  const visibleColumns = useMemo(() => getVisibleColumns(), [getVisibleColumns]);
+  const customColumns = useMemo(() =>
+    visibleColumns.filter(col => !permanentFields.includes(col.fieldKey)),
+    [visibleColumns]
+  );
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -945,4 +942,4 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
       />
     </div>
   );
-}
+});
