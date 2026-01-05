@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, R
 import { parseDateFromDDMMYYYY } from '../utils/dateUtils';
 import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig, Activity } from '../types/shared';
 import { getEmployeeName } from '../utils/employeeStorage';
+import { sanitizeLead } from '../utils/sanitizer'; // SV-004: XSS prevention
 
 // Helper function to format today's date as DD-MM-YYYY
 const todayDDMMYYYY = () => {
@@ -108,8 +109,11 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, [savedViews, isHydrated]);
 
   const addLead = useCallback((lead: Lead, columnConfigs?: ColumnConfig[]) => {
+    // SV-004: Sanitize lead data to prevent XSS attacks
+    const sanitizedLead = sanitizeLead(lead) as Lead;
+
     // Apply defaults for all current columns if columnConfigs provided
-    const leadWithDefaults = columnConfigs ? getLeadWithDefaults(lead, columnConfigs) : lead;
+    const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
 
     // Ensure the lead has all required flags set correctly
     const finalLead = {
@@ -124,10 +128,12 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateLead = useCallback((updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
+    // SV-004: Sanitize lead data to prevent XSS attacks
+    const sanitizedLead = sanitizeLead(updatedLead) as Lead;
     const touchActivity = opts?.touchActivity !== false; // Default to true if not specified
     setLeads(prev =>
-      prev.map(lead => lead.id === updatedLead.id ? {
-        ...updatedLead,
+      prev.map(lead => lead.id === sanitizedLead.id ? {
+        ...sanitizedLead,
         isUpdated: true,
         lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate
       } : lead)

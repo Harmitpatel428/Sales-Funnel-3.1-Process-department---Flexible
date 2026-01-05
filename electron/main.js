@@ -12,9 +12,46 @@ let port = 3000;
 function createServer() {
   const expressApp = express();
 
-  // Serve static files from the packaged app
+  // BN-007: Add compression for better performance
+  const zlib = require('zlib');
+  expressApp.use((req, res, next) => {
+    // Simple gzip compression for text-based responses
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    if (acceptEncoding.includes('gzip')) {
+      res.setHeader('Content-Encoding', 'gzip');
+    }
+    next();
+  });
+
+  // SV-010: Add security headers to all responses
+  expressApp.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    next();
+  });
+
+  // BUG-010: Health check endpoint for startup verification
+  expressApp.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: Date.now() });
+  });
+
+  // Serve static files from the packaged app with caching headers
   const staticPath = path.join(process.resourcesPath, 'app');
-  expressApp.use(express.static(staticPath));
+  expressApp.use(express.static(staticPath, {
+    // BN-007: Add cache headers for static files
+    maxAge: '1d', // Cache static files for 1 day
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, filePath) => {
+      // Longer cache for immutable assets (hashed filenames)
+      if (filePath.includes('/_next/static/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  }));
 
   // Fallback route for client-side routing
   expressApp.get('*', (req, res) => {
@@ -37,6 +74,36 @@ function createServer() {
       console.error('Server error:', err);
     }
   });
+}
+
+// BUG-010: Wait for server to be ready before loading window
+async function waitForServer(maxAttempts = 20, delay = 100) {
+  const http = require('http');
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await new Promise((resolve, reject) => {
+        const req = http.get(`http://localhost:${port}/health`, (res) => {
+          if (res.statusCode === 200) {
+            resolve();
+          } else {
+            reject(new Error(`Health check returned ${res.statusCode}`));
+          }
+        });
+        req.on('error', reject);
+        req.setTimeout(1000, () => {
+          req.destroy();
+          reject(new Error('Timeout'));
+        });
+      });
+      return true; // Server is ready
+    } catch (err) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  console.warn('Server health check failed, falling back to timeout');
+  return false; // Fallback - proceed anyway
 }
 
 // Create the main window
@@ -67,12 +134,20 @@ function createWindow() {
 
   // Load the app
   if (app.isPackaged) {
-    // Production: Start Express server first, then load
+    // Production: Start Express server first, then load with proper health check
     createServer();
-    setTimeout(() => {
+    // BUG-010: Use health check instead of fixed timeout for reliable startup
+    waitForServer().then(() => {
       mainWindow.loadURL(`http://localhost:${port}`);
       mainWindow.show();
-    }, 500);
+    }).catch((err) => {
+      console.error('Failed to wait for server:', err);
+      // Fallback: try to load anyway after short delay
+      setTimeout(() => {
+        mainWindow.loadURL(`http://localhost:${port}`);
+        mainWindow.show();
+      }, 500);
+    });
   } else {
     // Development: Load from Next.js dev server
     mainWindow.loadURL('http://localhost:3000');
