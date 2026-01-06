@@ -88,9 +88,9 @@ export default React.memo(function LeadDetailModal({
         electricityLoadType: formData.electricityLoadType
       });
 
-      if (result.success && result.caseId) {
+      if (result.success && result.caseIds && result.caseIds.length > 0) {
         onClose();
-        router.push(`/case-details?id=${result.caseId}`);
+        router.push(`/case-details?id=${result.caseIds[0]}`);
       } else {
         alert(`Failed to forward: ${result.message}`);
       }
@@ -1028,8 +1028,8 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
                       setShowAssignModal(false);
                     }}
                     className={`w-full p-2 text-left rounded border ${lead.assignedTo === user.userId
-                        ? 'border-purple-300 bg-purple-50'
-                        : 'border-gray-200 hover:bg-gray-50'
+                      ? 'border-purple-300 bg-purple-50'
+                      : 'border-gray-200 hover:bg-gray-50'
                       } text-sm`}
                   >
                     <span className="font-medium text-gray-900">{user.name}</span>

@@ -6,6 +6,7 @@ import { useCases } from '../context/CaseContext';
 import { useUsers } from '../context/UserContext';
 import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { CaseStatusBadge } from '../components/CaseStatusBadge';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { Case, UserRole, CasePriority, ProcessStatus } from '../types/processTypes';
 import * as XLSX from 'xlsx';
 
@@ -84,7 +85,7 @@ function PriorityBadge({ priority }: { priority: CasePriority }) {
     const { bg, text, label } = config[priority];
 
     return (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${bg} ${text}`}>
+        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${bg} ${text}`}>
             {label}
         </span>
     );
@@ -97,7 +98,7 @@ function PriorityBadge({ priority }: { priority: CasePriority }) {
 function RoleBadge({ role }: { role: UserRole | null }) {
     if (!role) {
         return (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
                 Unassigned
             </span>
         );
@@ -111,7 +112,7 @@ function RoleBadge({ role }: { role: UserRole | null }) {
     const cfg = config[role] || { bg: 'bg-gray-100', text: 'text-gray-600', label: role };
 
     return (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
+        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${cfg.bg} ${cfg.text}`}>
             {cfg.label}
         </span>
     );
@@ -179,7 +180,7 @@ function ReassignModal({ isOpen, onClose, onSubmit, caseNumber, getUsersByRole }
                             onChange={(e) => setSelectedUserId(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                         >
-                            <option value="">Select a user...</option>
+                            <option value="" className="text-black">Select a user...</option>
                             {usersForRole.map(user => (
                                 <option key={user.userId} value={user.userId}>
                                     {user.name}
@@ -243,7 +244,7 @@ function Toast({ message, type, onClose }: ToastProps) {
 
 export default function ProcessDashboardPage() {
     const router = useRouter();
-    const { cases, isLoading, getCaseStats, assignCase } = useCases();
+    const { cases, isLoading, getCaseStats, assignCase, deleteCase } = useCases();
     const { currentUser, getUserById, getUsersByRole } = useUsers();
 
     // ========================================================================
@@ -264,6 +265,8 @@ export default function ProcessDashboardPage() {
     const [reassignModalOpen, setReassignModalOpen] = useState(false);
     const [caseToReassign, setCaseToReassign] = useState<Case | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [caseToDelete, setCaseToDelete] = useState<Case | null>(null);
 
     // ========================================================================
     // PERMISSION CHECKS
@@ -338,60 +341,12 @@ export default function ProcessDashboardPage() {
 
     const stats = useMemo(() => getCaseStats(), [getCaseStats]);
 
-    const agingCasesCount = useMemo(() => {
-        return filteredCases.filter(c => calculateCaseAge(c.createdAt) > 14).length;
-    }, [filteredCases]);
-
-    const summaryCards = useMemo(() => [
-        {
-            label: 'Total Cases',
-            value: stats.total,
-            icon: '📊',
-            gradient: 'from-purple-500 to-purple-600',
-            lightBg: 'bg-purple-50',
-            hoverBg: 'hover:bg-purple-100'
-        },
-        {
-            label: 'Pending',
-            value: (stats.byStatus.DOCUMENTS_PENDING || 0) + (stats.byStatus.DOCUMENTS_RECEIVED || 0),
-            icon: '⏳',
-            gradient: 'from-amber-500 to-amber-600',
-            lightBg: 'bg-amber-50',
-            hoverBg: 'hover:bg-amber-100'
-        },
-        {
-            label: 'In Progress',
-            value: (stats.byStatus.VERIFICATION || 0) + (stats.byStatus.SUBMITTED || 0) + (stats.byStatus.QUERY_RAISED || 0),
-            icon: '🔄',
-            gradient: 'from-blue-500 to-blue-600',
-            lightBg: 'bg-blue-50',
-            hoverBg: 'hover:bg-blue-100'
-        },
-        {
-            label: 'Completed',
-            value: (stats.byStatus.APPROVED || 0) + (stats.byStatus.REJECTED || 0) + (stats.byStatus.CLOSED || 0),
-            icon: '✅',
-            gradient: 'from-green-500 to-green-600',
-            lightBg: 'bg-green-50',
-            hoverBg: 'hover:bg-green-100'
-        },
-        {
-            label: 'High Priority',
-            value: (stats.byPriority.HIGH || 0) + (stats.byPriority.URGENT || 0),
-            icon: '🔥',
-            gradient: 'from-red-500 to-red-600',
-            lightBg: 'bg-red-50',
-            hoverBg: 'hover:bg-red-100'
-        },
-        {
-            label: 'Aging Alert',
-            value: agingCasesCount,
-            icon: '⚠️',
-            gradient: 'from-orange-500 to-orange-600',
-            lightBg: 'bg-orange-50',
-            hoverBg: 'hover:bg-orange-100'
-        }
-    ], [stats, agingCasesCount]);
+    const summaryStats = useMemo(() => ({
+        total: stats.total,
+        pending: (stats.byStatus.DOCUMENTS_PENDING || 0) + (stats.byStatus.DOCUMENTS_RECEIVED || 0),
+        inProgress: (stats.byStatus.VERIFICATION || 0) + (stats.byStatus.SUBMITTED || 0) + (stats.byStatus.QUERY_RAISED || 0),
+        completed: (stats.byStatus.APPROVED || 0) + (stats.byStatus.REJECTED || 0) + (stats.byStatus.CLOSED || 0)
+    }), [stats]);
 
     // ========================================================================
     // HANDLERS
@@ -434,8 +389,9 @@ export default function ProcessDashboardPage() {
                 const assignedUser = c.assignedProcessUserId ? getUserById(c.assignedProcessUserId) : null;
                 return {
                     'Case Number': c.caseNumber,
+                    'Company Name': c.company,
+                    'Benefit Type': c.benefitTypes?.[0] || '—',
                     'Client Name': c.clientName,
-                    'Company': c.company,
                     'Mobile': c.mobileNumber,
                     'Status': c.processStatus,
                     'Priority': c.priority,
@@ -479,6 +435,59 @@ export default function ProcessDashboardPage() {
         });
     }, []);
 
+    const handleDeleteClick = useCallback((caseData: Case, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCaseToDelete(caseData);
+        setDeleteModalOpen(true);
+    }, []);
+
+    const handleMassDeleteClick = useCallback(() => {
+        if (selectedCases.size === 0) return;
+        setDeleteModalOpen(true);
+    }, [selectedCases.size]);
+
+    const handleDeleteConfirm = useCallback(() => {
+        // Mass delete if no single case is targeted
+        if (!caseToDelete && selectedCases.size > 0) {
+            let successCount = 0;
+            let failCount = 0;
+            selectedCases.forEach(caseId => {
+                const result = deleteCase(caseId);
+                if (result.success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            });
+            if (failCount === 0) {
+                showToast(`Deleted ${successCount} case(s) successfully!`, 'success');
+            } else {
+                showToast(`Deleted ${successCount} case(s), ${failCount} failed`, 'error');
+            }
+            setSelectedCases(new Set());
+            setDeleteModalOpen(false);
+            return;
+        }
+
+        // Single delete (fallback)
+        if (!caseToDelete) return;
+
+        const result = deleteCase(caseToDelete.caseId);
+        if (result.success) {
+            showToast('Case deleted successfully!', 'success');
+            setSelectedCases(prev => {
+                const ns = new Set(prev);
+                ns.delete(caseToDelete.caseId);
+                return ns;
+            });
+        } else {
+            showToast(result.message || 'Failed to delete case', 'error');
+        }
+
+        setDeleteModalOpen(false);
+        setCaseToDelete(null);
+    }, [caseToDelete, selectedCases, deleteCase, showToast]);
+
     // ========================================================================
     // RENDER
     // ========================================================================
@@ -489,26 +498,36 @@ export default function ProcessDashboardPage() {
             fallback={<AccessDenied />}
         >
             <div className="flex flex-col h-full min-h-screen bg-gray-50">
-                {/* Header Section */}
-                <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-gray-200">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Process Dashboard</h1>
-                            <p className="text-sm text-gray-500 mt-1">
-                                Manage and track all process cases in one place
-                            </p>
+                {/* Header Section - Compact */}
+                <div className="flex-shrink-0 px-4 py-1.5 bg-white border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-base font-semibold text-gray-900">Process Dashboard</h1>
+                            <span className="text-xs text-gray-400">•</span>
+                            <span className="text-xs text-gray-500">{cases.length} cases</span>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             {isReadOnly && (
-                                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded-full">
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                                     View Only
                                 </span>
                             )}
+                            {canReassign && !isReadOnly && selectedCases.size > 0 && (
+                                <button
+                                    onClick={handleMassDeleteClick}
+                                    className="flex items-center gap-1 px-2.5 py-1 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Delete ({selectedCases.size})
+                                </button>
+                            )}
                             <button
                                 onClick={handleExport}
-                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+                                className="flex items-center gap-1 px-2.5 py-1 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                 </svg>
                                 Export
@@ -519,50 +538,78 @@ export default function ProcessDashboardPage() {
 
                 {/* Read-only Banner for SALES_MANAGER */}
                 {isReadOnly && (
-                    <div className="flex-shrink-0 px-6 py-3 bg-blue-50 border-b border-blue-200">
-                        <p className="text-sm text-blue-700">
-                            <strong>View Only Mode:</strong> You can view process cases but cannot modify or reassign them.
+                    <div className="flex-shrink-0 px-4 py-1 bg-blue-50 border-b border-blue-200">
+                        <p className="text-xs text-blue-700">
+                            <strong>View Only:</strong> You can view but cannot modify cases.
                         </p>
                     </div>
                 )}
 
-                {/* Summary Cards Section */}
-                <div className="flex-shrink-0 px-6 py-4">
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        {summaryCards.map((card, index) => (
-                            <div
-                                key={index}
-                                className={`${card.lightBg} ${card.hoverBg} rounded-xl p-4 transition-all duration-200 cursor-default border border-gray-100 shadow-sm hover:shadow-md`}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-2xl">{card.icon}</span>
-                                </div>
-                                <div className={`text-2xl font-bold bg-gradient-to-r ${card.gradient} bg-clip-text text-transparent`}>
-                                    {card.value}
-                                </div>
-                                <div className="text-xs text-gray-600 font-medium mt-1">
-                                    {card.label}
-                                </div>
+                {/* Stats Cards - Compact */}
+                <div className="flex-shrink-0 px-4 py-2">
+                    <div className="grid grid-cols-4 gap-1.5">
+                        <div className="bg-white rounded-xl px-3 py-2 shadow-sm flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
                             </div>
-                        ))}
+                            <div>
+                                <p className="text-lg font-semibold text-gray-900 leading-tight">{summaryStats.total}</p>
+                                <p className="text-xs text-gray-500 leading-tight">Total</p>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl px-3 py-2 shadow-sm flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p className="text-lg font-semibold text-gray-900 leading-tight">{summaryStats.pending}</p>
+                                <p className="text-xs text-gray-500 leading-tight">Pending</p>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl px-3 py-2 shadow-sm flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p className="text-lg font-semibold text-gray-900 leading-tight">{summaryStats.inProgress}</p>
+                                <p className="text-xs text-gray-500 leading-tight">In Progress</p>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl px-3 py-2 shadow-sm flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p className="text-lg font-semibold text-gray-900 leading-tight">{summaryStats.completed}</p>
+                                <p className="text-xs text-gray-500 leading-tight">Completed</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* Filters Section */}
-                <div className="flex-shrink-0 px-6 py-4 bg-white border-y border-gray-200">
-                    <div className="flex flex-wrap gap-3 items-center">
+                <div className="flex-shrink-0 px-4 py-2.5 bg-white border-y border-gray-200">
+                    <div className="flex flex-wrap gap-2 items-center">
                         {/* Search */}
                         <div className="flex-1 min-w-[200px] max-w-md">
                             <div className="relative">
-                                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                                 <input
                                     type="text"
-                                    placeholder="Search by case number, client, company, mobile..."
+                                    placeholder="Search by client, company, mobile..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 placeholder:text-black"
                                 />
                             </div>
                         </div>
@@ -571,7 +618,7 @@ export default function ProcessDashboardPage() {
                         <select
                             value={statusGroupFilter}
                             onChange={(e) => setStatusGroupFilter(e.target.value as any)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                            className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-black"
                         >
                             <option value="ALL">All Status</option>
                             <option value="PENDING">Pending</option>
@@ -583,7 +630,7 @@ export default function ProcessDashboardPage() {
                         <select
                             value={roleFilter}
                             onChange={(e) => setRoleFilter(e.target.value as any)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                            className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-black"
                         >
                             <option value="ALL">All Roles</option>
                             <option value="PROCESS_MANAGER">Process Manager</option>
@@ -594,7 +641,7 @@ export default function ProcessDashboardPage() {
                         <select
                             value={priorityFilter}
                             onChange={(e) => setPriorityFilter(e.target.value as any)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                            className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-black"
                         >
                             <option value="ALL">All Priority</option>
                             <option value="URGENT">Urgent</option>
@@ -607,7 +654,7 @@ export default function ProcessDashboardPage() {
                         <select
                             value={agingFilter}
                             onChange={(e) => setAgingFilter(e.target.value as any)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                            className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-black"
                         >
                             <option value="ALL">All Ages</option>
                             <option value="NEW">New (≤7 days)</option>
@@ -626,7 +673,7 @@ export default function ProcessDashboardPage() {
                                     setPriorityFilter('ALL');
                                     setAgingFilter('ALL');
                                 }}
-                                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 Clear Filters
                             </button>
@@ -643,15 +690,15 @@ export default function ProcessDashboardPage() {
 
                 {/* Data Table Section */}
                 {!isLoading && (
-                    <div className="flex-1 overflow-auto px-6 py-4">
+                    <div className="flex-1 overflow-auto px-4 py-3">
                         {filteredCases.length === 0 ? (
                             /* Empty State */
-                            <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
-                                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div className="text-center py-8 bg-white rounded-xl shadow-sm border border-gray-200">
+                                <svg className="mx-auto h-10 w-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
-                                <h3 className="mt-2 text-sm font-medium text-gray-900">No cases found</h3>
-                                <p className="mt-1 text-sm text-gray-500">
+                                <h3 className="mt-2 text-xs font-medium text-gray-900">No cases found</h3>
+                                <p className="mt-1 text-xs text-gray-500">
                                     {searchTerm || statusGroupFilter !== 'ALL' || roleFilter !== 'ALL' || priorityFilter !== 'ALL' || agingFilter !== 'ALL'
                                         ? 'Try adjusting your filters'
                                         : 'No process cases available yet'}
@@ -664,7 +711,7 @@ export default function ProcessDashboardPage() {
                                     <table className="w-full">
                                         <thead>
                                             <tr className="bg-gray-50 border-b border-gray-200">
-                                                <th className="px-4 py-3 text-left">
+                                                <th className="px-3 py-2 text-left">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedCases.size === filteredCases.length && filteredCases.length > 0}
@@ -672,34 +719,35 @@ export default function ProcessDashboardPage() {
                                                         className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                                                     />
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                    Case Number
+
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+                                                    Company
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                    Client
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+                                                    Benefit Type
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Source
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Assigned Role
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Assigned User
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Status
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Priority
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Age
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Last Updated
                                                 </th>
-                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
                                                     Actions
                                                 </th>
                                             </tr>
@@ -718,7 +766,7 @@ export default function ProcessDashboardPage() {
                                                         onClick={(e) => handleRowClick(caseData, e)}
                                                         className={`hover:bg-purple-50 cursor-pointer transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
                                                     >
-                                                        <td className="px-4 py-3">
+                                                        <td className="px-3 py-2">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectedCases.has(caseData.caseId)}
@@ -727,68 +775,66 @@ export default function ProcessDashboardPage() {
                                                                 className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                                                             />
                                                         </td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-semibold text-gray-900">
-                                                                    {caseData.caseNumber}
-                                                                </span>
-                                                                {isNew && (
-                                                                    <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded">
-                                                                        NEW
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3">
+
+                                                        <td className="px-3 py-2">
                                                             <div>
-                                                                <div className="font-medium text-gray-900">
-                                                                    {caseData.clientName || '—'}
+                                                                <div className="font-medium text-xs text-gray-900">
+                                                                    {caseData.company || '—'}
                                                                 </div>
-                                                                <div className="text-xs text-gray-500">
-                                                                    {caseData.mobileNumber || '—'}
+                                                                <div className="text-[10px] text-gray-500">
+                                                                    {caseData.clientName || '—'} • {caseData.mobileNumber || '—'}
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${caseData.leadId ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                        <td className="px-3 py-2">
+                                                            {caseData.benefitTypes && caseData.benefitTypes.length > 0 ? (
+                                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700">
+                                                                    {caseData.benefitTypes[0]}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-400 text-[10px]">—</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${caseData.leadId ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
                                                                 {caseData.leadId ? 'Sales' : 'Direct'}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3">
+                                                        <td className="px-3 py-2">
                                                             <RoleBadge role={caseData.assignedRole} />
                                                         </td>
-                                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                                        <td className="px-3 py-2 text-xs text-gray-600">
                                                             {assignedUser?.name || '—'}
                                                         </td>
-                                                        <td className="px-4 py-3">
+                                                        <td className="px-3 py-2">
                                                             <CaseStatusBadge status={caseData.processStatus} size="sm" />
                                                         </td>
-                                                        <td className="px-4 py-3">
+                                                        <td className="px-3 py-2">
                                                             <PriorityBadge priority={caseData.priority} />
                                                         </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className={`font-medium ${getAgeColor(age)}`}>
+                                                        <td className="px-3 py-2">
+                                                            <span className={`font-medium text-xs ${getAgeColor(age)}`}>
                                                                 {getAgeBadge(age)}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                                        <td className="px-3 py-2 text-xs text-gray-600">
                                                             {formatDate(caseData.updatedAt)}
                                                         </td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex items-center gap-2">
+                                                        <td className="px-3 py-2">
+                                                            <div className="flex items-center gap-1">
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         router.push(`/case-details?id=${caseData.caseId}`);
                                                                     }}
-                                                                    className="px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+                                                                    className="px-1.5 py-0.5 text-[10px] font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
                                                                 >
                                                                     View
                                                                 </button>
                                                                 {canReassign && !isReadOnly && (
                                                                     <button
                                                                         onClick={(e) => handleReassignClick(caseData, e)}
-                                                                        className="px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                                                        className="px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                                                                     >
                                                                         Reassign
                                                                     </button>
@@ -803,7 +849,7 @@ export default function ProcessDashboardPage() {
                                 </div>
 
                                 {/* Table Footer */}
-                                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-600">
+                                <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-600">
                                     Showing {filteredCases.length} of {cases.length} cases
                                     {selectedCases.size > 0 && (
                                         <span className="ml-2 text-purple-600 font-medium">
@@ -826,6 +872,22 @@ export default function ProcessDashboardPage() {
                     onSubmit={handleReassignSubmit}
                     caseNumber={caseToReassign?.caseNumber || ''}
                     getUsersByRole={(role) => getUsersByRole(role).map(u => ({ userId: u.userId, name: u.name }))}
+                />
+
+                {/* Delete Confirmation Modal */}
+                <DeleteConfirmModal
+                    isOpen={deleteModalOpen}
+                    onClose={() => {
+                        setDeleteModalOpen(false);
+                        setCaseToDelete(null);
+                    }}
+                    onConfirm={handleDeleteConfirm}
+                    title={caseToDelete ? "Delete Process Case" : `Delete ${selectedCases.size} Case(s)`}
+                    message={caseToDelete
+                        ? "This will permanently delete the case. This action cannot be undone."
+                        : `This will permanently delete ${selectedCases.size} selected case(s). This action cannot be undone.`
+                    }
+                    itemName={caseToDelete?.caseNumber || `${selectedCases.size} selected cases`}
                 />
 
                 {/* Toast Notification */}

@@ -192,8 +192,9 @@ export default function CasesPage() {
                                                 />
                                             </th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Case Number</th>
-                                            <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Client</th>
+                                            <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Company</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Scheme</th>
+                                            <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Benefit Type</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                                             <th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Updated</th>
@@ -230,11 +231,20 @@ export default function CasesPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                                                    <div className="font-medium">{caseData.clientName}</div>
-                                                    <div className="text-xs text-gray-500">{caseData.mobileNumber}</div>
+                                                    <div className="font-medium">{caseData.company || '—'}</div>
+                                                    <div className="text-xs text-gray-500">{caseData.clientName} • {caseData.mobileNumber}</div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-gray-600">
                                                     {caseData.schemeType}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {caseData.benefitTypes && caseData.benefitTypes.length > 0 ? (
+                                                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                                                            {caseData.benefitTypes[0]}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs">—</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <CaseStatusBadge status={caseData.processStatus} size="sm" />
@@ -257,7 +267,7 @@ export default function CasesPage() {
                                         ))}
                                         {filteredCases.length === 0 && (
                                             <tr>
-                                                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                                                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                                                     No cases found matching your filters.
                                                 </td>
                                             </tr>

@@ -142,7 +142,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         plantMachineryValue?: string;
         electricityLoad?: string;
         electricityLoadType?: 'HT' | 'LT' | '';
-    }): { success: boolean; message: string; caseId?: string } => {
+    }): { success: boolean; message: string; caseIds?: string[] } => {
         // Find the lead
         const lead = leads.find(l => l.id === leadId);
         if (!lead) {
@@ -159,48 +159,69 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             return { success: false, message: 'A case already exists for this lead' };
         }
 
-        const caseId = generateUUID();
         const now = new Date().toISOString();
+        const benefitTypes = metadata?.benefitTypes || [];
 
-        const newCase: Case = {
-            caseId,
-            leadId,
-            caseNumber: generateCaseNumber(),
-            schemeType,
-            caseType: metadata?.caseType,
-            benefitTypes: metadata?.benefitTypes,
-            companyType: metadata?.companyType,
-            contacts: metadata?.contacts,
-            assignedProcessUserId: null,
-            assignedRole: null,
-            processStatus: 'DOCUMENTS_PENDING',
-            priority: 'MEDIUM',
-            createdAt: now,
-            updatedAt: now,
-            // Denormalized lead info - use form data if provided
-            clientName: lead.clientName || '',
-            company: metadata?.companyName || lead.company || '',
-            mobileNumber: lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
-            consumerNumber: lead.consumerNumber,
-            kva: lead.kva,
-            // Financial/Location fields from Forward to Process form
-            talukaCategory: metadata?.talukaCategory,
-            termLoanAmount: metadata?.termLoanAmount,
-            plantMachineryValue: metadata?.plantMachineryValue,
-            electricityLoad: metadata?.electricityLoad,
-            electricityLoadType: metadata?.electricityLoadType
-        };
+        // If no benefit types selected, create a single case with empty benefitTypes
+        const typesToCreate = benefitTypes.length > 0 ? benefitTypes : [null];
 
-        setCases(prev => [...prev, newCase]);
+        const createdCases: Case[] = [];
+        const createdCaseIds: string[] = [];
 
-        // Update the lead to mark it as converted
+        // Create one case per benefit type
+        for (const benefitType of typesToCreate) {
+            const caseId = generateUUID();
+            const caseNumber = generateCaseNumber();
+
+            const newCase: Case = {
+                caseId,
+                leadId,
+                caseNumber,
+                schemeType,
+                caseType: metadata?.caseType,
+                benefitTypes: benefitType ? [benefitType] : [], // Single benefit type per case
+                companyType: metadata?.companyType,
+                contacts: metadata?.contacts,
+                assignedProcessUserId: null,
+                assignedRole: null,
+                processStatus: 'DOCUMENTS_PENDING',
+                priority: 'MEDIUM',
+                createdAt: now,
+                updatedAt: now,
+                // Denormalized lead info - use form data if provided
+                clientName: lead.clientName || '',
+                company: metadata?.companyName || lead.company || '',
+                mobileNumber: lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
+                consumerNumber: lead.consumerNumber,
+                kva: lead.kva,
+                // Financial/Location fields from Forward to Process form
+                talukaCategory: metadata?.talukaCategory,
+                termLoanAmount: metadata?.termLoanAmount,
+                plantMachineryValue: metadata?.plantMachineryValue,
+                electricityLoad: metadata?.electricityLoad,
+                electricityLoadType: metadata?.electricityLoadType
+            };
+
+            createdCases.push(newCase);
+            createdCaseIds.push(caseId);
+        }
+
+        // Add all cases to state
+        setCases(prev => [...prev, ...createdCases]);
+
+        // Update the lead to mark it as converted (use first caseId for backward compatibility)
         updateLead({
             ...lead,
-            convertedToCaseId: caseId,
+            convertedToCaseId: createdCaseIds[0],
             convertedAt: now
         }, { touchActivity: true });
 
-        return { success: true, message: 'Case created successfully', caseId };
+        const caseCount = createdCaseIds.length;
+        const message = caseCount > 1
+            ? `${caseCount} cases created successfully (one per benefit type)`
+            : 'Case created successfully';
+
+        return { success: true, message, caseIds: createdCaseIds };
     }, [leads, cases, updateLead]);
 
     const updateCase = useCallback((caseId: string, updates: Partial<Case>): { success: boolean; message: string } => {
@@ -330,11 +351,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         return { success: true, message: 'Case assigned successfully' };
     }, [cases, currentUser]);
 
-    // ============================================================================
-    // DEPENDENT VISIBILITY: Filter cases based on lead status
-    // ============================================================================
-    // Cases should be hidden when their linked Lead is deleted.
-    // When the Lead is restored (via re-import), Cases automatically reappear.
+
 
     const visibleCases = useMemo(() => {
         return cases;

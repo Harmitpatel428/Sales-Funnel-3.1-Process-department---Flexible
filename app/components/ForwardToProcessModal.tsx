@@ -385,7 +385,7 @@ export default function ForwardToProcessModal({
         }
     };
 
-    const isFormValid = Boolean(formData.policyType && formData.caseType && formData.companyName && formData.companyType);
+    const isFormValid = Boolean(formData.policyType && formData.caseType && formData.companyName && formData.companyType && formData.benefitTypes.length > 0);
 
     const handleSaveDraft = () => {
         localStorage.setItem(draftKey, JSON.stringify(formData));
@@ -671,6 +671,11 @@ export default function ForwardToProcessModal({
                                                             </div>
                                                         ))}
                                                     </div>
+                                                    {formData.benefitTypes.length === 0 && (
+                                                        <p className="text-xs text-red-500 mt-2">
+                                                            Please select at least one benefit type
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

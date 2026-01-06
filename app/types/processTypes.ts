@@ -89,6 +89,10 @@ export type CasePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 /**
  * Case interface - represents a process case (distinct from Lead)
  * Created when a Lead is converted to a Case
+ * 
+ * NOTE: For cases created after 2026-01-06, the benefitTypes array contains exactly one benefit type.
+ * Multiple benefit types selected during lead conversion result in multiple separate case entries.
+ * Legacy cases may still contain multiple benefit types in the array.
  */
 export interface Case {
     caseId: string;
@@ -96,7 +100,7 @@ export interface Case {
     caseNumber: string;                // Human-readable case number (e.g., "CASE-2026-0001")
     schemeType: string;                // Type of government scheme/subsidy (Policy Type)
     caseType?: string;                 // New, Expansion, Shifting, etc.
-    benefitTypes?: string[];           // Selected benefit types
+    benefitTypes?: string[];           // Single benefit type for new cases (one per case)
     companyType?: string;              // Limited, Pvt Limited, Partnership, etc.
     assignedProcessUserId: string | null;
     assignedRole: UserRole | null;         // Role assigned to handle this case
@@ -362,7 +366,7 @@ export interface CaseContextType {
         plantMachineryValue?: string;
         electricityLoad?: string;
         electricityLoadType?: 'HT' | 'LT' | '';
-    }) => { success: boolean; message: string; caseId?: string };
+    }) => { success: boolean; message: string; caseIds?: string[] };
     updateCase: (caseId: string, updates: Partial<Case>) => { success: boolean; message: string };
     deleteCase: (caseId: string) => { success: boolean; message: string };
     getCaseById: (caseId: string) => Case | undefined;
