@@ -25,8 +25,8 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
     return () => clearInterval(timer);
   }, []);
 
-  // Check if user should see Cases link
-  const showCasesLink = isAuthenticated && (canManageCases() || canViewAllCases());
+  // Check if user should see Cases link (matches RoleGuard in /cases)
+  const showCasesLink = isAuthenticated && (canManageCases() || canViewAllCases() || currentUser?.role === 'SALES_MANAGER');
   // Process Dashboard might be different from Sales Dashboard
   const showDashboardLink = isAuthenticated;
 
@@ -58,6 +58,20 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                   >
                     Sales Dashboard
                   </Link>
+                  {(currentUser?.role === 'ADMIN' ||
+                    currentUser?.role === 'PROCESS_MANAGER' ||
+                    currentUser?.role === 'PROCESS_EXECUTIVE' ||
+                    currentUser?.role === 'SALES_MANAGER') && (
+                      <Link
+                        href="/process-dashboard"
+                        className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/process-dashboard'
+                            ? 'bg-purple-100 text-purple-700 shadow-sm'
+                            : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'
+                          }`}
+                      >
+                        Process Dashboard
+                      </Link>
+                    )}
                   <Link
                     href="/add-lead"
                     className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/add-lead'
@@ -110,7 +124,7 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                 <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
                   <div className="flex flex-col items-end">
                     <span className="text-sm font-semibold text-gray-700">{currentUser?.name}</span>
-                    <span className="text-xs text-purple-600 font-medium bg-purple-50 px-1.5 rounded">{currentUser?.role.replace('_', ' ')}</span>
+                    <span className="text-xs text-purple-600 font-medium bg-purple-50 px-1.5 rounded">{currentUser?.role.replace(/_/g, ' ')}</span>
                   </div>
                   <button
                     onClick={logout}

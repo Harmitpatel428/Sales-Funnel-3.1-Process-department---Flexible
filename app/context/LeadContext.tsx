@@ -199,6 +199,38 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const assignLead = useCallback((leadId: string, userId: string, assignedBy: string) => {
+    setLeads(prev =>
+      prev.map(lead =>
+        lead.id === leadId
+          ? {
+            ...lead,
+            assignedTo: userId,
+            assignedBy: assignedBy,
+            assignedAt: new Date().toISOString(),
+            lastActivityDate: new Date().toISOString()
+          }
+          : lead
+      )
+    );
+  }, []);
+
+  const unassignLead = useCallback((leadId: string) => {
+    setLeads(prev =>
+      prev.map(lead =>
+        lead.id === leadId
+          ? {
+            ...lead,
+            assignedTo: undefined,
+            assignedBy: undefined,
+            assignedAt: undefined,
+            lastActivityDate: new Date().toISOString()
+          }
+          : lead
+      )
+    );
+  }, []);
+
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
     if (process.env.NODE_ENV === 'development') {
@@ -560,7 +592,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     getLeadWithDefaults,
     validateLeadAgainstColumns,
     skipPersistence,
-    setSkipPersistence
+    setSkipPersistence,
+    assignLead,
+    unassignLead
   }), [
     leads,
     savedViews,
@@ -579,7 +613,9 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     removeColumnFromLeads,
     getLeadFieldValue,
     getLeadWithDefaults,
-    validateLeadAgainstColumns
+    validateLeadAgainstColumns,
+    assignLead,
+    unassignLead
   ]);
 
   return (

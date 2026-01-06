@@ -114,7 +114,7 @@ export default function HomePage() {
             transition={{ duration: 0.8, delay: 1.0, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed w-full mt-6"
           >
-            Professional CRM Solution for V4U Biz Solutions Ahmedabad
+            Professional CRM Solution By HPX Eigen
           </motion.p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button

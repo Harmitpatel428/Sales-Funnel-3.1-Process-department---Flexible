@@ -15,15 +15,15 @@ import RejectionModal from '../components/RejectionModal';
 import ApprovalModal from '../components/ApprovalModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import { ProcessStatus, CaseDocument } from '../types/processTypes';
+import { ProcessStatus, CaseDocument, UserRole } from '../types/processTypes';
 
 function CaseDetailContent() {
     const searchParams = useSearchParams();
     const caseId = searchParams.get('id') || '';
     const router = useRouter();
 
-    const { getCaseById, updateStatus, updateCase } = useCases();
-    const { currentUser } = useUsers();
+    const { getCaseById, updateStatus, updateCase, assignCase } = useCases();
+    const { currentUser, getUsersByRole, getUserById } = useUsers();
     const { getDocumentsByCaseId, deleteDocument } = useDocuments();
     const { logStatusChange, addTimelineEntry } = useTimeline();
 
@@ -56,6 +56,18 @@ function CaseDetailContent() {
     // Dropdown state
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Assignment state
+    const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
+    const [assignmentRemarks, setAssignmentRemarks] = useState('');
+
+    // Permission check for case assignment
+    const canAssignCase = currentUser && (
+        currentUser.role === 'ADMIN' ||
+        currentUser.role === 'PROCESS_MANAGER' ||
+        currentUser.role === 'SALES_MANAGER'
+    );
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -227,6 +239,61 @@ function CaseDetailContent() {
         }
     };
 
+    // Handle case assignment
+    const handleAssignCase = () => {
+        if (!selectedUserId || !currentUser || !caseData) return;
+
+        const result = assignCase(caseId, selectedUserId, selectedRole || undefined);
+
+        if (result.success) {
+            // Log to timeline
+            const assignedUser = getUserById(selectedUserId);
+            if (assignedUser) {
+                addTimelineEntry({
+                    caseId,
+                    actionType: 'ASSIGNED',
+                    action: `Case assigned to ${assignedUser.name}${selectedRole ? ` (${selectedRole.replace(/_/g, ' ')})` : ''}`,
+                    performedBy: currentUser.userId,
+                    performedByName: currentUser.name,
+                    metadata: {
+                        assignedRole: selectedRole,
+                        assignedUserId: selectedUserId,
+                        assignedUserName: assignedUser.name,
+                        remarks: assignmentRemarks
+                    }
+                });
+            }
+
+            // Update local state
+            setCaseData({
+                ...caseData,
+                assignedProcessUserId: selectedUserId,
+                assignedRole: selectedRole,
+                updatedAt: new Date().toISOString()
+            });
+
+            // Reset form
+            setSelectedRole(null);
+            setSelectedUserId('');
+            setAssignmentRemarks('');
+
+            // Show success message
+            setStatusModal({
+                isOpen: true,
+                type: 'success',
+                title: 'Case Assigned',
+                message: `Case has been assigned to ${assignedUser?.name || 'the selected user'}.`
+            });
+        } else {
+            setStatusModal({
+                isOpen: true,
+                type: 'error',
+                title: 'Assignment Failed',
+                message: result.message || 'An error occurred while assigning the case.'
+            });
+        }
+    };
+
     // Check if electron is available
     const isElectron = typeof window !== 'undefined' && !!window.electron;
 
@@ -298,7 +365,7 @@ function CaseDetailContent() {
 
     return (
         <RoleGuard
-            allowedRoles={['ADMIN', 'PROCESS_MANAGER', 'PROCESS_EXECUTIVE', 'SALES']}
+            allowedRoles={['ADMIN', 'PROCESS_MANAGER', 'PROCESS_EXECUTIVE', 'SALES_EXECUTIVE', 'SALES_MANAGER']}
             fallback={<AccessDenied />}
         >
             <>
@@ -504,6 +571,81 @@ function CaseDetailContent() {
                                                     <p className="text-sm text-gray-500">Scheme Type</p>
                                                     <p className="font-medium text-gray-900">{caseData.schemeType}</p>
                                                 </div>
+
+                                                {/* Additional Case Details */}
+                                                {(caseData.caseType || caseData.companyType || caseData.talukaCategory ||
+                                                    caseData.termLoanAmount || caseData.plantMachineryValue ||
+                                                    caseData.electricityLoad) && (
+                                                        <>
+                                                            <div className="col-span-2 border-t border-gray-200 my-4"></div>
+
+                                                            {caseData.caseType && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Case Type</p>
+                                                                    <p className="font-medium text-gray-900">{caseData.caseType}</p>
+                                                                </div>
+                                                            )}
+
+                                                            {caseData.companyType && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Company Type</p>
+                                                                    <p className="font-medium text-gray-900">{caseData.companyType}</p>
+                                                                </div>
+                                                            )}
+
+                                                            {caseData.talukaCategory && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Taluka Category</p>
+                                                                    <p className="font-medium text-gray-900">Category {caseData.talukaCategory}</p>
+                                                                </div>
+                                                            )}
+
+                                                            {caseData.termLoanAmount && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Term Loan Amount</p>
+                                                                    <p className="font-medium text-gray-900">₹{caseData.termLoanAmount}</p>
+                                                                </div>
+                                                            )}
+
+                                                            {caseData.plantMachineryValue && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Plant & Machinery Value</p>
+                                                                    <p className="font-medium text-gray-900">₹{caseData.plantMachineryValue}</p>
+                                                                </div>
+                                                            )}
+
+                                                            {caseData.electricityLoad && (
+                                                                <div>
+                                                                    <p className="text-sm text-gray-500">Electricity Load</p>
+                                                                    <p className="font-medium text-gray-900">
+                                                                        {caseData.electricityLoad}
+                                                                        {caseData.electricityLoadType && (
+                                                                            <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${caseData.electricityLoadType === 'HT'
+                                                                                ? 'bg-orange-100 text-orange-700'
+                                                                                : 'bg-blue-100 text-blue-700'
+                                                                                }`}>
+                                                                                {caseData.electricityLoadType}
+                                                                            </span>
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                {/* Benefit Types */}
+                                                {caseData.benefitTypes && caseData.benefitTypes.length > 0 && (
+                                                    <div className="col-span-2">
+                                                        <p className="text-sm text-gray-500 mb-2">Benefit Types</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {caseData.benefitTypes.map((benefit: string, idx: number) => (
+                                                                <span key={idx} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
+                                                                    {benefit}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -553,17 +695,105 @@ function CaseDetailContent() {
                                                     <span className="text-gray-500">Last Updated</span>
                                                     <span className="text-gray-900">{new Date(caseData.updatedAt).toLocaleDateString()}</span>
                                                 </div>
-                                                <div className="pt-2 border-t border-gray-100 flex justify-between text-sm items-center">
-                                                    <span className="text-gray-500">Assigned To</span>
-                                                    <span className="flex items-center gap-1.5 text-gray-900 bg-gray-50 px-2 py-1 rounded">
-                                                        <div className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px] font-bold">
-                                                            {(caseData.assignedProcessUserId || 'U').charAt(0).toUpperCase()}
-                                                        </div>
-                                                        {caseData.assignedProcessUserId ? 'User' : 'Unassigned'}
-                                                    </span>
+                                                <div className="pt-2 border-t border-gray-100 space-y-2">
+                                                    <div className="flex justify-between text-sm items-center">
+                                                        <span className="text-gray-500">Assigned Role</span>
+                                                        {caseData.assignedRole ? (
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${caseData.assignedRole === 'PROCESS_EXECUTIVE' ? 'bg-blue-100 text-blue-700' :
+                                                                caseData.assignedRole === 'PROCESS_MANAGER' ? 'bg-purple-100 text-purple-700' :
+                                                                    caseData.assignedRole === 'SALES_MANAGER' ? 'bg-green-100 text-green-700' :
+                                                                        'bg-gray-100 text-gray-700'
+                                                                }`}>
+                                                                {caseData.assignedRole.replace(/_/g, ' ')}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">Not assigned</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex justify-between text-sm items-center">
+                                                        <span className="text-gray-500">Assigned To</span>
+                                                        {caseData.assignedProcessUserId ? (
+                                                            <span className="flex items-center gap-1.5 text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                                                                <div className="w-4 h-4 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px] font-bold">
+                                                                    {(getUserById(caseData.assignedProcessUserId)?.name || 'U').charAt(0).toUpperCase()}
+                                                                </div>
+                                                                {getUserById(caseData.assignedProcessUserId)?.name || 'Unknown User'}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">Unassigned</span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Assignment Card - Only for authorized roles */}
+                                        {canAssignCase && (
+                                            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+                                                    {caseData.assignedProcessUserId ? 'Reassign Case' : 'Assign Case'}
+                                                </h3>
+                                                <div className="space-y-4">
+                                                    {/* Role Dropdown */}
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
+                                                        <select
+                                                            value={selectedRole || ''}
+                                                            onChange={(e) => {
+                                                                setSelectedRole(e.target.value as UserRole || null);
+                                                                setSelectedUserId(''); // Reset user when role changes
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                                        >
+                                                            <option value="">-- Select Role --</option>
+                                                            <option value="PROCESS_EXECUTIVE">Process Executive</option>
+                                                            <option value="PROCESS_MANAGER">Process Manager</option>
+                                                        </select>
+                                                    </div>
+
+                                                    {/* User Dropdown - Filtered by Role */}
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Select User</label>
+                                                        <select
+                                                            value={selectedUserId}
+                                                            onChange={(e) => setSelectedUserId(e.target.value)}
+                                                            disabled={!selectedRole}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                                        >
+                                                            <option value="">-- Select User --</option>
+                                                            {selectedRole && getUsersByRole(selectedRole).map(user => (
+                                                                <option key={user.userId} value={user.userId}>
+                                                                    {user.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {selectedRole && getUsersByRole(selectedRole).length === 0 && (
+                                                            <p className="text-xs text-amber-600 mt-1">No users found with this role</p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Remarks */}
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">Remarks (optional)</label>
+                                                        <textarea
+                                                            value={assignmentRemarks}
+                                                            onChange={(e) => setAssignmentRemarks(e.target.value)}
+                                                            placeholder="Add any notes about this assignment..."
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[60px] resize-none"
+                                                        />
+                                                    </div>
+
+                                                    {/* Assign Button */}
+                                                    <button
+                                                        onClick={handleAssignCase}
+                                                        disabled={!selectedUserId}
+                                                        className="w-full px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        {caseData.assignedProcessUserId ? 'Reassign Case' : 'Assign Case'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

@@ -127,7 +127,8 @@ export default function UsersPage() {
                                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 bg-white text-black"
                                 >
                                     <option value="">Select Role</option>
-                                    <option value="SALES">Sales</option>
+                                    <option value="SALES_EXECUTIVE">Sales Executive</option>
+                                    <option value="SALES_MANAGER">Sales Manager</option>
                                     <option value="PROCESS_EXECUTIVE">Process Executive</option>
                                     <option value="PROCESS_MANAGER">Process Manager</option>
                                     <option value="ADMIN">Admin</option>
@@ -193,9 +194,10 @@ export default function UsersPage() {
                                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
                                             user.role === 'PROCESS_MANAGER' ? 'bg-indigo-100 text-indigo-800' :
                                                 user.role === 'PROCESS_EXECUTIVE' ? 'bg-blue-100 text-blue-800' :
-                                                    'bg-green-100 text-green-800'
+                                                    user.role === 'SALES_MANAGER' ? 'bg-purple-100 text-purple-800' :
+                                                        'bg-green-100 text-green-800'
                                             }`}>
-                                            {user.role}
+                                            {user.role.replace(/_/g, ' ')}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">

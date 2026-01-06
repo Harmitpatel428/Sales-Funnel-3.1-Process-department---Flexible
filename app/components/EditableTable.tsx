@@ -32,6 +32,7 @@ interface EditableTableProps {
   onRowsDeleted?: (count: number) => void;
   onExportClick?: () => void;
   highlightedLeadId?: string | null;
+  roleFilter?: (leads: Lead[]) => Lead[]; // Role-based filter function for SALES_EXECUTIVE visibility
 }
 
 const EditableTable: React.FC<EditableTableProps> = ({
@@ -56,7 +57,8 @@ const EditableTable: React.FC<EditableTableProps> = ({
   onRowsAdded,
   onRowsDeleted,
   onExportClick,
-  highlightedLeadId
+  highlightedLeadId,
+  roleFilter
 }) => {
   const [editMode, setEditMode] = useState(false);
   const [headerEditMode, setHeaderEditMode] = useState(false);
@@ -95,10 +97,10 @@ const EditableTable: React.FC<EditableTableProps> = ({
 
   const handlePasswordSuccess = useCallback(() => {
     setPasswordModalOpen(false);
-    
+
     if (pendingOperation) {
       setVerifiedOperations(prev => new Set([...prev, pendingOperation]));
-      
+
       switch (pendingOperation) {
         case 'editMode':
           setEditMode(!editMode);
@@ -113,7 +115,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
           setRowManagementOpen(true);
           break;
       }
-      
+
       setPendingOperation(null);
     }
   }, [pendingOperation, editMode, headerEditMode]);
@@ -127,17 +129,17 @@ const EditableTable: React.FC<EditableTableProps> = ({
     if (!currentLead) return;
 
     const oldValue = String((currentLead as any)[field] || '');
-    
+
     // Add to undo stack
     setUndoStack(prev => [...prev, { leadId, field, oldValue, newValue: value }]);
     setRedoStack([]); // Clear redo stack when new action is performed
 
     setSaveStatus('saving');
-    
+
     try {
       await onCellUpdate(leadId, field, value);
       setSaveStatus('saved');
-      
+
       // Auto-hide saved status after 2 seconds
       setTimeout(() => {
         setSaveStatus('idle');
@@ -145,7 +147,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
     } catch (error) {
       setSaveStatus('error');
       console.error('Error updating cell:', error);
-      
+
       // Auto-hide error status after 3 seconds
       setTimeout(() => {
         setSaveStatus('idle');
@@ -159,13 +161,13 @@ const EditableTable: React.FC<EditableTableProps> = ({
 
     const lastAction = undoStack[undoStack.length - 1];
     if (!lastAction) return;
-    
+
     // Add to redo stack
     setRedoStack(prev => [...prev, lastAction]);
-    
+
     // Remove from undo stack
     setUndoStack(prev => prev.slice(0, -1));
-    
+
     // Perform undo
     onCellUpdate(lastAction.leadId, lastAction.field, lastAction.oldValue);
   }, [undoStack, onCellUpdate]);
@@ -176,13 +178,13 @@ const EditableTable: React.FC<EditableTableProps> = ({
 
     const lastAction = redoStack[redoStack.length - 1];
     if (!lastAction) return;
-    
+
     // Add back to undo stack
     setUndoStack(prev => [...prev, lastAction]);
-    
+
     // Remove from redo stack
     setRedoStack(prev => prev.slice(0, -1));
-    
+
     // Perform redo
     onCellUpdate(lastAction.leadId, lastAction.field, lastAction.newValue);
   }, [redoStack, onCellUpdate]);
@@ -301,7 +303,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
                 </svg>
                 Columns
               </button>
-              
+
               <button
                 onClick={handleRowManagement}
                 className="px-3 py-1 text-xs font-medium bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
@@ -362,6 +364,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
         {...(onColumnDeleted && { onColumnDeleted })}
         {...(onColumnReorder && { onColumnReorder })}
         highlightedLeadId={highlightedLeadId}
+        {...(roleFilter && { roleFilter })}
       />
 
       {/* Keyboard Shortcuts Help */}

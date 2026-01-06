@@ -5,6 +5,7 @@ import { useLeads } from '../context/LeadContext';
 import type { Lead, LeadFilters } from '../types/shared';
 import { useNavigation } from '../context/NavigationContext';
 import { useColumns } from '../context/ColumnContext';
+import { useUsers } from '../context/UserContext';
 import EditableTable from '../components/EditableTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
@@ -21,7 +22,11 @@ export default function DashboardPage() {
   const { leads, deleteLead, getFilteredLeads, updateLead, addActivity } = useLeads();
   const { setOnExportClick } = useNavigation();
   const { getVisibleColumns } = useColumns();
-  
+  const { currentUser, canViewAllLeads, getUserById } = useUsers();
+
+  // Check if current user can see all leads (SALES_MANAGER or ADMIN)
+  const canSeeAllLeads = canViewAllLeads();
+
   // Helper function to extract digits from a string
   const extractDigits = (str: string | undefined | null): string => {
     return str ? str.replace(/[^0-9]/g, '') : '';
@@ -50,11 +55,11 @@ export default function DashboardPage() {
   const [validationErrors, setValidationErrors] = useState<Record<string, Record<string, string>>>({});
   const [columnCount, setColumnCount] = useState(0);
   const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
-  
+
   // Drag and drop state for status buttons
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [statusOrder, setStatusOrder] = useState<string[]>([
-    'New', 'FL1', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'WAO', 
+    'New', 'FL1', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'WAO',
     'Hotlead', 'Mandate Sent', 'Documentation', 'Others'
   ]);
 
@@ -68,7 +73,7 @@ export default function DashboardPage() {
     setToastMessage(message);
     setToastType(type);
     setShowToast(true);
-    
+
     // Auto-hide after 3 seconds
     setTimeout(() => {
       setShowToast(false);
@@ -87,14 +92,14 @@ export default function DashboardPage() {
       // Get current column configuration to validate dynamic fields
       const visibleColumns = getVisibleColumns();
       const columnConfig = visibleColumns.find(col => col.fieldKey === field);
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('🔧 Cell update debug:', { leadId, field, value, columnConfig });
       }
-      
+
       // Validate the field (including custom columns)
       const error = validateLeadField(field as keyof Lead, value, lead, columnConfig);
-      
+
       if (error) {
         // Set validation error
         setValidationErrors(prev => ({
@@ -149,7 +154,7 @@ export default function DashboardPage() {
       // Only touch activity for important field changes
       const shouldTouchActivity = ['status', 'followUpDate', 'notes'].includes(field);
       await updateLead(updatedLead, { touchActivity: shouldTouchActivity });
-      
+
       // Auto-log status changes
       if (field === 'status') {
         const oldStatus = lead.status;
@@ -163,7 +168,7 @@ export default function DashboardPage() {
           return; // Prevent generic success toast
         }
       }
-      
+
       showToastNotification('Lead updated successfully!', 'success');
     } catch (error) {
       console.error('Error updating cell:', error);
@@ -199,24 +204,24 @@ export default function DashboardPage() {
         console.log('🔄 Column count changed:', columnCount, '->', currentColumnCount);
       }
       setColumnCount(currentColumnCount);
-      
+
       // Force more aggressive re-render by clearing cached filter results
       // This ensures the table completely re-mounts with new column configuration
       const tableKey = `table-${currentColumnCount}-${Date.now()}`;
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Forcing table re-mount with key:', tableKey);
       }
-      
+
       // Force re-render by updating a dummy state
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Table re-mounted with', currentColumnCount, 'columns');
       }
-      
+
       // Clear any validation errors that might be stale
       setValidationErrors({});
     }
   }, [getVisibleColumns, columnCount, showToastNotification]);
-  
+
   // Show notification when no leads match current status filter
   useEffect(() => {
     if (activeFilters.status && activeFilters.status.length > 0) {
@@ -253,7 +258,7 @@ export default function DashboardPage() {
     if (leadAdded === 'true') {
       showToastNotification('Lead added successfully! The new lead is now available in the dashboard.', 'success');
       localStorage.removeItem('leadAdded');
-      
+
       // Don't automatically set status filter - let user see all leads by default
       if (process.env.NODE_ENV === 'development') {
         console.log('✅ Lead added notification received, dashboard will show all leads');
@@ -270,7 +275,7 @@ export default function DashboardPage() {
   useEffect(() => {
     // Check if there are any leads marked as updated
     const hasUpdatedLeads = leads.some(lead => lead.isUpdated && !lead.isDeleted && !lead.isDone);
-    
+
     // Only clear the main dashboard view if we're on main dashboard (no status filter) 
     // and there are updated leads, but DON'T clear if user has manually selected a status
     if (hasUpdatedLeads && (!activeFilters.status || activeFilters.status.length === 0)) {
@@ -302,7 +307,7 @@ export default function DashboardPage() {
           document.body.style.overflow = 'unset';
         }
         if (showExportPasswordModal) {
-        setShowExportPasswordModal(false);
+          setShowExportPasswordModal(false);
           document.body.style.overflow = 'unset';
         }
         if (passwordSettingsOpen) {
@@ -323,7 +328,7 @@ export default function DashboardPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const returnToModal = urlParams.get('returnToModal');
     const leadId = urlParams.get('leadId');
-    
+
     if (returnToModal === 'true' && leadId) {
       // Find the lead and open the modal
       const lead = leads.find(l => l.id === leadId);
@@ -333,7 +338,7 @@ export default function DashboardPage() {
         // Prevent body scrolling when modal is open
         document.body.style.overflow = 'hidden';
       }
-      
+
       // Clean up URL parameters
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('returnToModal');
@@ -365,11 +370,11 @@ export default function DashboardPage() {
       localStorage.removeItem('dashboardFilterState');
     }
   }, []);
-  
+
   // Helper function to parse DD-MM-YYYY format dates
   const parseFollowUpDate = (dateString: string): Date | null => {
     if (!dateString) return null;
-    
+
     try {
       // Handle DD-MM-YYYY format
       const dateParts = dateString.split('-');
@@ -389,28 +394,46 @@ export default function DashboardPage() {
   // Helper function to format date to DD-MM-YYYY
   const formatDateToDDMMYYYY = (dateString: string): string => {
     if (!dateString) return '';
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's a Date object or ISO string, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString; // Return original if invalid
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       return `${day}-${month}-${year}`;
     } catch {
       return dateString; // Return original if conversion fails
     }
   };
-  
-  // Calculate summary stats with memoization
+
+  // Apply role-based visibility filtering to leads
+  // SALES_EXECUTIVE sees only: leads assigned to them OR unassigned leads
+  // SALES_MANAGER and ADMIN see all leads
+  const roleFilteredLeads = useMemo(() => {
+    if (canSeeAllLeads) {
+      return leads; // SALES_MANAGER and ADMIN see all leads
+    }
+
+    // SALES_EXECUTIVE: Filter to only show assigned leads (to them) or unassigned leads
+    if (currentUser?.role === 'SALES_EXECUTIVE') {
+      return leads.filter(lead =>
+        lead.assignedTo === currentUser.userId || !lead.assignedTo
+      );
+    }
+
+    return leads;
+  }, [leads, canSeeAllLeads, currentUser?.role, currentUser?.userId]);
+
+  // Calculate summary stats with memoization - uses role-filtered leads
   const summaryStats = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -423,7 +446,7 @@ export default function DashboardPage() {
     let followUpMandate = 0;
     let totalLeads = 0;
 
-    leads.forEach(lead => {
+    roleFilteredLeads.forEach(lead => {
       if (!lead.isDeleted && !lead.isDone) {
         totalLeads++;
       }
@@ -438,7 +461,7 @@ export default function DashboardPage() {
 
       const followUpDate = parseFollowUpDate(lead.followUpDate);
       if (!followUpDate) return;
-      
+
       followUpDate.setHours(0, 0, 0, 0);
 
       if (followUpDate.getTime() === today.getTime()) {
@@ -457,7 +480,7 @@ export default function DashboardPage() {
       overdue,
       followUpMandate
     };
-  }, [leads]);
+  }, [roleFilteredLeads]);
 
   // Calculate status counts with memoization - use filtered leads based on current filters
   const statusCounts = useMemo(() => {
@@ -480,18 +503,25 @@ export default function DashboardPage() {
       console.log('Total leads:', leads.length);
       console.log('Current activeFilters:', activeFilters);
     }
-    
+
     // Create a temporary filter object that excludes status filtering to get leads for status counts
     const tempFilters = { ...activeFilters };
     delete tempFilters.status; // Remove status filter to count all statuses
-    
-    // Use getFilteredLeads to ensure same search semantics
-    const filteredLeadsForCounts = getFilteredLeads(tempFilters);
-    
+
+    // Use getFilteredLeads then apply role-based filter for consistent visibility
+    let filteredLeadsForCounts = getFilteredLeads(tempFilters);
+
+    // Apply role-based filtering for SALES_EXECUTIVE visibility
+    if (!canSeeAllLeads && currentUser?.role === 'SALES_EXECUTIVE') {
+      filteredLeadsForCounts = filteredLeadsForCounts.filter(lead =>
+        lead.assignedTo === currentUser.userId || !lead.assignedTo
+      );
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('Filtered leads for status counts:', filteredLeadsForCounts.length);
     }
-    
+
     filteredLeadsForCounts.forEach(lead => {
       if (process.env.NODE_ENV === 'development') {
         console.log(`Lead ${lead.kva}: status="${lead.status}", discom="${lead.discom}"`);
@@ -499,7 +529,7 @@ export default function DashboardPage() {
       // Map Work Alloted to WAO and Fresh Lead to FL1 for counting
       const statusKey = lead.status === 'Work Alloted' ? 'WAO'
         : lead.status === 'Fresh Lead' ? 'FL1'
-        : lead.status;
+          : lead.status;
       if (statusKey in counts) {
         counts[statusKey as keyof typeof counts]++;
         if (process.env.NODE_ENV === 'development') {
@@ -518,13 +548,31 @@ export default function DashboardPage() {
     }
 
     return counts;
-  }, [leads, activeFilters, getFilteredLeads]);
+  }, [leads, activeFilters, getFilteredLeads, canSeeAllLeads, currentUser?.role, currentUser?.userId]);
+
+  // Apply role-based assignment filtering for SALES_EXECUTIVE
+  // SALES_EXECUTIVE can only see leads assigned to them OR unassigned leads
+  // SALES_MANAGER and ADMIN can see all leads
+  const getRoleFilteredLeads = useCallback((leadsToFilter: Lead[]): Lead[] => {
+    if (canSeeAllLeads) {
+      return leadsToFilter; // SALES_MANAGER and ADMIN see all leads
+    }
+
+    // SALES_EXECUTIVE: Filter to only show assigned leads (to them) or unassigned leads
+    if (currentUser?.role === 'SALES_EXECUTIVE') {
+      return leadsToFilter.filter(lead =>
+        lead.assignedTo === currentUser.userId || !lead.assignedTo
+      );
+    }
+
+    return leadsToFilter;
+  }, [canSeeAllLeads, currentUser?.role, currentUser?.userId]);
 
 
   const { dueToday, upcoming, overdue, followUpMandate } = summaryStats;
 
 
-  
+
   // Handle lead click to view details
   const handleLeadClick = (lead: Lead) => {
     setSelectedLead(lead);
@@ -547,7 +595,7 @@ export default function DashboardPage() {
 
 
 
-  
+
   // Show export password modal
   const handleExportExcel = () => {
     setShowExportPasswordModal(true);
@@ -564,23 +612,23 @@ export default function DashboardPage() {
     if (!dateString || dateString.trim() === '') {
       return '';
     }
-    
+
     // If already in DD-MM-YYYY format, return as is
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       return dateString;
     }
-    
+
     // If it's an ISO date string or Date object, convert to DD-MM-YYYY
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) {
         return dateString; // Return original if invalid
       }
-      
+
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const year = date.getFullYear();
-      
+
       return `${day}-${month}-${year}`;
     } catch {
       return dateString; // Return original if conversion fails
@@ -592,10 +640,10 @@ export default function DashboardPage() {
     try {
       // Small delay to ensure pending header edits are saved
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Get filtered leads based on current view
       const leadsToExport = getFilteredLeads(activeFilters);
-      
+
       // Use fresh column configuration to ensure latest columns are included
       const visibleColumns = getVisibleColumns();
       if (process.env.NODE_ENV === 'development') {
@@ -603,28 +651,28 @@ export default function DashboardPage() {
         console.log('📊 Export Debug - Column types:', visibleColumns.map(c => ({ label: c.label, type: c.type, fieldKey: c.fieldKey })));
       }
       const headers = visibleColumns.map(column => column.label);
-      
+
       // Convert leads to Excel rows with remapped data
       const rows = leadsToExport.map(lead => {
         // Get mobile numbers and contacts
         const mobileNumbers = lead.mobileNumbers || [];
         const mainMobile = mobileNumbers.find(m => m.isMain) || mobileNumbers[0] || { number: lead.mobileNumber || '', name: '' };
-        
+
         // Format main mobile number (phone number only, no contact name)
         const mainMobileDisplay = mainMobile.number || '';
         if (process.env.NODE_ENV === 'development') {
           console.log('🔍 Export Debug - Lead:', lead.clientName, 'Main Mobile:', mainMobileDisplay);
         }
-        
+
         // Map data according to visible columns using safe property access
         return visibleColumns.map(column => {
           const fieldKey = column.fieldKey;
           const value = (lead as any)[fieldKey] ?? '';
-          
+
           if (process.env.NODE_ENV === 'development') {
             console.log(`🔍 Export Debug - Field: ${fieldKey}, Value: ${value}, Type: ${column.type}`);
           }
-          
+
           // Handle special field formatting
           switch (fieldKey) {
             case 'kva':
@@ -661,19 +709,19 @@ export default function DashboardPage() {
           }
         });
       });
-      
+
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-      
+
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Leads');
-      
+
       // Generate Excel file and download
       XLSX.writeFile(wb, `leads-export-${new Date().toISOString().split('T')[0]}.xlsx`);
-      
+
       // Close modal and show success message
-        setShowExportPasswordModal(false);
+      setShowExportPasswordModal(false);
       showToastNotification(`Successfully exported ${leadsToExport.length} leads to Excel format`, 'success');
     } catch (error) {
       console.error('Export error:', error);
@@ -702,52 +750,52 @@ export default function DashboardPage() {
     const suggestions = leads.filter(lead => {
       // Search in KVA
       const kvaMatch = lead.kva?.toLowerCase().includes(queryLower) || false;
-      
+
       // Search in Consumer Number (both original and cleaned)
-      const consumerMatch = lead.consumerNumber?.toLowerCase().includes(queryLower) || 
-                           extractDigits(lead.consumerNumber).includes(queryNumbers) || false;
-      
+      const consumerMatch = lead.consumerNumber?.toLowerCase().includes(queryLower) ||
+        extractDigits(lead.consumerNumber).includes(queryNumbers) || false;
+
       // Search in Mobile Numbers (both original and cleaned)
       const allMobileNumbers = [
         lead.mobileNumber, // backward compatibility
         ...(lead.mobileNumbers || []).map(m => m.number)
       ].filter(Boolean);
-      
-      const mobileMatch = allMobileNumbers.some(mobileNumber => 
-        mobileNumber?.toLowerCase().includes(queryLower) || 
+
+      const mobileMatch = allMobileNumbers.some(mobileNumber =>
+        mobileNumber?.toLowerCase().includes(queryLower) ||
         mobileNumber?.replace(/[^0-9]/g, '').includes(queryNumbers)
       );
-      
+
       // Search in Mobile Number Names (including client name fallback only for main number)
       const allMobileNames = (lead.mobileNumbers || []).map(m => m.name || (m.isMain ? lead.clientName : '')).filter(Boolean);
-      const mobileNameMatch = allMobileNames.some(mobileName => 
+      const mobileNameMatch = allMobileNames.some(mobileName =>
         mobileName?.toLowerCase().includes(queryLower)
       );
-      
+
       // Search in Company Name
       const companyMatch = lead.company?.toLowerCase().includes(queryLower) || false;
-      
+
       // Search in Address
       const locationMatch = lead.companyLocation?.toLowerCase().includes(queryLower) || false;
-      
+
       // Search in Client Name
       const clientMatch = lead.clientName?.toLowerCase().includes(queryLower) || false;
-      
+
       // Search in Connection Date
       const dateMatch = lead.connectionDate?.toLowerCase().includes(queryLower) || false;
-      
+
       // Dynamic search through all visible columns
       const dynamicMatch = visibleColumns.some(column => {
         const value = (lead as any)[column.fieldKey];
         if (value === null || value === undefined) return false;
-        
+
         // Handle different column types appropriately
         switch (column.type) {
           case 'phone':
             // For phone columns, search both original and cleaned versions
             const phoneStr = String(value);
-            return phoneStr.toLowerCase().includes(queryLower) || 
-                   phoneStr.replace(/[^0-9]/g, '').includes(queryNumbers);
+            return phoneStr.toLowerCase().includes(queryLower) ||
+              phoneStr.replace(/[^0-9]/g, '').includes(queryNumbers);
           case 'number':
             // For number columns, search both original and string versions
             return String(value).toLowerCase().includes(queryLower);
@@ -764,7 +812,7 @@ export default function DashboardPage() {
             return String(value).toLowerCase().includes(queryLower);
         }
       });
-      
+
       return kvaMatch || consumerMatch || mobileMatch || mobileNameMatch || companyMatch || locationMatch || clientMatch || dateMatch || dynamicMatch;
     }).slice(0, 8); // Show more suggestions
 
@@ -776,7 +824,7 @@ export default function DashboardPage() {
   const handleSearchInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchInput(value);
-    
+
     // Generate suggestions immediately for better UX (not debounced)
     if (value.length >= 2) {
       generateSuggestions(value);
@@ -791,32 +839,32 @@ export default function DashboardPage() {
     // Determine what field was matched and use that for the search
     const queryLower = searchInput.toLowerCase();
     const queryNumbers = searchInput.replace(/[^0-9]/g, '');
-    
+
     // Get all mobile numbers for this lead
     const allMobileNumbers = [
       lead.mobileNumber, // backward compatibility
       ...(lead.mobileNumbers || []).map(m => m.number)
     ].filter(Boolean);
-    
+
     // Get all mobile names for this lead (including client name fallback only for main number)
     const allMobileNames = (lead.mobileNumbers || []).map(m => m.name || (m.isMain ? lead.clientName : '')).filter(Boolean);
-    
+
     let searchValue = lead.kva; // Default to KVA
-    
+
     if (lead.consumerNumber.toLowerCase().includes(queryLower) || extractDigits(lead.consumerNumber).includes(queryNumbers)) {
       searchValue = lead.consumerNumber;
-    } else if (allMobileNumbers.some(mobileNumber => 
-      mobileNumber?.toLowerCase().includes(queryLower) || 
+    } else if (allMobileNumbers.some(mobileNumber =>
+      mobileNumber?.toLowerCase().includes(queryLower) ||
       mobileNumber?.replace(/[^0-9]/g, '').includes(queryNumbers)
     )) {
       // Show the main mobile number or the first one found
       const mainMobile = lead.mobileNumbers?.find(m => m.isMain)?.number || lead.mobileNumber || allMobileNumbers[0];
       searchValue = mainMobile || '';
-    } else if (allMobileNames.some((mobileName: string) => 
+    } else if (allMobileNames.some((mobileName: string) =>
       mobileName?.toLowerCase().includes(queryLower)
     )) {
       // Show the mobile name that matched (including client name fallback only for main number)
-      const matchedMobile = lead.mobileNumbers?.find(m => 
+      const matchedMobile = lead.mobileNumbers?.find(m =>
         (m.name || (m.isMain ? lead.clientName : ''))?.toLowerCase().includes(queryLower)
       );
       searchValue = matchedMobile?.name || (matchedMobile?.isMain ? lead.clientName : '') || '';
@@ -829,7 +877,7 @@ export default function DashboardPage() {
     } else if (lead.connectionDate.toLowerCase().includes(queryLower)) {
       searchValue = lead.connectionDate;
     }
-    
+
     setSearchInput(searchValue);
     setShowSuggestions(false);
   };
@@ -855,8 +903,8 @@ export default function DashboardPage() {
     // Map UI codes back to DB values for filtering
     const actualStatus = status === 'WAO' ? 'Work Alloted'
       : status === 'FL1' ? 'Fresh Lead'
-      : status as Lead['status'];
-    
+        : status as Lead['status'];
+
     // Check if the status has zero leads
     if (statusCounts[status as keyof typeof statusCounts] === 0) {
       setEmptyStatusMessage(`Your ${status} lead is empty, please add lead to processed.`);
@@ -867,7 +915,7 @@ export default function DashboardPage() {
       }, 3000);
       return;
     }
-    
+
     // Set the status filter - this will show leads with this status (including updated ones)
     setActiveFilters(prev => ({
       ...prev,
@@ -891,22 +939,22 @@ export default function DashboardPage() {
 
   const handleDrop = (e: React.DragEvent, dropStatus: string) => {
     e.preventDefault();
-    
+
     if (draggedItem && draggedItem !== dropStatus) {
       const newOrder = [...statusOrder];
       const draggedIndex = newOrder.indexOf(draggedItem);
       const dropIndex = newOrder.indexOf(dropStatus);
-      
+
       // Remove dragged item and insert at new position
       newOrder.splice(draggedIndex, 1);
       newOrder.splice(dropIndex, 0, draggedItem);
-      
+
       setStatusOrder(newOrder);
-      
+
       // Save to localStorage for persistence
       localStorage.setItem('statusButtonOrder', JSON.stringify(newOrder));
     }
-    
+
     setDraggedItem(null);
   };
 
@@ -932,86 +980,86 @@ export default function DashboardPage() {
     // Map WAO to Work Alloted for active state checking
     const actualStatus = status === 'WAO' ? 'Work Alloted'
       : status === 'FL1' ? 'Fresh Lead'
-      : status;
+        : status;
     const isActive = activeFilters.status?.length === 1 && activeFilters.status[0] === actualStatus;
     const isDragging = draggedItem === status;
-    
+
     const baseClasses = "px-2.5 py-1.5 rounded-md transition-all duration-200 text-xs font-medium flex items-center gap-1 whitespace-nowrap";
     const draggingClasses = isDragging ? "opacity-50 transform rotate-2" : "";
-    
+
     const colorMap: { [key: string]: { active: string; inactive: string; badge: string; badgeActive: string } } = {
-      'New': { 
-        active: 'bg-blue-800 text-white', 
+      'New': {
+        active: 'bg-blue-800 text-white',
         inactive: 'bg-blue-600 hover:bg-blue-700 text-white',
         badge: 'bg-blue-500 text-white',
         badgeActive: 'bg-blue-900 text-blue-100'
       },
-      'FL1': { 
-        active: 'bg-emerald-800 text-white', 
+      'FL1': {
+        active: 'bg-emerald-800 text-white',
         inactive: 'bg-emerald-600 hover:bg-emerald-700 text-white',
         badge: 'bg-emerald-500 text-white',
         badgeActive: 'bg-emerald-900 text-emerald-100'
       },
-      'CNR': { 
-        active: 'bg-orange-800 text-white', 
+      'CNR': {
+        active: 'bg-orange-800 text-white',
         inactive: 'bg-orange-600 hover:bg-orange-700 text-white',
         badge: 'bg-orange-500 text-white',
         badgeActive: 'bg-orange-900 text-orange-100'
       },
-      'Busy': { 
-        active: 'bg-yellow-800 text-white', 
+      'Busy': {
+        active: 'bg-yellow-800 text-white',
         inactive: 'bg-yellow-600 hover:bg-yellow-700 text-white',
         badge: 'bg-yellow-500 text-white',
         badgeActive: 'bg-yellow-900 text-yellow-100'
       },
-      'Follow-up': { 
-        active: 'bg-purple-800 text-white', 
+      'Follow-up': {
+        active: 'bg-purple-800 text-white',
         inactive: 'bg-purple-600 hover:bg-purple-700 text-white',
         badge: 'bg-purple-500 text-white',
         badgeActive: 'bg-purple-900 text-purple-100'
       },
-      'Deal Close': { 
-        active: 'bg-green-800 text-white', 
+      'Deal Close': {
+        active: 'bg-green-800 text-white',
         inactive: 'bg-green-600 hover:bg-green-700 text-white',
         badge: 'bg-green-500 text-white',
         badgeActive: 'bg-green-900 text-green-100'
       },
-      'WAO': { 
-        active: 'bg-indigo-800 text-white', 
+      'WAO': {
+        active: 'bg-indigo-800 text-white',
         inactive: 'bg-indigo-600 hover:bg-indigo-700 text-white',
         badge: 'bg-indigo-500 text-white',
         badgeActive: 'bg-indigo-900 text-indigo-100'
       },
-      'Hotlead': { 
-        active: 'bg-red-800 text-white', 
+      'Hotlead': {
+        active: 'bg-red-800 text-white',
         inactive: 'bg-red-600 hover:bg-red-700 text-white',
         badge: 'bg-red-500 text-white',
         badgeActive: 'bg-red-900 text-red-100'
       },
-      'Mandate Sent': { 
-        active: 'bg-teal-800 text-white', 
+      'Mandate Sent': {
+        active: 'bg-teal-800 text-white',
         inactive: 'bg-teal-600 hover:bg-teal-700 text-white',
         badge: 'bg-teal-500 text-white',
         badgeActive: 'bg-teal-900 text-teal-100'
       },
-      'Documentation': { 
-        active: 'bg-slate-800 text-white', 
+      'Documentation': {
+        active: 'bg-slate-800 text-white',
         inactive: 'bg-slate-600 hover:bg-slate-700 text-white',
         badge: 'bg-slate-500 text-white',
         badgeActive: 'bg-slate-900 text-slate-100'
       },
-      'Others': { 
-        active: 'bg-gray-800 text-white', 
+      'Others': {
+        active: 'bg-gray-800 text-white',
         inactive: 'bg-gray-600 hover:bg-gray-700 text-white',
         badge: 'bg-gray-500 text-white',
         badgeActive: 'bg-gray-900 text-gray-100'
       }
     };
-    
+
     const colors = colorMap[status] || colorMap['Others'];
     const colorClasses = isActive ? colors?.active : colors?.inactive;
     const badgeClasses = isActive ? colors?.badgeActive : colors?.badge;
-    
+
     return {
       buttonClasses: `${baseClasses} ${colorClasses} ${draggingClasses}`,
       badgeClasses: `px-1 py-0.5 rounded-full text-xs font-bold ${badgeClasses}`
@@ -1027,7 +1075,7 @@ export default function DashboardPage() {
       newSelectedLeads.delete(leadId);
     }
     setSelectedLeads(newSelectedLeads);
-    
+
     // Update selectAll state based on selection
     const filteredLeads = getFilteredLeads(activeFilters);
     setSelectAll(newSelectedLeads.size === filteredLeads.length && filteredLeads.length > 0);
@@ -1050,11 +1098,11 @@ export default function DashboardPage() {
   // Bulk delete selected leads
   const handleBulkDelete = () => {
     if (selectedLeads.size === 0) return;
-    
+
     // Get the actual lead objects for the selected IDs
     const filteredLeads = getFilteredLeads(activeFilters);
     const selectedLeadObjects = filteredLeads.filter(lead => selectedLeads.has(lead.id));
-    
+
     setLeadsToDelete(selectedLeadObjects);
     setShowMassDeleteModal(true);
   };
@@ -1062,19 +1110,19 @@ export default function DashboardPage() {
   // Bulk update status for selected leads
   const handleBulkStatusUpdate = (newStatus: Lead['status']) => {
     if (selectedLeads.size === 0) return;
-    
+
     const filteredLeads = getFilteredLeads(activeFilters);
     const selectedLeadObjects = filteredLeads.filter(lead => selectedLeads.has(lead.id));
-    
+
     // Update each selected lead's status
     selectedLeadObjects.forEach(lead => {
       const updatedLead = { ...lead, status: newStatus };
       updateLead(updatedLead);
     });
-    
+
     // Show notification
     showToastNotification(`${selectedLeads.size} lead(s) status updated to "${newStatus}" and removed from main dashboard view`, 'success');
-    
+
     // Clear selection
     setSelectedLeads(new Set());
     setSelectAll(false);
@@ -1110,38 +1158,38 @@ export default function DashboardPage() {
     <div className="container mx-auto px-1">
       {/* Status Filter Section */}
       <div className="bg-gradient-to-br from-slate-800 via-gray-700 to-slate-800 p-1 rounded-lg shadow-lg border border-slate-600/30 mb-1 relative overflow-hidden mx-auto w-fit mt-2">
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-transparent to-cyan-500/5"></div>
-            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500"></div>
-            <div className="relative">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
-              <h3 className="text-sm font-semibold text-white">Filter by Status</h3>
-              <span className="text-xs text-white/80">Click any status to filter leads</span>
-            </div>
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
-              {statusOrder.map((status) => {
-                const styles = getButtonStyle(status);
-                return (
-                  <button
-                    key={status}
-                    draggable
-                    onClick={() => handleStatusFilter(status)}
-                    onDragStart={(e) => handleDragStart(e, status)}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, status)}
-                    onDragEnd={handleDragEnd}
-                    className={styles.buttonClasses}
-                    title={`Drag to reorder • Click to filter ${status} leads`}
-                  >
-                    {status}
-                    <span className={styles.badgeClasses}>
-                      {statusCounts[status === 'WAO' ? 'WAO' : status as keyof typeof statusCounts]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            </div>
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-transparent to-cyan-500/5"></div>
+        <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500"></div>
+        <div className="relative">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
+            <h3 className="text-sm font-semibold text-white">Filter by Status</h3>
+            <span className="text-xs text-white/80">Click any status to filter leads</span>
           </div>
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            {statusOrder.map((status) => {
+              const styles = getButtonStyle(status);
+              return (
+                <button
+                  key={status}
+                  draggable
+                  onClick={() => handleStatusFilter(status)}
+                  onDragStart={(e) => handleDragStart(e, status)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, status)}
+                  onDragEnd={handleDragEnd}
+                  className={styles.buttonClasses}
+                  title={`Drag to reorder • Click to filter ${status} leads`}
+                >
+                  {status}
+                  <span className={styles.badgeClasses}>
+                    {statusCounts[status === 'WAO' ? 'WAO' : status as keyof typeof statusCounts]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
       {/* Bulk Actions Section */}
       <div className="bg-white p-1 rounded-lg shadow-md mb-1">
@@ -1164,7 +1212,7 @@ export default function DashboardPage() {
                   <div className="animate-spin h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
                 </div>
               )}
-              
+
               {/* Search Suggestions Dropdown */}
               {showSuggestions && searchSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
@@ -1172,28 +1220,28 @@ export default function DashboardPage() {
                     // Determine what field matched for highlighting
                     const queryLower = searchInput.toLowerCase();
                     const queryNumbers = searchInput.replace(/[^0-9]/g, '');
-                    
+
                     const getMatchType = () => {
                       if (lead.kva?.toLowerCase().includes(queryLower)) return 'KVA';
                       if (lead.consumerNumber?.toLowerCase().includes(queryLower) || extractDigits(lead.consumerNumber).includes(queryNumbers)) return 'Consumer No.';
-                      
+
                       // Check all mobile numbers
                       const allMobileNumbers = [
                         lead.mobileNumber, // backward compatibility
                         ...(lead.mobileNumbers || []).map(m => m.number)
                       ].filter(Boolean);
-                      
-                      if (allMobileNumbers.some(mobileNumber => 
-                        mobileNumber?.toLowerCase().includes(queryLower) || 
+
+                      if (allMobileNumbers.some(mobileNumber =>
+                        mobileNumber?.toLowerCase().includes(queryLower) ||
                         mobileNumber?.replace(/[^0-9]/g, '').includes(queryNumbers)
                       )) return 'Phone';
-                      
+
                       // Check mobile number names (including client name fallback only for main number)
                       const allMobileNames = (lead.mobileNumbers || []).map(m => m.name || (m.isMain ? lead.clientName : '')).filter(Boolean);
-                      if (allMobileNames.some(mobileName => 
+                      if (allMobileNames.some(mobileName =>
                         mobileName?.toLowerCase().includes(queryLower)
                       )) return 'Contact';
-                      
+
                       if (lead.company?.toLowerCase().includes(queryLower)) return 'Company';
                       if (lead.companyLocation?.toLowerCase().includes(queryLower)) return 'Address';
                       if (lead.clientName?.toLowerCase().includes(queryLower)) return 'Client';
@@ -1226,14 +1274,14 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-            
+
             <button
               onClick={handleSearch}
               className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"
             >
               Search
             </button>
-            
+
             {activeFilters.searchTerm && (
               <button
                 onClick={clearSearch}
@@ -1243,97 +1291,96 @@ export default function DashboardPage() {
               </button>
             )}
           </div>
-          
-              <button
-                onClick={() => handleSelectAll(!selectAll)}
-                className={`px-3 py-2 text-xs rounded-lg transition-colors ${
-                  selectAll 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                    : 'bg-gray-200 text-black hover:bg-gray-300'
-                }`}
+
+          <button
+            onClick={() => handleSelectAll(!selectAll)}
+            className={`px-3 py-2 text-xs rounded-lg transition-colors ${selectAll
+              ? 'bg-purple-600 text-white hover:bg-purple-700'
+              : 'bg-gray-200 text-black hover:bg-gray-300'
+              }`}
+          >
+            {selectAll ? 'Deselect All' : 'Select All'}
+          </button>
+          {selectedLeads.size > 0 && (
+            <>
+              <span className="text-sm text-black">
+                {selectedLeads.size} lead(s) selected
+              </span>
+              <select
+                onChange={(e) => {
+                  const newStatus = e.target.value as Lead['status'];
+                  if (newStatus) {
+                    handleBulkStatusUpdate(newStatus);
+                  }
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                defaultValue=""
+                aria-label="Update status for selected leads"
               >
-                {selectAll ? 'Deselect All' : 'Select All'}
+                <option value="" disabled>Update Status</option>
+                <option value="New">New</option>
+                <option value="CNR">CNR</option>
+                <option value="Busy">Busy</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="Deal Close">Deal Close</option>
+                <option value="Work Alloted">WAO</option>
+                <option value="Hotlead">Hotlead</option>
+                <option value="Mandate Sent">Mandate Sent</option>
+                <option value="Documentation">Documentation</option>
+                <option value="Others">Others</option>
+              </select>
+              <button
+                onClick={handleBulkDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Selected
               </button>
-            {selectedLeads.size > 0 && (
-              <>
-                <span className="text-sm text-black">
-                  {selectedLeads.size} lead(s) selected
-                </span>
-                <select
-                  onChange={(e) => {
-                    const newStatus = e.target.value as Lead['status'];
-                    if (newStatus) {
-                      handleBulkStatusUpdate(newStatus);
-                    }
-                  }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  defaultValue=""
-                  aria-label="Update status for selected leads"
-                >
-                  <option value="" disabled>Update Status</option>
-                  <option value="New">New</option>
-                  <option value="CNR">CNR</option>
-                  <option value="Busy">Busy</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Deal Close">Deal Close</option>
-                  <option value="Work Alloted">WAO</option>
-                  <option value="Hotlead">Hotlead</option>
-                  <option value="Mandate Sent">Mandate Sent</option>
-                  <option value="Documentation">Documentation</option>
-                  <option value="Others">Others</option>
-                </select>
-                <button
-                  onClick={handleBulkDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  Delete Selected
-                </button>
-                <button
-                  onClick={clearSelection}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Close
-                </button>
-              </>
-            )}
-            
-            {/* Status Filter Indicator */}
-            {activeFilters.status && activeFilters.status.length === 1 ? (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <circle cx="10" cy="10" r="3" />
-                  </svg>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-blue-800">Filtered: {activeFilters.status[0]}</span>
-                  <button
-                    onClick={clearAllFilters}
-                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium flex items-center gap-1"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                    Clear
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              <button
+                onClick={clearSelection}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Close
+              </button>
+            </>
+          )}
+
+          {/* Status Filter Indicator */}
+          {activeFilters.status && activeFilters.status.length === 1 ? (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                <svg className="w-3 h-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                  <circle cx="10" cy="10" r="3" />
                 </svg>
-                <span className="text-sm text-green-800 font-medium">Showing all leads - click status buttons above to filter</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-blue-800">Filtered: {activeFilters.status[0]}</span>
                 <button
                   onClick={clearAllFilters}
-                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium flex items-center gap-1"
                 >
-                  Clear Filters
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  Clear
                 </button>
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm text-green-800 font-medium">Showing all leads - click status buttons above to filter</span>
+              <button
+                onClick={clearAllFilters}
+                className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
         </div>
-      </div>  
+      </div>
 
 
       {/* Empty Status Notification */}
@@ -1358,35 +1405,35 @@ export default function DashboardPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-1 mb-2">
-        <div 
+        <div
           className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
           onClick={() => router.push('/all-leads')}
         >
           <h3 className="text-xs font-semibold text-black">All Leads</h3>
           <p className="text-sm font-bold text-blue-600">{leads.length}</p>
         </div>
-        <div 
+        <div
           className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
           onClick={() => router.push('/due-today')}
         >
           <h3 className="text-xs font-semibold text-black">Due Today</h3>
           <p className="text-sm font-bold text-yellow-600">{dueToday}</p>
         </div>
-        <div 
+        <div
           className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
           onClick={() => router.push('/upcoming')}
         >
           <h3 className="text-xs font-semibold text-black">Upcoming (7 Days)</h3>
           <p className="text-sm font-bold text-green-600">{upcoming}</p>
         </div>
-        <div 
+        <div
           className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
           onClick={() => router.push('/due-today?tab=overdue')}
         >
           <h3 className="text-xs font-semibold text-black">Overdue</h3>
           <p className="text-sm font-bold text-red-600">{overdue}</p>
         </div>
-        <div 
+        <div
           className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
           onClick={() => router.push('/follow-up-mandate')}
         >
@@ -1394,15 +1441,15 @@ export default function DashboardPage() {
           <p className="text-sm font-bold text-purple-600">{followUpMandate}</p>
         </div>
       </div>
-      
 
-      
+
+
       {/* Lead Table */}
       <div data-lead-table className="relative">
         <div className="sticky top-0 z-10 bg-white shadow-sm rounded-lg">
-          <EditableTable 
+          <EditableTable
             key={`table-${columnCount}-${Date.now()}`} // Force re-mount when columns change
-            filters={activeFilters} 
+            filters={activeFilters}
             onLeadClick={handleLeadClick}
             selectedLeads={selectedLeads}
             onLeadSelection={handleLeadSelection}
@@ -1414,6 +1461,7 @@ export default function DashboardPage() {
             onExportClick={handleExportExcel}
             headerEditable={true}
             highlightedLeadId={highlightedLeadId}
+            roleFilter={getRoleFilteredLeads}
             onColumnAdded={(column) => {
               // Handle column addition
               if (process.env.NODE_ENV === 'development') {
@@ -1486,7 +1534,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Sleek Modal Content */}
             <div className="p-6 text-center bg-gradient-to-br from-white via-slate-50/50 to-gray-50/30">
               <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-slate-800 via-gray-700 to-slate-800 bg-clip-text text-transparent">
@@ -1495,7 +1543,7 @@ export default function DashboardPage() {
               <p className="text-slate-600 mb-6 text-base font-medium">
                 Are you sure you want to delete this lead?
               </p>
-              
+
               {/* Sleek Lead Details Card */}
               <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-5 mb-6 border border-slate-200/50 shadow-inner">
                 <div className="text-xs text-slate-500 mb-3 font-semibold uppercase tracking-wider">Lead Information</div>
@@ -1509,7 +1557,7 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
-              
+
               {/* Sleek Warning Message */}
               <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/50 rounded-2xl p-4 mb-6 shadow-sm">
                 <div className="flex items-center justify-center space-x-3 text-rose-700 text-sm font-semibold">
@@ -1520,7 +1568,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Sleek Action Buttons */}
             <div className="flex justify-center space-x-4 p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-b-3xl">
               <button
@@ -1568,7 +1616,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Sleek Modal Content */}
             <div className="p-6 text-center bg-gradient-to-br from-white via-slate-50/50 to-gray-50/30">
               <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-slate-800 via-gray-700 to-slate-800 bg-clip-text text-transparent">
@@ -1577,7 +1625,7 @@ export default function DashboardPage() {
               <p className="text-slate-600 mb-6 text-base font-medium">
                 Are you sure you want to delete these {leadsToDelete.length} selected leads?
               </p>
-              
+
               {/* Sleek Leads List */}
               <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-5 mb-6 border border-slate-200/50 shadow-inner max-h-52 overflow-y-auto">
                 <div className="text-xs text-slate-500 mb-4 font-semibold uppercase tracking-wider">Selected Leads</div>
@@ -1602,7 +1650,7 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
-              
+
               {/* Sleek Warning Message */}
               <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/50 rounded-2xl p-4 mb-6 shadow-sm">
                 <div className="flex items-center justify-center space-x-3 text-rose-700 text-sm font-semibold">
@@ -1613,7 +1661,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Sleek Action Buttons */}
             <div className="flex justify-center space-x-4 p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-b-3xl">
               <button
@@ -1648,7 +1696,7 @@ export default function DashboardPage() {
           <PasswordModal
             isOpen={showExportPasswordModal}
             onClose={() => {
-            setShowExportPasswordModal(false);
+              setShowExportPasswordModal(false);
             }}
             operation="export"
             onSuccess={handleExportPasswordSuccess}
@@ -1676,11 +1724,10 @@ export default function DashboardPage() {
       {/* Toast Notification */}
       {showToast && (
         <div className="fixed top-4 right-4 z-50">
-          <div className={`px-6 py-4 rounded-lg shadow-lg text-white font-medium ${
-            toastType === 'success' ? 'bg-green-600' :
+          <div className={`px-6 py-4 rounded-lg shadow-lg text-white font-medium ${toastType === 'success' ? 'bg-green-600' :
             toastType === 'error' ? 'bg-red-600' :
-            'bg-blue-600'
-          }`}>
+              'bg-blue-600'
+            }`}>
             <div className="flex items-center space-x-3">
               {toastType === 'success' && (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

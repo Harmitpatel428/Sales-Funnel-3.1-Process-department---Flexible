@@ -35,6 +35,7 @@ interface LeadTableProps {
   onColumnAdded?: (column: any) => void; // Column management callbacks
   onColumnDeleted?: (fieldKey: string) => void;
   highlightedLeadId?: string | null;
+  roleFilter?: (leads: Lead[]) => Lead[]; // Role-based filter function for SALES_EXECUTIVE visibility
 }
 
 const LeadTable = React.memo(function LeadTable({
@@ -55,7 +56,8 @@ const LeadTable = React.memo(function LeadTable({
   headerEditable = true,
   onColumnAdded,
   onColumnDeleted,
-  highlightedLeadId
+  highlightedLeadId,
+  roleFilter
 }: LeadTableProps) {
   const { leads: contextLeads, getFilteredLeads } = useLeads();
   const { getDisplayName, updateHeader, headerConfig } = useHeaders();
@@ -198,12 +200,19 @@ const LeadTable = React.memo(function LeadTable({
   // filters is a stable object reference, customLeads from props
   // Using leads.length instead of leads array prevents unnecessary recomputations
   const filteredLeads = useMemo(() => {
+    let result: Lead[];
     if (customLeads) {
       // If custom leads are provided, return them as is (no filtering)
-      return customLeads;
+      result = customLeads;
+    } else {
+      result = getFilteredLeads(filters);
     }
-    return getFilteredLeads(filters);
-  }, [getFilteredLeads, filters, leads.length, customLeads]);
+    // Apply role-based filter if provided (for SALES_EXECUTIVE visibility restriction)
+    if (roleFilter) {
+      result = roleFilter(result);
+    }
+    return result;
+  }, [getFilteredLeads, filters, leads.length, customLeads, roleFilter]);
 
   // Helper function to parse dates for sorting
   const parseDateForSorting = useCallback((dateString: string): Date => {

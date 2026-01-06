@@ -104,6 +104,10 @@ export interface Lead {
   convertedToCaseId?: string;    // If set, lead has been converted to a case
   convertedAt?: string;          // Timestamp of conversion
   createdAt?: string;            // Timestamp of creation
+  // Lead Assignment
+  assignedTo?: string;           // userId of assigned sales executive
+  assignedBy?: string;           // userId of who assigned the lead
+  assignedAt?: string;           // Timestamp of assignment
 }
 
 /**
@@ -182,6 +186,8 @@ export interface LeadContextType {
   validateLeadAgainstColumns: (lead: Lead, columnConfigs: ColumnConfig[]) => string[];
   skipPersistence?: boolean;
   setSkipPersistence?: (skip: boolean) => void;
+  assignLead: (leadId: string, userId: string, assignedBy: string) => void;
+  unassignLead: (leadId: string) => void;
 }
 
 /**

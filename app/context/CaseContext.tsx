@@ -6,7 +6,9 @@ import {
     CaseFilters,
     ProcessStatus,
     CasePriority,
-    CaseContextType
+    CaseContextType,
+    UserRole,
+    CaseAssignmentHistory
 } from '../types/processTypes';
 import { Lead } from '../types/shared';
 import { useLeads } from './LeadContext';
@@ -18,6 +20,7 @@ import { useUsers } from './UserContext';
 
 const CASES_STORAGE_KEY = 'processCases';
 const CASE_COUNTER_KEY = 'caseCounter';
+const ASSIGNMENT_HISTORY_KEY = 'caseAssignmentHistory';
 
 // Generate case number (e.g., "CASE-2026-0001")
 function generateCaseNumber(): string {
@@ -133,6 +136,12 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             customDesignation?: string;
             phoneNumber: string;
         }>;
+        // Financial/Location fields
+        talukaCategory?: string;
+        termLoanAmount?: string;
+        plantMachineryValue?: string;
+        electricityLoad?: string;
+        electricityLoadType?: 'HT' | 'LT' | '';
     }): { success: boolean; message: string; caseId?: string } => {
         // Find the lead
         const lead = leads.find(l => l.id === leadId);
@@ -163,6 +172,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             companyType: metadata?.companyType,
             contacts: metadata?.contacts,
             assignedProcessUserId: null,
+            assignedRole: null,
             processStatus: 'DOCUMENTS_PENDING',
             priority: 'MEDIUM',
             createdAt: now,
@@ -172,7 +182,13 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             company: metadata?.companyName || lead.company || '',
             mobileNumber: lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
             consumerNumber: lead.consumerNumber,
-            kva: lead.kva
+            kva: lead.kva,
+            // Financial/Location fields from Forward to Process form
+            talukaCategory: metadata?.talukaCategory,
+            termLoanAmount: metadata?.termLoanAmount,
+            plantMachineryValue: metadata?.plantMachineryValue,
+            electricityLoad: metadata?.electricityLoad,
+            electricityLoadType: metadata?.electricityLoadType
         };
 
         setCases(prev => [...prev, newCase]);
@@ -262,20 +278,57 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     // ASSIGNMENT OPERATIONS
     // ============================================================================
 
-    const assignCase = useCallback((caseId: string, userId: string): { success: boolean; message: string } => {
+    const assignCase = useCallback((caseId: string, userId: string, roleId?: UserRole): { success: boolean; message: string } => {
+        // RBAC: Only ADMIN, PROCESS_MANAGER, or SALES_MANAGER can assign cases
+        if (!currentUser || !['ADMIN', 'PROCESS_MANAGER', 'SALES_MANAGER'].includes(currentUser.role)) {
+            return { success: false, message: 'Unauthorized: You do not have permission to assign cases' };
+        }
+
         const existingCase = cases.find(c => c.caseId === caseId);
         if (!existingCase) {
             return { success: false, message: 'Case not found' };
         }
 
+        // Capture prior assignment for history
+        const previousRole = existingCase.assignedRole;
+        const previousUserId = existingCase.assignedProcessUserId;
+
+        // Create assignment history entry
+        const historyEntry: CaseAssignmentHistory = {
+            historyId: generateUUID(),
+            caseId,
+            previousRole,
+            previousUserId,
+            newRole: roleId || null,
+            newUserId: userId,
+            assignedBy: currentUser.userId,
+            assignedByName: currentUser.name,
+            assignedAt: new Date().toISOString()
+        };
+
+        // Persist to localStorage
+        try {
+            const storedHistory = localStorage.getItem(ASSIGNMENT_HISTORY_KEY);
+            const historyList: CaseAssignmentHistory[] = storedHistory ? JSON.parse(storedHistory) : [];
+            historyList.push(historyEntry);
+            localStorage.setItem(ASSIGNMENT_HISTORY_KEY, JSON.stringify(historyList));
+        } catch (error) {
+            console.error('Error saving assignment history:', error);
+        }
+
         setCases(prev => prev.map(c =>
             c.caseId === caseId
-                ? { ...c, assignedProcessUserId: userId, updatedAt: new Date().toISOString() }
+                ? {
+                    ...c,
+                    assignedProcessUserId: userId,
+                    assignedRole: roleId || null,
+                    updatedAt: new Date().toISOString()
+                }
                 : c
         ));
 
         return { success: true, message: 'Case assigned successfully' };
-    }, [cases]);
+    }, [cases, currentUser]);
 
     // ============================================================================
     // DEPENDENT VISIBILITY: Filter cases based on lead status

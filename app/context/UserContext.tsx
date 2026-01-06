@@ -69,7 +69,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
             const storedUsers = localStorage.getItem(USERS_STORAGE_KEY);
             if (storedUsers) {
                 const parsedUsers = JSON.parse(storedUsers);
-                setUsers(parsedUsers);
+                // Migrate existing SALES users to SALES_EXECUTIVE
+                const migratedUsers = parsedUsers.map((u: User) =>
+                    u.role === 'SALES' as any ? { ...u, role: 'SALES_EXECUTIVE' } : u
+                );
+                setUsers(migratedUsers);
             } else {
                 // First time: create default admin user
                 const initialUsers = [DEFAULT_ADMIN];
@@ -81,6 +85,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
             const storedSession = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
             if (storedSession) {
                 const session = JSON.parse(storedSession);
+                // Migrate legacy SALES session role to SALES_EXECUTIVE
+                if (session.role === 'SALES') {
+                    session.role = 'SALES_EXECUTIVE';
+                    localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(session));
+                }
                 setCurrentUser(session);
             }
         } catch (error) {
@@ -245,11 +254,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }, [currentUser]);
 
     const canManageLeads = useCallback((): boolean => {
-        return hasRole(['SALES', 'ADMIN']);
+        return hasRole(['SALES_EXECUTIVE', 'SALES_MANAGER', 'ADMIN']);
     }, [hasRole]);
 
     const canConvertToCase = useCallback((): boolean => {
-        return hasRole(['SALES', 'ADMIN']);
+        return hasRole(['SALES_EXECUTIVE', 'SALES_MANAGER', 'ADMIN']);
     }, [hasRole]);
 
     const canManageCases = useCallback((): boolean => {
@@ -266,6 +275,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     const canViewReports = useCallback((): boolean => {
         return hasRole(['PROCESS_MANAGER', 'ADMIN']);
+    }, [hasRole]);
+
+    const canViewAllLeads = useCallback((): boolean => {
+        return hasRole(['SALES_MANAGER', 'ADMIN']);
+    }, [hasRole]);
+
+    const canAssignLeads = useCallback((): boolean => {
+        return hasRole(['SALES_MANAGER', 'ADMIN']);
+    }, [hasRole]);
+
+    const canReassignLeads = useCallback((): boolean => {
+        return hasRole(['SALES_MANAGER', 'ADMIN']);
     }, [hasRole]);
 
     // ============================================================================
@@ -290,7 +311,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
         canManageCases,
         canViewAllCases,
         canManageUsers,
-        canViewReports
+        canViewReports,
+        canViewAllLeads,
+        canAssignLeads,
+        canReassignLeads
     };
 
     // Show loading state

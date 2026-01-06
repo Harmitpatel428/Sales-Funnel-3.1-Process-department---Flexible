@@ -15,11 +15,12 @@
 /**
  * User roles for role-based access control
  * - ADMIN: Full access, user management, system configuration
- * - SALES: Can create/manage leads, convert to cases, view case status (read-only)
+ * - SALES_EXECUTIVE: Can create/manage assigned leads only, convert to cases, view case status (read-only)
+ * - SALES_MANAGER: Can view/manage all leads, reassign leads, approve case conversions, access full sales analytics
  * - PROCESS_EXECUTIVE: Can manage assigned cases, upload/verify docs, update status
  * - PROCESS_MANAGER: Can view/manage all cases, view reports, reassign cases
  */
-export type UserRole = 'ADMIN' | 'SALES' | 'PROCESS_EXECUTIVE' | 'PROCESS_MANAGER';
+export type UserRole = 'ADMIN' | 'SALES_EXECUTIVE' | 'SALES_MANAGER' | 'PROCESS_EXECUTIVE' | 'PROCESS_MANAGER';
 
 /**
  * User interface for authentication and authorization
@@ -98,6 +99,7 @@ export interface Case {
     benefitTypes?: string[];           // Selected benefit types
     companyType?: string;              // Limited, Pvt Limited, Partnership, etc.
     assignedProcessUserId: string | null;
+    assignedRole: UserRole | null;         // Role assigned to handle this case
     processStatus: ProcessStatus;
     priority: CasePriority;
     createdAt: string;
@@ -119,6 +121,29 @@ export interface Case {
         customDesignation?: string;
         phoneNumber: string;
     }>;
+
+    // Financial/Location fields from Forward to Process form
+    talukaCategory?: string;
+    termLoanAmount?: string;
+    plantMachineryValue?: string;
+    electricityLoad?: string;
+    electricityLoadType?: 'HT' | 'LT' | '';
+}
+
+/**
+ * Case Assignment History - tracks all assignment changes for audit
+ */
+export interface CaseAssignmentHistory {
+    historyId: string;
+    caseId: string;
+    previousRole: UserRole | null;
+    previousUserId: string | null;
+    newRole: UserRole | null;
+    newUserId: string | null;
+    assignedBy: string;
+    assignedByName: string;
+    assignedAt: string;
+    remarks?: string;
 }
 
 /**
@@ -307,6 +332,9 @@ export interface UserContextType {
     canViewAllCases: () => boolean;
     canManageUsers: () => boolean;
     canViewReports: () => boolean;
+    canViewAllLeads: () => boolean;
+    canAssignLeads: () => boolean;
+    canReassignLeads: () => boolean;
 }
 
 /**
@@ -328,6 +356,12 @@ export interface CaseContextType {
             customDesignation?: string;
             phoneNumber: string;
         }>;
+        // Financial/Location fields
+        talukaCategory?: string;
+        termLoanAmount?: string;
+        plantMachineryValue?: string;
+        electricityLoad?: string;
+        electricityLoadType?: 'HT' | 'LT' | '';
     }) => { success: boolean; message: string; caseId?: string };
     updateCase: (caseId: string, updates: Partial<Case>) => { success: boolean; message: string };
     deleteCase: (caseId: string) => { success: boolean; message: string };
@@ -338,7 +372,7 @@ export interface CaseContextType {
     updateStatus: (caseId: string, newStatus: ProcessStatus) => { success: boolean; message: string };
 
     // Assignment operations
-    assignCase: (caseId: string, userId: string) => { success: boolean; message: string };
+    assignCase: (caseId: string, userId: string, roleId?: UserRole) => { success: boolean; message: string };
 
     // Filtering
     getFilteredCases: (filters: CaseFilters) => Case[];
@@ -385,6 +419,6 @@ export interface TimelineContextType {
 
     // Utility to log common actions
     logStatusChange: (caseId: string, oldStatus: ProcessStatus, newStatus: ProcessStatus, userId: string, userName: string) => void;
-    logAssignment: (caseId: string, userId: string, userName: string, assigneeId: string, assigneeName: string) => void;
+    logAssignment: (caseId: string, userId: string, userName: string, assigneeId: string, assigneeName: string, roleId?: UserRole) => void;
     logDocumentAction: (caseId: string, action: TimelineActionType, documentType: string, userId: string, userName: string) => void;
 }

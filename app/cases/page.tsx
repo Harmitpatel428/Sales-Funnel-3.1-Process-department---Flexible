@@ -108,7 +108,7 @@ export default function CasesPage() {
 
     return (
         <RoleGuard
-            allowedRoles={['ADMIN', 'PROCESS_MANAGER', 'PROCESS_EXECUTIVE']}
+            allowedRoles={['ADMIN', 'PROCESS_MANAGER', 'PROCESS_EXECUTIVE', 'SALES_MANAGER']}
             fallback={<AccessDenied />}
         >
             <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">

@@ -6,6 +6,7 @@ import type { Lead } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
 import { useCases } from '../context/CaseContext';
 import { useUsers } from '../context/UserContext';
+import { useLeads } from '../context/LeadContext';
 import QuickBenefitModal from './QuickBenefitModal';
 import ForwardToProcessModal from './ForwardToProcessModal';
 import { getGlobalTemplate, saveGlobalTemplate, resolveToTemplate, getResolvedScriptForLead } from '../utils/callScript';
@@ -47,10 +48,13 @@ export default React.memo(function LeadDetailModal({
 
   const router = useRouter();
   const { createCase } = useCases();
-  const { canConvertToCase } = useUsers();
+  const { canConvertToCase, canAssignLeads, getUsersByRole, getUserById, currentUser } = useUsers();
+  const { assignLead, unassignLead } = useLeads();
   const [isConverting, setIsConverting] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const canConvert = canConvertToCase();
+  const canAssign = canAssignLeads();
 
   const handleConvertToCase = () => {
     if (!canConvert) {
@@ -75,7 +79,13 @@ export default React.memo(function LeadDetailModal({
         benefitTypes: formData.benefitTypes,
         companyName: formData.companyName,
         companyType: formData.companyType,
-        contacts: formData.contacts
+        contacts: formData.contacts,
+        // Financial/Location fields - previously missing
+        talukaCategory: formData.talukaCategory,
+        termLoanAmount: formData.termLoanAmount,
+        plantMachineryValue: formData.plantMachineryValue,
+        electricityLoad: formData.electricityLoad,
+        electricityLoadType: formData.electricityLoadType
       });
 
       if (result.success && result.caseId) {
@@ -432,6 +442,33 @@ export default React.memo(function LeadDetailModal({
                 <div className="bg-gray-50 p-2 rounded-md">
                   <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
                   <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(lead.lastActivityDate)}</p>
+                </div>
+
+                {/* Assigned To - Sales Lead Assignment */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-medium text-black">Assigned To</label>
+                    {canAssign && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAssignModal(true)}
+                        className="text-purple-600 hover:text-purple-800 text-xs font-medium"
+                        title="Reassign lead"
+                      >
+                        {lead.assignedTo ? 'Reassign' : 'Assign'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs font-medium text-black">
+                    {lead.assignedTo
+                      ? getUserById(lead.assignedTo)?.name || 'Unknown User'
+                      : 'Unassigned'}
+                  </p>
+                  {lead.assignedAt && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Assigned: {formatDateToDDMMYYYY(lead.assignedAt.split('T')[0])}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -940,6 +977,89 @@ ${dynamicFieldsInfo ? `\nAdditional Information:\n${dynamicFieldsInfo}` : ''}`;
         onSubmit={handleForwardSubmit}
         lead={lead}
       />
+
+      {/* Lead Assignment Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 max-w-md w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {lead.assignedTo ? 'Reassign Lead' : 'Assign Lead'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAssignModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Select a Sales Executive to assign this lead to:
+              </p>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {/* Unassign option */}
+                {lead.assignedTo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      unassignLead(lead.id);
+                      setShowAssignModal(false);
+                    }}
+                    className="w-full p-2 text-left rounded border border-gray-200 hover:bg-gray-50 text-sm text-gray-700"
+                  >
+                    <span className="font-medium text-red-600">Unassign Lead</span>
+                    <span className="block text-xs text-gray-500">Remove current assignment</span>
+                  </button>
+                )}
+
+                {/* List of Sales Executives */}
+                {getUsersByRole('SALES_EXECUTIVE').map(user => (
+                  <button
+                    key={user.userId}
+                    type="button"
+                    onClick={() => {
+                      assignLead(lead.id, user.userId, currentUser?.userId || '');
+                      setShowAssignModal(false);
+                    }}
+                    className={`w-full p-2 text-left rounded border ${lead.assignedTo === user.userId
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-gray-200 hover:bg-gray-50'
+                      } text-sm`}
+                  >
+                    <span className="font-medium text-gray-900">{user.name}</span>
+                    {lead.assignedTo === user.userId && (
+                      <span className="ml-2 text-xs text-purple-600">(Currently Assigned)</span>
+                    )}
+                    <span className="block text-xs text-gray-500">{user.email}</span>
+                  </button>
+                ))}
+
+                {getUsersByRole('SALES_EXECUTIVE').length === 0 && (
+                  <p className="text-sm text-gray-500 p-2">
+                    No Sales Executives available. Create users with the SALES_EXECUTIVE role first.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setShowAssignModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

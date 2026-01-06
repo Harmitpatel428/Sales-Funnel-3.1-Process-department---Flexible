@@ -108,15 +108,16 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
         userId: string,
         userName: string,
         assigneeId: string,
-        assigneeName: string
+        assigneeName: string,
+        roleId?: string
     ) => {
         addTimelineEntry({
             caseId,
             actionType: 'ASSIGNED',
-            action: `Case assigned to ${assigneeName}`,
+            action: `Case assigned to ${assigneeName}${roleId ? ` (${roleId.replace(/_/g, ' ')})` : ''}`,
             performedBy: userId,
             performedByName: userName,
-            metadata: { assigneeId, assigneeName }
+            metadata: { assigneeId, assigneeName, assignedRole: roleId }
         });
     }, [addTimelineEntry]);
 

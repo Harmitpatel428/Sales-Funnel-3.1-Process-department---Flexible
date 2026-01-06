@@ -6,6 +6,7 @@ import { useLeads } from '../context/LeadContext';
 import type { Lead } from '../types/shared';
 import { useHeaders } from '../context/HeaderContext';
 import { useColumns } from '../context/ColumnContext';
+import { useUsers } from '../context/UserContext';
 import { useRouter } from 'next/navigation';
 import EditableTable from '../components/EditableTable';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -101,9 +102,11 @@ export default function AllLeadsPage() {
   // const { cases, updateCase } = useCases();
   const { headerConfig } = useHeaders();
   const { getVisibleColumns } = useColumns();
+  const { currentUser, canViewAllLeads } = useUsers();
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const isSearching = searchInput !== debouncedSearch;
+  const canSeeAllLeads = canViewAllLeads();
 
   // Build dynamic field mapping that includes current custom headers and column configuration
   // Memoized to avoid rebuilding on every cell mapping
@@ -606,7 +609,10 @@ export default function AllLeadsPage() {
   // Filter leads based on status and search term
   // Dependencies use primitives and debounced search for optimal performance
   const allLeads = useMemo(() => {
-    let filtered = leads; // Show all leads regardless of status or deletion status
+    // First apply role-based visibility filtering for SALES_EXECUTIVE
+    let filtered = canSeeAllLeads || currentUser?.role !== 'SALES_EXECUTIVE'
+      ? leads
+      : leads.filter(lead => lead.assignedTo === currentUser?.userId || !lead.assignedTo);
 
     if (debouncedSearch) {
       filtered = filtered.filter(lead => {
@@ -670,7 +676,7 @@ export default function AllLeadsPage() {
       const dateB = new Date(b.lastActivityDate).getTime();
       return dateB - dateA; // Most recent first
     });
-  }, [leads.length, debouncedSearch]);
+  }, [leads.length, debouncedSearch, canSeeAllLeads, currentUser?.role, currentUser?.userId]);
 
 
   // Modal functions
