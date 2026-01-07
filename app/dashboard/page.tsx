@@ -14,12 +14,14 @@ import * as XLSX from 'xlsx';
 
 const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 const PasswordSettingsModal = lazy(() => import('../components/PasswordSettingsModal'));
 import { validateLeadField } from '../hooks/useValidation';
+import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { leads, deleteLead, getFilteredLeads, updateLead, addActivity } = useLeads();
+  const { leads, deleteLead, getFilteredLeads, updateLead, addActivity, forwardToProcess } = useLeads();
   const { setOnExportClick } = useNavigation();
   const { getVisibleColumns } = useColumns();
   const { currentUser, canViewAllLeads, getUserById } = useUsers();
@@ -38,6 +40,7 @@ export default function DashboardPage() {
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const isSearching = searchInput !== debouncedSearch;
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [deleteReason, setDeleteReason] = useState<string | undefined>(undefined);
   const [selectAll, setSelectAll] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState<Lead[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -299,11 +302,13 @@ export default function DashboardPage() {
         if (showDeleteModal) {
           setShowDeleteModal(false);
           setLeadToDelete(null);
+          setDeleteReason(undefined);
           document.body.style.overflow = 'unset';
         }
         if (showMassDeleteModal) {
           setShowMassDeleteModal(false);
           setLeadsToDelete([]);
+          setDeleteReason(undefined);
           document.body.style.overflow = 'unset';
         }
         if (showExportPasswordModal) {
@@ -413,6 +418,12 @@ export default function DashboardPage() {
     } catch {
       return dateString; // Return original if conversion fails
     }
+  };
+
+  // Helper function to get display value from submitted_payload or current lead fields
+  // Prioritizes submitted_payload as the source of truth for display
+  const getDisplayValue = (lead: Lead, fieldKey: string): any => {
+    return lead.submitted_payload?.[fieldKey] ?? (lead as any)[fieldKey];
   };
 
   // Apply role-based visibility filtering to leads
@@ -1155,610 +1166,518 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="container mx-auto px-1">
-      {/* Status Filter Section */}
-      <div className="bg-gradient-to-br from-slate-800 via-gray-700 to-slate-800 p-1 rounded-lg shadow-lg border border-slate-600/30 mb-1 relative overflow-hidden mx-auto w-fit mt-2">
-        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-transparent to-cyan-500/5"></div>
-        <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500"></div>
-        <div className="relative">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
-            <h3 className="text-sm font-semibold text-white">Filter by Status</h3>
-            <span className="text-xs text-white/80">Click any status to filter leads</span>
-          </div>
-          <div className="flex items-center justify-center gap-1.5 flex-wrap">
-            {statusOrder.map((status) => {
-              const styles = getButtonStyle(status);
-              return (
-                <button
-                  key={status}
-                  draggable
-                  onClick={() => handleStatusFilter(status)}
-                  onDragStart={(e) => handleDragStart(e, status)}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, status)}
-                  onDragEnd={handleDragEnd}
-                  className={styles.buttonClasses}
-                  title={`Drag to reorder • Click to filter ${status} leads`}
-                >
-                  {status}
-                  <span className={styles.badgeClasses}>
-                    {statusCounts[status === 'WAO' ? 'WAO' : status as keyof typeof statusCounts]}
-                  </span>
-                </button>
-              );
-            })}
+    <RoleGuard
+      allowedRoles={['ADMIN', 'SALES_EXECUTIVE', 'SALES_MANAGER']}
+      fallback={<AccessDenied />}
+    >
+      <div className="container mx-auto px-1">
+        {/* Status Filter Section */}
+        <div className="bg-gradient-to-br from-slate-800 via-gray-700 to-slate-800 p-1 rounded-lg shadow-lg border border-slate-600/30 mb-1 relative overflow-hidden mx-auto w-fit mt-2">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-transparent to-cyan-500/5"></div>
+          <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500"></div>
+          <div className="relative">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
+              <h3 className="text-sm font-semibold text-white">Filter by Status</h3>
+              <span className="text-xs text-white/80">Click any status to filter leads</span>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+              {statusOrder.map((status) => {
+                const styles = getButtonStyle(status);
+                return (
+                  <button
+                    key={status}
+                    draggable
+                    onClick={() => handleStatusFilter(status)}
+                    onDragStart={(e) => handleDragStart(e, status)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, status)}
+                    onDragEnd={handleDragEnd}
+                    className={styles.buttonClasses}
+                    title={`Drag to reorder • Click to filter ${status} leads`}
+                  >
+                    {status}
+                    <span className={styles.badgeClasses}>
+                      {statusCounts[status === 'WAO' ? 'WAO' : status as keyof typeof statusCounts]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Bulk Actions Section */}
-      <div className="bg-white p-1 rounded-lg shadow-md mb-1">
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-1">
-          {/* Search Input */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:flex-none">
-              <input
-                type="text"
-                placeholder="Search leads..."
-                value={searchInput}
-                onChange={handleSearchInputChange}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                onFocus={() => searchInput.length >= 2 && setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="w-full sm:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-black placeholder:text-black text-sm"
-              />
-              {isSearching && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <div className="animate-spin h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
-                </div>
-              )}
+        {/* Bulk Actions Section */}
+        <div className="bg-white p-1 rounded-lg shadow-md mb-1">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-1">
+            {/* Search Input */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <input
+                  type="text"
+                  placeholder="Search leads..."
+                  value={searchInput}
+                  onChange={handleSearchInputChange}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  onFocus={() => searchInput.length >= 2 && setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  className="w-full sm:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-black placeholder:text-black text-sm"
+                />
+                {isSearching && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <div className="animate-spin h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+                  </div>
+                )}
 
-              {/* Search Suggestions Dropdown */}
-              {showSuggestions && searchSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-                  {searchSuggestions.map((lead) => {
-                    // Determine what field matched for highlighting
-                    const queryLower = searchInput.toLowerCase();
-                    const queryNumbers = searchInput.replace(/[^0-9]/g, '');
+                {/* Search Suggestions Dropdown */}
+                {showSuggestions && searchSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                    {searchSuggestions.map((lead) => {
+                      // Determine what field matched for highlighting
+                      const queryLower = searchInput.toLowerCase();
+                      const queryNumbers = searchInput.replace(/[^0-9]/g, '');
 
-                    const getMatchType = () => {
-                      if (lead.kva?.toLowerCase().includes(queryLower)) return 'KVA';
-                      if (lead.consumerNumber?.toLowerCase().includes(queryLower) || extractDigits(lead.consumerNumber).includes(queryNumbers)) return 'Consumer No.';
+                      const getMatchType = () => {
+                        if (lead.kva?.toLowerCase().includes(queryLower)) return 'KVA';
+                        if (lead.consumerNumber?.toLowerCase().includes(queryLower) || extractDigits(lead.consumerNumber).includes(queryNumbers)) return 'Consumer No.';
 
-                      // Check all mobile numbers
-                      const allMobileNumbers = [
-                        lead.mobileNumber, // backward compatibility
-                        ...(lead.mobileNumbers || []).map(m => m.number)
-                      ].filter(Boolean);
+                        // Check all mobile numbers
+                        const allMobileNumbers = [
+                          lead.mobileNumber, // backward compatibility
+                          ...(lead.mobileNumbers || []).map(m => m.number)
+                        ].filter(Boolean);
 
-                      if (allMobileNumbers.some(mobileNumber =>
-                        mobileNumber?.toLowerCase().includes(queryLower) ||
-                        mobileNumber?.replace(/[^0-9]/g, '').includes(queryNumbers)
-                      )) return 'Phone';
+                        if (allMobileNumbers.some(mobileNumber =>
+                          mobileNumber?.toLowerCase().includes(queryLower) ||
+                          mobileNumber?.replace(/[^0-9]/g, '').includes(queryNumbers)
+                        )) return 'Phone';
 
-                      // Check mobile number names (including client name fallback only for main number)
-                      const allMobileNames = (lead.mobileNumbers || []).map(m => m.name || (m.isMain ? lead.clientName : '')).filter(Boolean);
-                      if (allMobileNames.some(mobileName =>
-                        mobileName?.toLowerCase().includes(queryLower)
-                      )) return 'Contact';
+                        // Check mobile number names (including client name fallback only for main number)
+                        const allMobileNames = (lead.mobileNumbers || []).map(m => m.name || (m.isMain ? lead.clientName : '')).filter(Boolean);
+                        if (allMobileNames.some(mobileName =>
+                          mobileName?.toLowerCase().includes(queryLower)
+                        )) return 'Contact';
 
-                      if (lead.company?.toLowerCase().includes(queryLower)) return 'Company';
-                      if (lead.companyLocation?.toLowerCase().includes(queryLower)) return 'Address';
-                      if (lead.clientName?.toLowerCase().includes(queryLower)) return 'Client';
-                      if (lead.connectionDate?.toLowerCase().includes(queryLower)) return 'Date';
-                      return 'Match';
-                    };
+                        if (lead.company?.toLowerCase().includes(queryLower)) return 'Company';
+                        if (lead.companyLocation?.toLowerCase().includes(queryLower)) return 'Address';
+                        if (lead.clientName?.toLowerCase().includes(queryLower)) return 'Client';
+                        if (lead.connectionDate?.toLowerCase().includes(queryLower)) return 'Date';
+                        return 'Match';
+                      };
 
-                    const matchType = getMatchType();
+                      const matchType = getMatchType();
 
-                    return (
-                      <div
-                        key={lead.id}
-                        onClick={() => handleSuggestionClick(lead)}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0 text-sm"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="font-medium text-black">{lead.kva}</div>
-                            <div className="text-xs text-black">{lead.company} • {lead.clientName}</div>
-                          </div>
-                          <div className="ml-2">
-                            <span className="inline-flex px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                              {matchType}
-                            </span>
+                      return (
+                        <div
+                          key={lead.id}
+                          onClick={() => handleSuggestionClick(lead)}
+                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0 text-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="font-medium text-black">{lead.kva}</div>
+                              <div className="text-xs text-black">{lead.company} • {lead.clientName}</div>
+                            </div>
+                            <div className="ml-2">
+                              <span className="inline-flex px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                {matchType}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleSearch}
+                className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"
+              >
+                Search
+              </button>
+
+              {activeFilters.searchTerm && (
+                <button
+                  onClick={clearSearch}
+                  className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-xs"
+                >
+                  Clear
+                </button>
               )}
             </div>
 
             <button
-              onClick={handleSearch}
-              className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs"
+              onClick={() => handleSelectAll(!selectAll)}
+              className={`px-3 py-2 text-xs rounded-lg transition-colors ${selectAll
+                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                : 'bg-gray-200 text-black hover:bg-gray-300'
+                }`}
             >
-              Search
+              {selectAll ? 'Deselect All' : 'Select All'}
             </button>
+            {selectedLeads.size > 0 && (
+              <>
+                <span className="text-sm text-black">
+                  {selectedLeads.size} lead(s) selected
+                </span>
+                <select
+                  onChange={(e) => {
+                    const newStatus = e.target.value as Lead['status'];
+                    if (newStatus) {
+                      handleBulkStatusUpdate(newStatus);
+                    }
+                  }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  defaultValue=""
+                  aria-label="Update status for selected leads"
+                >
+                  <option value="" disabled>Update Status</option>
+                  <option value="New">New</option>
+                  <option value="CNR">CNR</option>
+                  <option value="Busy">Busy</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="Deal Close">Deal Close</option>
+                  <option value="Work Alloted">WAO</option>
+                  <option value="Hotlead">Hotlead</option>
+                  <option value="Mandate Sent">Mandate Sent</option>
+                  <option value="Documentation">Documentation</option>
+                  <option value="Others">Others</option>
+                </select>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Delete Selected
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </>
+            )}
 
-            {activeFilters.searchTerm && (
-              <button
-                onClick={clearSearch}
-                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-xs"
-              >
-                Clear
-              </button>
+            {/* Status Filter Indicator */}
+            {activeFilters.status && activeFilters.status.length === 1 ? (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                  <svg className="w-3 h-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <circle cx="10" cy="10" r="3" />
+                  </svg>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-blue-800">Filtered: {activeFilters.status[0]}</span>
+                  <button
+                    onClick={clearAllFilters}
+                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm text-green-800 font-medium">Showing all leads - click status buttons above to filter</span>
+                <button
+                  onClick={clearAllFilters}
+                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+                >
+                  Clear Filters
+                </button>
+              </div>
             )}
           </div>
+        </div>
 
-          <button
-            onClick={() => handleSelectAll(!selectAll)}
-            className={`px-3 py-2 text-xs rounded-lg transition-colors ${selectAll
-              ? 'bg-purple-600 text-white hover:bg-purple-700'
-              : 'bg-gray-200 text-black hover:bg-gray-300'
-              }`}
-          >
-            {selectAll ? 'Deselect All' : 'Select All'}
-          </button>
-          {selectedLeads.size > 0 && (
-            <>
-              <span className="text-sm text-black">
-                {selectedLeads.size} lead(s) selected
-              </span>
-              <select
-                onChange={(e) => {
-                  const newStatus = e.target.value as Lead['status'];
-                  if (newStatus) {
-                    handleBulkStatusUpdate(newStatus);
-                  }
-                }}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                defaultValue=""
-                aria-label="Update status for selected leads"
-              >
-                <option value="" disabled>Update Status</option>
-                <option value="New">New</option>
-                <option value="CNR">CNR</option>
-                <option value="Busy">Busy</option>
-                <option value="Follow-up">Follow-up</option>
-                <option value="Deal Close">Deal Close</option>
-                <option value="Work Alloted">WAO</option>
-                <option value="Hotlead">Hotlead</option>
-                <option value="Mandate Sent">Mandate Sent</option>
-                <option value="Documentation">Documentation</option>
-                <option value="Others">Others</option>
-              </select>
+
+        {/* Empty Status Notification */}
+        {showEmptyStatusNotification && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-yellow-800">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <circle cx="10" cy="10" r="3" />
+                </svg>
+                <span className="font-medium">{emptyStatusMessage}</span>
+              </div>
               <button
-                onClick={handleBulkDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Delete Selected
-              </button>
-              <button
-                onClick={clearSelection}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                onClick={() => setShowEmptyStatusNotification(false)}
+                className="text-yellow-600 hover:text-yellow-800 text-sm font-medium"
               >
                 Close
               </button>
-            </>
-          )}
+            </div>
+          </div>
+        )}
 
-          {/* Status Filter Indicator */}
-          {activeFilters.status && activeFilters.status.length === 1 ? (
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                <svg className="w-3 h-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                  <circle cx="10" cy="10" r="3" />
-                </svg>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-blue-800">Filtered: {activeFilters.status[0]}</span>
-                <button
-                  onClick={clearAllFilters}
-                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium flex items-center gap-1"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-1 mb-2">
+          <div
+            className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
+            onClick={() => router.push('/all-leads')}
+          >
+            <h3 className="text-xs font-semibold text-black">All Leads</h3>
+            <p className="text-sm font-bold text-blue-600">{leads.length}</p>
+          </div>
+          <div
+            className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
+            onClick={() => router.push('/due-today')}
+          >
+            <h3 className="text-xs font-semibold text-black">Due Today</h3>
+            <p className="text-sm font-bold text-yellow-600">{dueToday}</p>
+          </div>
+          <div
+            className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
+            onClick={() => router.push('/upcoming')}
+          >
+            <h3 className="text-xs font-semibold text-black">Upcoming (7 Days)</h3>
+            <p className="text-sm font-bold text-green-600">{upcoming}</p>
+          </div>
+          <div
+            className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
+            onClick={() => router.push('/due-today?tab=overdue')}
+          >
+            <h3 className="text-xs font-semibold text-black">Overdue</h3>
+            <p className="text-sm font-bold text-red-600">{overdue}</p>
+          </div>
+          <div
+            className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
+            onClick={() => router.push('/follow-up-mandate')}
+          >
+            <h3 className="text-xs font-semibold text-black">Mandate & Documentation</h3>
+            <p className="text-sm font-bold text-purple-600">{followUpMandate}</p>
+          </div>
+        </div>
+
+
+
+        {/* Lead Table */}
+        <div data-lead-table className="relative">
+          <div className="sticky top-0 z-10 bg-white shadow-sm rounded-lg">
+            <EditableTable
+              key={`table-${columnCount}-${Date.now()}`} // Force re-mount when columns change
+              filters={activeFilters}
+              onLeadClick={handleLeadClick}
+              selectedLeads={selectedLeads}
+              onLeadSelection={handleLeadSelection}
+              selectAll={selectAll}
+              onSelectAll={handleSelectAll}
+              editable={true}
+              onCellUpdate={handleCellUpdate}
+              validationErrors={validationErrors}
+              onExportClick={handleExportExcel}
+              headerEditable={true}
+              highlightedLeadId={highlightedLeadId}
+              roleFilter={getRoleFilteredLeads}
+              onColumnAdded={(column) => {
+                // Handle column addition
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Column added:', column);
+                }
+                showToastNotification(`Column "${column.label}" added successfully!`, 'success');
+              }}
+              onColumnDeleted={(fieldKey) => {
+                // Handle column deletion
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Column deleted:', fieldKey);
+                }
+                showToastNotification('Column deleted successfully!', 'success');
+              }}
+              onColumnReorder={(newOrder) => {
+                // Handle column reordering
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Columns reordered:', newOrder);
+                }
+              }}
+              onRowsAdded={(count) => {
+                // Handle row addition
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Rows added:', count);
+                }
+              }}
+              onRowsDeleted={(count) => {
+                // Handle row deletion
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Rows deleted:', count);
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Lead Detail Modal */}
+        {showLeadModal && (
+          <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+            <LeadDetailModal
+              isOpen={showLeadModal}
+              onClose={() => {
+                setShowLeadModal(false);
+                document.body.style.overflow = 'unset';
+                // Keep highlightedLeadId set and clear it after 3 seconds
+                setTimeout(() => setHighlightedLeadId(null), 3000);
+              }}
+              lead={selectedLead!}
+              onEdit={handleEditLead}
+            />
+          </Suspense>
+        )}
+
+        {showDeleteModal && leadToDelete && (
+          <DeleteConfirmModal
+            isOpen={showDeleteModal}
+            onClose={() => {
+              setShowDeleteModal(false);
+              setLeadToDelete(null);
+              setDeleteReason(undefined);
+            }}
+            onConfirm={async (reason) => {
+              if (!leadToDelete) return;
+
+              setDeleteReason(reason);
+              // Forward lead to process before deletion
+              const result = await forwardToProcess(leadToDelete.id, reason, 'sales_dashboard');
+
+              setShowDeleteModal(false);
+              setShowLeadModal(false);
+              setLeadToDelete(null);
+              document.body.style.overflow = 'unset';
+
+              if (result.success) {
+                showToastNotification(
+                  `Lead forwarded to Process pipeline and deleted. Case ${result.caseIds?.[0] || ''} created.`,
+                  'success'
+                );
+              } else {
+                showToastNotification(`Failed to delete lead: ${result.message}`, 'error');
+              }
+            }}
+            title="Delete Lead"
+            message="Are you sure you want to delete this lead? It will be forwarded to the Process pipeline before deletion."
+            captureReason={true}
+          />
+        )}
+
+        {/* Ultra Sleek Premium Mass Delete Modal */}
+        {showMassDeleteModal && (
+          <DeleteConfirmModal
+            isOpen={showMassDeleteModal}
+            onClose={() => {
+              setShowMassDeleteModal(false);
+              setLeadsToDelete([]);
+              setDeleteReason(undefined);
+            }}
+            onConfirm={async (reason) => {
+              setDeleteReason(reason);
+              // Forward each lead to process before deletion
+              const forwardPromises = leadsToDelete.map(lead =>
+                forwardToProcess(lead.id, reason, 'sales_dashboard')
+              );
+
+              const results = await Promise.all(forwardPromises);
+              const successCount = results.filter(r => r.success).length;
+              const failCount = results.length - successCount;
+
+              setShowMassDeleteModal(false);
+              setLeadsToDelete([]);
+              setSelectedLeads(new Set());
+              setSelectAll(false);
+
+              if (failCount === 0) {
+                showToastNotification(
+                  `${successCount} lead(s) forwarded to Process pipeline and deleted successfully`,
+                  'success'
+                );
+              } else {
+                showToastNotification(
+                  `${successCount} succeeded, ${failCount} failed. Check console for details.`,
+                  'error'
+                );
+              }
+            }}
+            title="Delete Leads"
+            message={`You are about to delete ${leadsToDelete.length} lead(s). They will be forwarded to the Process pipeline before deletion.`}
+            captureReason={true}
+          />
+        )}
+
+        {/* Export Password Modal */}
+        {showExportPasswordModal && (
+          <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+            <PasswordModal
+              isOpen={showExportPasswordModal}
+              onClose={() => {
+                setShowExportPasswordModal(false);
+              }}
+              operation="export"
+              onSuccess={handleExportPasswordSuccess}
+              title="Export Leads"
+              description="Enter password to export leads data"
+            />
+          </Suspense>
+        )}
+
+
+        {/* Password Settings Modal */}
+        {passwordSettingsOpen && (
+          <Suspense fallback={<LoadingSpinner text="Loading..." />}>
+            <PasswordSettingsModal
+              isOpen={passwordSettingsOpen}
+              onClose={() => setPasswordSettingsOpen(false)}
+              onPasswordChanged={() => {
+                // Refresh any cached verification status
+              }}
+            />
+          </Suspense>
+        )}
+
+
+        {/* Toast Notification */}
+        {showToast && (
+          <div className="fixed top-4 right-4 z-50">
+            <div className={`px-6 py-4 rounded-lg shadow-lg text-white font-medium ${toastType === 'success' ? 'bg-green-600' :
+              toastType === 'error' ? 'bg-red-600' :
+                'bg-blue-600'
+              }`}>
+              <div className="flex items-center space-x-3">
+                {toastType === 'success' && (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Clear
+                )}
+                {toastType === 'error' && (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                {toastType === 'info' && (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span>{toastMessage}</span>
+                <button
+                  onClick={() => setShowToast(false)}
+                  className="ml-4 text-white hover:text-gray-200"
+                  aria-label="Close notification"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="text-sm text-green-800 font-medium">Showing all leads - click status buttons above to filter</span>
-              <button
-                onClick={clearAllFilters}
-                className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
-              >
-                Clear Filters
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+
       </div>
-
-
-      {/* Empty Status Notification */}
-      {showEmptyStatusNotification && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-yellow-800">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <circle cx="10" cy="10" r="3" />
-              </svg>
-              <span className="font-medium">{emptyStatusMessage}</span>
-            </div>
-            <button
-              onClick={() => setShowEmptyStatusNotification(false)}
-              className="text-yellow-600 hover:text-yellow-800 text-sm font-medium"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-1 mb-2">
-        <div
-          className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
-          onClick={() => router.push('/all-leads')}
-        >
-          <h3 className="text-xs font-semibold text-black">All Leads</h3>
-          <p className="text-sm font-bold text-blue-600">{leads.length}</p>
-        </div>
-        <div
-          className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
-          onClick={() => router.push('/due-today')}
-        >
-          <h3 className="text-xs font-semibold text-black">Due Today</h3>
-          <p className="text-sm font-bold text-yellow-600">{dueToday}</p>
-        </div>
-        <div
-          className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
-          onClick={() => router.push('/upcoming')}
-        >
-          <h3 className="text-xs font-semibold text-black">Upcoming (7 Days)</h3>
-          <p className="text-sm font-bold text-green-600">{upcoming}</p>
-        </div>
-        <div
-          className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
-          onClick={() => router.push('/due-today?tab=overdue')}
-        >
-          <h3 className="text-xs font-semibold text-black">Overdue</h3>
-          <p className="text-sm font-bold text-red-600">{overdue}</p>
-        </div>
-        <div
-          className="bg-white p-1 rounded shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:bg-gray-50"
-          onClick={() => router.push('/follow-up-mandate')}
-        >
-          <h3 className="text-xs font-semibold text-black">Mandate & Documentation</h3>
-          <p className="text-sm font-bold text-purple-600">{followUpMandate}</p>
-        </div>
-      </div>
-
-
-
-      {/* Lead Table */}
-      <div data-lead-table className="relative">
-        <div className="sticky top-0 z-10 bg-white shadow-sm rounded-lg">
-          <EditableTable
-            key={`table-${columnCount}-${Date.now()}`} // Force re-mount when columns change
-            filters={activeFilters}
-            onLeadClick={handleLeadClick}
-            selectedLeads={selectedLeads}
-            onLeadSelection={handleLeadSelection}
-            selectAll={selectAll}
-            onSelectAll={handleSelectAll}
-            editable={true}
-            onCellUpdate={handleCellUpdate}
-            validationErrors={validationErrors}
-            onExportClick={handleExportExcel}
-            headerEditable={true}
-            highlightedLeadId={highlightedLeadId}
-            roleFilter={getRoleFilteredLeads}
-            onColumnAdded={(column) => {
-              // Handle column addition
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Column added:', column);
-              }
-              showToastNotification(`Column "${column.label}" added successfully!`, 'success');
-            }}
-            onColumnDeleted={(fieldKey) => {
-              // Handle column deletion
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Column deleted:', fieldKey);
-              }
-              showToastNotification('Column deleted successfully!', 'success');
-            }}
-            onColumnReorder={(newOrder) => {
-              // Handle column reordering
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Columns reordered:', newOrder);
-              }
-            }}
-            onRowsAdded={(count) => {
-              // Handle row addition
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Rows added:', count);
-              }
-            }}
-            onRowsDeleted={(count) => {
-              // Handle row deletion
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Rows deleted:', count);
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Lead Detail Modal */}
-      {showLeadModal && (
-        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
-          <LeadDetailModal
-            isOpen={showLeadModal}
-            onClose={() => {
-              setShowLeadModal(false);
-              document.body.style.overflow = 'unset';
-              // Keep highlightedLeadId set and clear it after 3 seconds
-              setTimeout(() => setHighlightedLeadId(null), 3000);
-            }}
-            lead={selectedLead!}
-            onEdit={handleEditLead}
-          />
-        </Suspense>
-      )}
-
-      {/* Ultra Sleek Premium Delete Modal */}
-      {showDeleteModal && leadToDelete && (
-        <div className="fixed inset-0 bg-gradient-to-br from-slate-900/95 via-gray-900/90 to-black/95 backdrop-blur-xl flex items-center justify-center z-[60] p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-md transform transition-all duration-700 ease-out border border-white/20">
-            {/* Sleek Modal Header */}
-            <div className="flex justify-center items-center p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-t-3xl">
-              <div className="relative">
-                <div className="w-16 h-16 bg-gradient-to-br from-rose-500 via-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-xl transform rotate-3 hover:rotate-0 transition-transform duration-500">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-400 to-pink-500 rounded-xl flex items-center justify-center shadow-inner">
-                    <svg className="w-7 h-7 text-white drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
-                  <span className="text-white text-xs font-bold">!</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sleek Modal Content */}
-            <div className="p-6 text-center bg-gradient-to-br from-white via-slate-50/50 to-gray-50/30">
-              <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-slate-800 via-gray-700 to-slate-800 bg-clip-text text-transparent">
-                Delete Lead
-              </h3>
-              <p className="text-slate-600 mb-6 text-base font-medium">
-                Are you sure you want to delete this lead?
-              </p>
-
-              {/* Sleek Lead Details Card */}
-              <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-5 mb-6 border border-slate-200/50 shadow-inner">
-                <div className="text-xs text-slate-500 mb-3 font-semibold uppercase tracking-wider">Lead Information</div>
-                <div className="space-y-2">
-                  <div className="text-lg font-bold text-slate-800">{leadToDelete.kva}</div>
-                  {leadToDelete.clientName && (
-                    <div className="text-sm text-slate-600 font-medium">{leadToDelete.clientName}</div>
-                  )}
-                  {leadToDelete.company && (
-                    <div className="text-sm text-slate-500">{leadToDelete.company}</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Sleek Warning Message */}
-              <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/50 rounded-2xl p-4 mb-6 shadow-sm">
-                <div className="flex items-center justify-center space-x-3 text-rose-700 text-sm font-semibold">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <span>This action cannot be done without your attention.</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sleek Action Buttons */}
-            <div className="flex justify-center space-x-4 p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-b-3xl">
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setLeadToDelete(null);
-                }}
-                className="px-6 py-3 text-sm font-bold text-slate-700 bg-white/80 backdrop-blur-sm border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  deleteLead(leadToDelete.id);
-                  setShowDeleteModal(false);
-                  setShowLeadModal(false);
-                  setLeadToDelete(null);
-                  document.body.style.overflow = 'unset';
-                }}
-                className="px-6 py-3 text-sm font-bold bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 text-white hover:from-rose-600 hover:via-pink-600 hover:to-rose-700 rounded-2xl transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:-translate-y-0.5"
-              >
-                Delete Lead
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Ultra Sleek Premium Mass Delete Modal */}
-      {showMassDeleteModal && leadsToDelete.length > 0 && (
-        <div className="fixed inset-0 bg-gradient-to-br from-slate-900/95 via-gray-900/90 to-black/95 backdrop-blur-xl flex items-center justify-center z-[60] p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-lg transform transition-all duration-700 ease-out border border-white/20">
-            {/* Sleek Modal Header */}
-            <div className="flex justify-center items-center p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-t-3xl">
-              <div className="relative">
-                <div className="w-16 h-16 bg-gradient-to-br from-rose-500 via-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-xl transform rotate-3 hover:rotate-0 transition-transform duration-500">
-                  <div className="w-12 h-12 bg-gradient-to-br from-rose-400 to-pink-500 rounded-xl flex items-center justify-center shadow-inner">
-                    <svg className="w-7 h-7 text-white drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="absolute -top-2 -right-2 w-7 h-7 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
-                  <span className="text-white text-sm font-bold">{leadsToDelete.length}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sleek Modal Content */}
-            <div className="p-6 text-center bg-gradient-to-br from-white via-slate-50/50 to-gray-50/30">
-              <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-slate-800 via-gray-700 to-slate-800 bg-clip-text text-transparent">
-                Delete {leadsToDelete.length} Leads
-              </h3>
-              <p className="text-slate-600 mb-6 text-base font-medium">
-                Are you sure you want to delete these {leadsToDelete.length} selected leads?
-              </p>
-
-              {/* Sleek Leads List */}
-              <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-5 mb-6 border border-slate-200/50 shadow-inner max-h-52 overflow-y-auto">
-                <div className="text-xs text-slate-500 mb-4 font-semibold uppercase tracking-wider">Selected Leads</div>
-                <div className="space-y-3">
-                  {leadsToDelete.slice(0, 4).map((lead, index) => (
-                    <div key={lead.id} className="flex items-center justify-between bg-white/80 backdrop-blur-sm rounded-xl p-3 shadow-sm border border-slate-200/50">
-                      <div className="flex-1 text-left">
-                        <div className="font-bold text-slate-800 text-sm">{lead.kva}</div>
-                        {lead.clientName && (
-                          <div className="text-xs text-slate-600 font-medium">{lead.clientName}</div>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-500 bg-gradient-to-r from-slate-100 to-gray-100 px-3 py-1 rounded-full font-semibold">
-                        #{index + 1}
-                      </div>
-                    </div>
-                  ))}
-                  {leadsToDelete.length > 4 && (
-                    <div className="text-center text-sm text-slate-500 font-semibold bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-slate-200/50">
-                      ... and {leadsToDelete.length - 4} more leads
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Sleek Warning Message */}
-              <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/50 rounded-2xl p-4 mb-6 shadow-sm">
-                <div className="flex items-center justify-center space-x-3 text-rose-700 text-sm font-semibold">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <span>This action cannot be done without your attention.</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sleek Action Buttons */}
-            <div className="flex justify-center space-x-4 p-6 bg-gradient-to-br from-slate-50 via-white to-gray-50 rounded-b-3xl">
-              <button
-                onClick={() => {
-                  setShowMassDeleteModal(false);
-                  setLeadsToDelete([]);
-                }}
-                className="px-6 py-3 text-sm font-bold text-slate-700 bg-white/80 backdrop-blur-sm border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  leadsToDelete.forEach(lead => deleteLead(lead.id));
-                  setShowMassDeleteModal(false);
-                  setLeadsToDelete([]);
-                  setSelectedLeads(new Set());
-                  setSelectAll(false);
-                }}
-                className="px-6 py-3 text-sm font-bold bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 text-white hover:from-rose-600 hover:via-pink-600 hover:to-rose-700 rounded-2xl transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:-translate-y-0.5"
-              >
-                Delete {leadsToDelete.length} Leads
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Password Modal */}
-      {showExportPasswordModal && (
-        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
-          <PasswordModal
-            isOpen={showExportPasswordModal}
-            onClose={() => {
-              setShowExportPasswordModal(false);
-            }}
-            operation="export"
-            onSuccess={handleExportPasswordSuccess}
-            title="Export Leads"
-            description="Enter password to export leads data"
-          />
-        </Suspense>
-      )}
-
-
-      {/* Password Settings Modal */}
-      {passwordSettingsOpen && (
-        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
-          <PasswordSettingsModal
-            isOpen={passwordSettingsOpen}
-            onClose={() => setPasswordSettingsOpen(false)}
-            onPasswordChanged={() => {
-              // Refresh any cached verification status
-            }}
-          />
-        </Suspense>
-      )}
-
-
-      {/* Toast Notification */}
-      {showToast && (
-        <div className="fixed top-4 right-4 z-50">
-          <div className={`px-6 py-4 rounded-lg shadow-lg text-white font-medium ${toastType === 'success' ? 'bg-green-600' :
-            toastType === 'error' ? 'bg-red-600' :
-              'bg-blue-600'
-            }`}>
-            <div className="flex items-center space-x-3">
-              {toastType === 'success' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-              {toastType === 'error' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              )}
-              {toastType === 'info' && (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
-              <span>{toastMessage}</span>
-              <button
-                onClick={() => setShowToast(false)}
-                className="ml-4 text-white hover:text-gray-200"
-                aria-label="Close notification"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
+    </RoleGuard>
   );
 }

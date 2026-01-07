@@ -56,7 +56,11 @@ export const DEFAULT_HEADER_LABELS: Record<keyof Lead, string> = {
   documentStatus: 'Document Status',
   convertedToCaseId: 'Converted To Case ID',
   convertedAt: 'Converted At',
-  createdAt: 'Created At'
+  createdAt: 'Created At',
+  assignedTo: 'Assigned To',
+  assignedBy: 'Assigned By',
+  assignedAt: 'Assigned At',
+  submitted_payload: 'Submitted Payload'
 };
 
 // Field types for validation and rendering
@@ -92,7 +96,11 @@ export const FIELD_TYPES: Record<keyof Lead, 'text' | 'date' | 'select' | 'numbe
   documentStatus: 'select',
   convertedToCaseId: 'text',
   convertedAt: 'date',
-  createdAt: 'date'
+  createdAt: 'date',
+  assignedTo: 'text',
+  assignedBy: 'text',
+  assignedAt: 'date',
+  submitted_payload: 'text'
 };
 
 // Fields that support sorting
@@ -373,6 +381,34 @@ export const COLUMN_METADATA: Record<keyof Lead, {
     sortable: true,
     width: 120,
     description: 'Date created'
+  },
+  assignedTo: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'User ID of assigned sales executive'
+  },
+  assignedBy: {
+    type: 'text',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'User ID of who assigned the lead'
+  },
+  assignedAt: {
+    type: 'date',
+    required: false,
+    sortable: true,
+    width: 120,
+    description: 'Timestamp of assignment'
+  },
+  submitted_payload: {
+    type: 'text',
+    required: false,
+    sortable: false,
+    width: 150,
+    description: 'Immutable snapshot of submitted form data'
   }
 };
 

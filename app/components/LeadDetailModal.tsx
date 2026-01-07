@@ -162,6 +162,12 @@ export default React.memo(function LeadDetailModal({
 
   if (!isOpen) return null;
 
+  // Helper function to get display value from submitted_payload or current lead fields
+  // Prioritizes submitted_payload as the source of truth for display
+  const getDisplayValue = (fieldKey: string): any => {
+    return lead.submitted_payload?.[fieldKey] ?? lead[fieldKey as keyof Lead];
+  };
+
   // Define permanent fields that should always appear in the modal
   const permanentFields = ['mobileNumbers', 'mobileNumber', 'unitType', 'status', 'followUpDate', 'companyLocation', 'notes', 'lastActivityDate'];
 
@@ -385,6 +391,12 @@ export default React.memo(function LeadDetailModal({
                   </div>
                   <p className="text-xs font-medium text-black">
                     {(() => {
+                      // Try to get phone from submitted_payload first
+                      const payloadMobileNumbers = lead.submitted_payload?.mobileNumbers;
+                      if (payloadMobileNumbers && Array.isArray(payloadMobileNumbers) && payloadMobileNumbers.length > 0) {
+                        const mainMobile = payloadMobileNumbers.find((m: any) => m.isMain) || payloadMobileNumbers[0];
+                        if (mainMobile?.number) return mainMobile.number;
+                      }
                       return getPrimaryPhoneNumber(lead);
                     })()}
                   </p>
@@ -393,55 +405,69 @@ export default React.memo(function LeadDetailModal({
                 {/* Unit Type */}
                 <div className="bg-gray-50 p-2 rounded-md">
                   <label className="block text-xs font-medium text-black mb-1">Unit Type</label>
-                  <p className="text-xs font-medium text-black">{lead.unitType}</p>
+                  <p className="text-xs font-medium text-black">{getDisplayValue('unitType') || lead.unitType}</p>
                 </div>
 
                 {/* Status */}
                 <div className="bg-gray-50 p-2 rounded-md">
                   <label className="block text-xs font-medium text-black mb-1">Status</label>
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${lead.status === 'New' ? 'bg-blue-100 text-blue-800' :
-                    lead.status === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
-                      lead.status === 'CNR' ? 'bg-orange-100 text-orange-800' :
-                        lead.status === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
-                          lead.status === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
-                            lead.status === 'Deal Close' ? 'bg-green-100 text-green-800' :
-                              lead.status === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
-                                lead.status === 'Hotlead' ? 'bg-red-100 text-red-800' :
-                                  lead.status === 'Others' ? 'bg-gray-100 text-black' :
-                                    'bg-gray-100 text-black'
-                    }`}>
-                    {lead.status === 'Work Alloted' ? 'WAO' : lead.status === 'Fresh Lead' ? 'FL1' : lead.status}
-                  </span>
+                  {(() => {
+                    const statusValue = getDisplayValue('status') || lead.status;
+                    return (
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusValue === 'New' ? 'bg-blue-100 text-blue-800' :
+                        statusValue === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
+                          statusValue === 'CNR' ? 'bg-orange-100 text-orange-800' :
+                            statusValue === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
+                              statusValue === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
+                                statusValue === 'Deal Close' ? 'bg-green-100 text-green-800' :
+                                  statusValue === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
+                                    statusValue === 'Hotlead' ? 'bg-red-100 text-red-800' :
+                                      statusValue === 'Others' ? 'bg-gray-100 text-black' :
+                                        'bg-gray-100 text-black'
+                        }`}>
+                        {statusValue === 'Work Alloted' ? 'WAO' : statusValue === 'Fresh Lead' ? 'FL1' : statusValue}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Follow-up Date */}
                 <div className="bg-gray-50 p-2 rounded-md">
                   <label className="block text-xs font-medium text-black mb-1">Follow-up Date</label>
                   <p className="text-xs font-medium text-black">
-                    {lead.followUpDate ? formatDateToDDMMYYYY(lead.followUpDate) : 'N/A'}
+                    {(() => {
+                      const followUpValue = getDisplayValue('followUpDate') || lead.followUpDate;
+                      return followUpValue ? formatDateToDDMMYYYY(followUpValue) : 'N/A';
+                    })()}
                   </p>
                 </div>
 
                 {/* Address */}
-                {lead.companyLocation && (
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Address</label>
-                    <p className="text-xs font-medium text-black">{lead.companyLocation}</p>
-                  </div>
-                )}
+                {(() => {
+                  const locationValue = getDisplayValue('companyLocation') || lead.companyLocation;
+                  return locationValue ? (
+                    <div className="bg-gray-50 p-2 rounded-md">
+                      <label className="block text-xs font-medium text-black mb-1">Address</label>
+                      <p className="text-xs font-medium text-black">{locationValue}</p>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Notes */}
-                {lead.notes && (
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
-                    <p className="text-xs font-medium text-black break-words">{lead.notes}</p>
-                  </div>
-                )}
+                {(() => {
+                  const notesValue = getDisplayValue('notes') || lead.notes;
+                  return notesValue ? (
+                    <div className="bg-gray-50 p-2 rounded-md">
+                      <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
+                      <p className="text-xs font-medium text-black break-words">{notesValue}</p>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Last Activity Date */}
                 <div className="bg-gray-50 p-2 rounded-md">
                   <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
-                  <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(lead.lastActivityDate)}</p>
+                  <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(getDisplayValue('lastActivityDate') || lead.lastActivityDate)}</p>
                 </div>
 
                 {/* Assigned To - Sales Lead Assignment */}

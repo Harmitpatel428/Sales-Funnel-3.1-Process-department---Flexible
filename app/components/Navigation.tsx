@@ -12,7 +12,7 @@ interface NavigationProps {
 
 const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) {
   const pathname = usePathname();
-  const { currentUser, logout, isAuthenticated, canViewAllCases, canManageCases } = useUsers();
+  const { currentUser, logout, isAuthenticated, canViewAllCases, canManageCases, canAccessSalesDashboard, canAccessProcessDashboard } = useUsers();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const [showLoginModal, setShowLoginModal] = useState(false);
 
@@ -50,28 +50,26 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                   >
                     Home
                   </Link>
-                  <Link
-                    href="/dashboard"
-                    className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/dashboard'
-                      ? 'bg-purple-100 text-purple-700 shadow-sm'
-                      : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
-                  >
-                    Sales Dashboard
-                  </Link>
-                  {(currentUser?.role === 'ADMIN' ||
-                    currentUser?.role === 'PROCESS_MANAGER' ||
-                    currentUser?.role === 'PROCESS_EXECUTIVE' ||
-                    currentUser?.role === 'SALES_MANAGER') && (
-                      <Link
-                        href="/process-dashboard"
-                        className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/process-dashboard'
-                            ? 'bg-purple-100 text-purple-700 shadow-sm'
-                            : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'
-                          }`}
-                      >
-                        Process Dashboard
-                      </Link>
-                    )}
+                  {canAccessSalesDashboard() && (
+                    <Link
+                      href="/dashboard"
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/dashboard'
+                        ? 'bg-purple-100 text-purple-700 shadow-sm'
+                        : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      Sales Dashboard
+                    </Link>
+                  )}
+                  {canAccessProcessDashboard() && (
+                    <Link
+                      href="/process-dashboard"
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/process-dashboard'
+                        ? 'bg-purple-100 text-purple-700 shadow-sm'
+                        : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      Process Dashboard
+                    </Link>
+                  )}
                   <Link
                     href="/add-lead"
                     className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname === '/add-lead'
@@ -111,6 +109,17 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                         : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
                     >
                       Users
+                    </Link>
+                  )}
+
+                  {currentUser?.role === 'ADMIN' && (
+                    <Link
+                      href="/audit-logs"
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname.startsWith('/audit-logs')
+                        ? 'bg-purple-100 text-purple-700 shadow-sm'
+                        : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      📋 Audit Logs
                     </Link>
                   )}
                 </div>

@@ -63,6 +63,60 @@ export interface WorkStats {
   periodEnd: string; // End of reporting period
 }
 
+/**
+ * Audit log entry for lead deletion with forward-to-process
+ */
+export interface LeadDeletionAuditLog {
+  id: string;                          // Unique audit log ID
+  leadId: string;                      // ID of deleted lead
+  leadData: Lead;                      // Full snapshot of lead data at deletion time
+  caseIds: string[];                   // IDs of cases created from this lead
+  deletedBy: string;                   // User ID who performed deletion
+  deletedByName: string;               // User name for display
+  deletedFrom: 'sales_dashboard' | 'all_leads' | 'process_dashboard';
+  deletedAt: string;                   // ISO timestamp
+  reason?: string;                     // Optional deletion reason
+  metadata?: Record<string, any>;      // Additional context
+}
+
+// Unified audit log action types
+export type AuditActionType =
+  // Lead operations
+  | 'LEAD_CREATED'
+  | 'LEAD_UPDATED'
+  | 'LEAD_DELETED'
+  | 'LEAD_ASSIGNED'
+  | 'LEAD_UNASSIGNED'
+  | 'LEAD_STATUS_CHANGED'
+  | 'LEAD_PERMANENTLY_DELETED'
+  | 'LEAD_FORWARDED_TO_PROCESS'
+  // Case operations
+  | 'CASE_CREATED'
+  | 'CASE_UPDATED'
+  | 'CASE_DELETED'
+  | 'CASE_STATUS_CHANGED'
+  | 'CASE_ASSIGNED'
+  | 'CASE_REASSIGNED'
+  | 'CASE_PRIORITY_CHANGED';
+
+// Unified system audit log entry
+export interface SystemAuditLog {
+  id: string;
+  actionType: AuditActionType;
+  entityType: 'lead' | 'case';
+  entityId: string;
+  performedBy: string;
+  performedByName: string;
+  performedAt: string;
+  description: string;
+  metadata?: {
+    oldValue?: any;
+    newValue?: any;
+    reason?: string;
+    [key: string]: any;
+  };
+}
+
 // ============================================================================
 // LEAD TYPES
 // ============================================================================
@@ -108,6 +162,8 @@ export interface Lead {
   assignedTo?: string;           // userId of assigned sales executive
   assignedBy?: string;           // userId of who assigned the lead
   assignedAt?: string;           // Timestamp of assignment
+  // Immutable snapshot of exact form values at submission time
+  submitted_payload?: Record<string, any>;
 }
 
 /**
@@ -188,6 +244,7 @@ export interface LeadContextType {
   setSkipPersistence?: (skip: boolean) => void;
   assignLead: (leadId: string, userId: string, assignedBy: string) => void;
   unassignLead: (leadId: string) => void;
+  forwardToProcess: (leadId: string, reason?: string, deletedFrom?: 'sales_dashboard' | 'all_leads') => Promise<{ success: boolean; message: string; caseIds?: string[] }>;
 }
 
 /**

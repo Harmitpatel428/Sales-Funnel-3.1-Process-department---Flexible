@@ -13,6 +13,8 @@ import {
 import { Lead } from '../types/shared';
 import { useLeads } from './LeadContext';
 import { useUsers } from './UserContext';
+import { addAuditLog } from '../utils/storage';
+import { SystemAuditLog, AuditActionType } from '../types/shared';
 
 // ============================================================================
 // CONSTANTS
@@ -48,6 +50,37 @@ function generateUUID(): string {
         return v.toString(16);
     });
 }
+
+const createCaseAuditLog = (
+    actionType: AuditActionType,
+    caseId: string,
+    description: string,
+    metadata?: Record<string, any>,
+    currentUser?: { userId: string; name: string } | null
+): void => {
+    try {
+        const user = currentUser || (() => {
+            const userJson = localStorage.getItem('currentUser');
+            return userJson ? JSON.parse(userJson) : null;
+        })();
+
+        const auditLog: SystemAuditLog = {
+            id: generateUUID(),
+            actionType,
+            entityType: 'case',
+            entityId: caseId,
+            performedBy: user?.userId || 'system',
+            performedByName: user?.name || 'System',
+            performedAt: new Date().toISOString(),
+            description,
+            metadata
+        };
+
+        addAuditLog(auditLog);
+    } catch (error) {
+        console.error('Error creating case audit log:', error);
+    }
+};
 
 // ============================================================================
 // VALID STATUS TRANSITIONS
@@ -188,22 +221,37 @@ export function CaseProvider({ children }: { children: ReactNode }) {
                 priority: 'MEDIUM',
                 createdAt: now,
                 updatedAt: now,
-                // Denormalized lead info - use form data if provided
-                clientName: lead.clientName || '',
-                company: metadata?.companyName || lead.company || '',
-                mobileNumber: lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
-                consumerNumber: lead.consumerNumber,
-                kva: lead.kva,
+                // Denormalized lead info - use form data if provided, preferring submitted_payload
+                clientName: lead.submitted_payload?.clientName ?? lead.clientName ?? '',
+                company: (metadata?.companyName ?? lead.submitted_payload?.company ?? lead.company ?? '').trim() || 'Unknown Company',
+                mobileNumber: lead.submitted_payload?.mobileNumber ?? lead.mobileNumber ?? (lead.mobileNumbers?.[0]?.number || ''),
+                consumerNumber: lead.submitted_payload?.consumerNumber ?? lead.consumerNumber,
+                kva: lead.submitted_payload?.kva ?? lead.kva,
                 // Financial/Location fields from Forward to Process form
                 talukaCategory: metadata?.talukaCategory,
                 termLoanAmount: metadata?.termLoanAmount,
                 plantMachineryValue: metadata?.plantMachineryValue,
                 electricityLoad: metadata?.electricityLoad,
-                electricityLoadType: metadata?.electricityLoadType
+                electricityLoadType: metadata?.electricityLoadType,
+                // Store complete original data
+                originalLeadData: lead.submitted_payload || lead
             };
 
             createdCases.push(newCase);
             createdCaseIds.push(caseId);
+
+            // Create audit log for each case
+            createCaseAuditLog(
+                'CASE_CREATED',
+                caseId,
+                `Case ${caseNumber} created from lead`,
+                {
+                    leadId,
+                    schemeType,
+                    benefitType: benefitType || 'none',
+                    company: newCase.company
+                }
+            );
         }
 
         // Add all cases to state
@@ -236,6 +284,14 @@ export function CaseProvider({ children }: { children: ReactNode }) {
                 : c
         ));
 
+        // Create audit log
+        createCaseAuditLog(
+            'CASE_UPDATED',
+            caseId,
+            `Case updated`,
+            { updates }
+        );
+
         return { success: true, message: 'Case updated successfully' };
     }, [cases]);
 
@@ -247,6 +303,14 @@ export function CaseProvider({ children }: { children: ReactNode }) {
 
         // Note: We don't revert the lead conversion - it's irreversible
         setCases(prev => prev.filter(c => c.caseId !== caseId));
+
+        // Create audit log
+        createCaseAuditLog(
+            'CASE_DELETED',
+            caseId,
+            `Case ${existingCase.caseNumber} deleted`,
+            { caseNumber: existingCase.caseNumber, company: existingCase.company }
+        );
 
         return { success: true, message: 'Case deleted successfully' };
     }, [cases]);
@@ -292,6 +356,15 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             c.caseId === caseId ? { ...c, ...updates } : c
         ));
 
+        // Create audit log
+        createCaseAuditLog(
+            'CASE_STATUS_CHANGED',
+            caseId,
+            `Status changed from ${existingCase.processStatus} to ${newStatus}`,
+            { oldStatus: existingCase.processStatus, newStatus },
+            currentUser
+        );
+
         return { success: true, message: `Status updated to ${newStatus}` };
     }, [cases]);
 
@@ -300,8 +373,8 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     // ============================================================================
 
     const assignCase = useCallback((caseId: string, userId: string, roleId?: UserRole): { success: boolean; message: string } => {
-        // RBAC: Only ADMIN, PROCESS_MANAGER, or SALES_MANAGER can assign cases
-        if (!currentUser || !['ADMIN', 'PROCESS_MANAGER', 'SALES_MANAGER'].includes(currentUser.role)) {
+        // RBAC: Only ADMIN or PROCESS_MANAGER can assign cases
+        if (!currentUser || !['ADMIN', 'PROCESS_MANAGER'].includes(currentUser.role)) {
             return { success: false, message: 'Unauthorized: You do not have permission to assign cases' };
         }
 
@@ -348,16 +421,70 @@ export function CaseProvider({ children }: { children: ReactNode }) {
                 : c
         ));
 
+        // Create audit log
+        const actionType = previousUserId ? 'CASE_REASSIGNED' : 'CASE_ASSIGNED';
+        const description = previousUserId
+            ? `Case reassigned from ${previousUserId} to ${userId}`
+            : `Case assigned to ${userId}`;
+
+        createCaseAuditLog(
+            actionType,
+            caseId,
+            description,
+            {
+                previousUserId,
+                newUserId: userId,
+                previousRole,
+                newRole: roleId,
+                assignedBy: currentUser.userId
+            },
+            currentUser
+        );
+
         return { success: true, message: 'Case assigned successfully' };
     }, [cases, currentUser]);
 
 
 
+    // ============================================================================
+    // ROLE-BASED VISIBILITY ENFORCEMENT (DATA LAYER)
+    // ============================================================================
+    // This computed property enforces strict role-based access control at the data layer.
+    // All context methods that return cases use this filtered array as the source of truth.
+    // 
+    // VISIBILITY RULES:
+    // - ADMIN: All cases (unrestricted)
+    // - PROCESS_MANAGER: All cases (unrestricted)
+    // - SALES_MANAGER: All cases (Read-Only access in Dashboard)
+    // - PROCESS_EXECUTIVE: ONLY cases where assignedProcessUserId === currentUser.userId
+    //   * Cannot see unassigned cases
+    //   * Cannot see cases assigned to other users
+    //   * Cannot see other benefit-type entries from same company unless assigned
+    // - SALES_EXECUTIVE: Empty array (should not access Process Dashboard)
+    //
+    // SECURITY NOTE: This filtering prevents Process Executives from accessing
+    // unassigned benefit-type entries even if they belong to the same company.
+    // Each benefit-type entry is treated as an independent sub-lead with its own
+    // assignment, ensuring strict isolation.
+    // ============================================================================
     const visibleCases = useMemo(() => {
-        return cases;
-        // Previous logic hid cases if lead was deleted.
-        // We now want cases to persist independently.
-    }, [cases]);
+        // Filter cases based on user role
+        if (!currentUser) return [];
+
+        // ADMIN, PROCESS_MANAGER and SALES_MANAGER see all cases
+        if (['ADMIN', 'PROCESS_MANAGER', 'SALES_MANAGER'].includes(currentUser.role)) {
+            return cases;
+        }
+
+        // PROCESS_EXECUTIVE sees only cases assigned to them
+        if (currentUser.role === 'PROCESS_EXECUTIVE') {
+            return cases.filter(c => c.assignedProcessUserId === currentUser.userId);
+        }
+
+        // Other roles (SALES_EXECUTIVE) should not access cases
+        // but if they do, return empty array
+        return [];
+    }, [cases, currentUser]);
 
     // ============================================================================
     // FILTERING
@@ -421,6 +548,15 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         return visibleCases.filter(c => c.assignedProcessUserId === userId);
     }, [visibleCases]);
 
+    const getCasesByAssigneeFiltered = useCallback((userId: string): Case[] => {
+        // Strict filtering: only return cases assigned to specific user
+        // This respects role-based visibility (visibleCases already filtered)
+        return visibleCases.filter(c =>
+            c.assignedProcessUserId === userId &&
+            c.assignedProcessUserId !== null
+        );
+    }, [visibleCases]);
+
     // ============================================================================
     // STATISTICS
     // ============================================================================
@@ -475,6 +611,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         getFilteredCases,
         getCasesByStatus,
         getCasesByAssignee,
+        getCasesByAssigneeFiltered,
         getCaseStats
     }), [
         visibleCases,
@@ -489,6 +626,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         getFilteredCases,
         getCasesByStatus,
         getCasesByAssignee,
+        getCasesByAssigneeFiltered,
         getCaseStats
     ]);
 

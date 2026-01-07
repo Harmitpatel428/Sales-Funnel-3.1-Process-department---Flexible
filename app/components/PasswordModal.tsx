@@ -7,9 +7,10 @@ interface PasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
   operation: 'editMode' | 'headerEdit' | 'export' | 'columnManagement' | 'rowManagement' | 'caseManagement';
-  onSuccess: () => void;
+  onSuccess: (reason?: string) => void;
   title?: string;
   description?: string;
+  captureReason?: boolean; // New prop
 }
 
 const PasswordModal: React.FC<PasswordModalProps> = ({
@@ -18,9 +19,11 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
   operation,
   onSuccess,
   title,
-  description
+  description,
+  captureReason = false
 }) => {
   const [password, setPassword] = useState('');
+  const [reason, setReason] = useState(''); // State for reason
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [rememberSession, setRememberSession] = useState(false);
@@ -40,6 +43,7 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setPassword('');
+      setReason(''); // Reset reason
       setError('');
       setSecurityAnswer('');
       setShowSecurityQuestion(false);
@@ -62,7 +66,7 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
     try {
       if (showSecurityQuestion) {
         if (verifySecurityAnswer(operation, securityAnswer)) {
-          onSuccess();
+          onSuccess(reason || undefined); // Pass reason
           if (rememberSession) {
             sessionStorage.setItem(`verified_${operation}`, 'true');
           }
@@ -72,7 +76,7 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
         }
       } else {
         if (verifyPassword(operation, password)) {
-          onSuccess();
+          onSuccess(reason || undefined); // Pass reason
           if (rememberSession) {
             sessionStorage.setItem(`verified_${operation}`, 'true');
           }
@@ -200,6 +204,23 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
             </div>
           )}
 
+          {/* Reason Capture Field */}
+          {captureReason && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason (Optional)
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Enter reason..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black placeholder:text-gray-400"
+                disabled={isLoading}
+              />
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
               {error}
@@ -264,8 +285,8 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
             </div>
           )}
         </form>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

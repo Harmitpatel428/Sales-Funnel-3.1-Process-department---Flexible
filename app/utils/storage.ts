@@ -13,6 +13,7 @@ import { logStorageError, logQuotaExceeded, logEncryptionError, logDecryptionErr
 import type { Lead } from '../types/shared';
 import type { ColumnConfig } from '../types/shared';
 import type { SavedView } from '../types/shared';
+import type { SystemAuditLog, AuditActionType } from '../types/shared';
 
 // Core Types
 export interface StorageConfig {
@@ -83,7 +84,7 @@ export async function getQuota(): Promise<QuotaInfo | null> {
 
     // Fetch fresh quota information
     const estimate = await navigator.storage.estimate();
-    
+
     if (estimate.quota && estimate.usage !== undefined) {
       cachedQuota = {
         quota: estimate.quota,
@@ -105,9 +106,9 @@ export async function getQuota(): Promise<QuotaInfo | null> {
  */
 function isQuotaError(e: unknown): boolean {
   if (e instanceof Error) {
-    return e.name === 'QuotaExceededError' || 
-           e.message.includes('Quota') || 
-           e.message.includes('quota');
+    return e.name === 'QuotaExceededError' ||
+      e.message.includes('Quota') ||
+      e.message.includes('quota');
   }
   return false;
 }
@@ -145,7 +146,7 @@ export function initializeStorageSize(): number {
   approxSizeBytes = totalSize;
   isSizeInitialized = true;
   lastReconciliation = Date.now();
-  
+
   return totalSize;
 }
 
@@ -168,9 +169,9 @@ export function updateStorageSizeDelta(key: string, oldValue: string | null, new
   const oldSize = oldValue ? new Blob([oldValue]).size : 0;
   const newSize = new Blob([newValue]).size;
   const delta = newSize - oldSize;
-  
+
   approxSizeBytes += delta;
-  
+
   // Ensure size doesn't go negative (shouldn't happen, but safety check)
   if (approxSizeBytes < 0) {
     approxSizeBytes = 0;
@@ -183,7 +184,7 @@ export function updateStorageSizeDelta(key: string, oldValue: string | null, new
  */
 export function reconcileStorageSize(): number {
   const now = Date.now();
-  
+
   // Skip if reconciliation was performed recently
   if (now - lastReconciliation < RECONCILIATION_INTERVAL) {
     return approxSizeBytes;
@@ -201,13 +202,13 @@ export function reconcileStorageSize(): number {
   }
 
   const drift = Math.abs(actualSize - approxSizeBytes);
-  
+
   // Only update if drift is significant (more than 1KB)
   if (drift > 1024) {
     console.warn(`Storage size drift detected: ${drift} bytes. Correcting cached size.`);
     approxSizeBytes = actualSize;
   }
-  
+
   lastReconciliation = now;
   return approxSizeBytes;
 }
@@ -244,12 +245,12 @@ export async function checkQuota(additionalBytes: number): Promise<{
 }> {
   const currentSize = calculateStorageSize();
   const totalSize = currentSize + additionalBytes;
-  
+
   // Try to get dynamic quota first
   const quotaInfo = await getQuota();
   const quotaLimit = quotaInfo?.quota || STORAGE_QUOTA_LIMIT;
   const percentUsed = totalSize / quotaLimit;
-  
+
   return {
     withinLimit: totalSize <= quotaLimit,
     currentSize,
@@ -270,11 +271,11 @@ export function checkQuotaSync(additionalBytes: number): {
 } {
   const currentSize = getCachedStorageSize();
   const totalSize = currentSize + additionalBytes;
-  
+
   // Use cached quota if available, otherwise fallback
   const quotaLimit = cachedQuota?.quota || STORAGE_QUOTA_LIMIT;
   const percentUsed = totalSize / quotaLimit;
-  
+
   return {
     withinLimit: totalSize <= quotaLimit,
     currentSize,
@@ -290,7 +291,7 @@ export function checkQuotaSync(additionalBytes: number): {
 export async function getItem<T>(key: string, defaultValue?: T): Promise<StorageResult<T>> {
   const item = localStorage.getItem(key);
   let dataToParse = item;
-  
+
   try {
     if (item === null) {
       return {
@@ -299,7 +300,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         bytesUsed: defaultValue ? new Blob([JSON.stringify(defaultValue)]).size : 0
       };
     }
-    
+
     // Check if this is encrypted sensitive data
     if (isSensitiveKey(key)) {
       if (!hasMasterKey()) {
@@ -310,7 +311,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
           bytesUsed: 0
         };
       }
-      
+
       try {
         dataToParse = await decryptData(item);
       } catch (decryptError) {
@@ -324,7 +325,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         };
       }
     }
-    
+
     const parsed = JSON.parse(dataToParse);
     return {
       success: true,
@@ -333,11 +334,11 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
     };
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    
+
     // Enhanced error logging for JSON parse failures
-    logStorageError('getItem: JSON parse failed', errorObj, { 
+    logStorageError('getItem: JSON parse failed', errorObj, {
       operation: 'getItem',
-      key, 
+      key,
       additionalData: {
         errorType: 'JSON_PARSE_FAILED',
         dataLength: dataToParse?.length || 0,
@@ -349,20 +350,20 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
       severity: ErrorSeverity.MEDIUM,
       category: ErrorCategory.CORRUPTION
     });
-    
+
     // Attempt to restore from backup if available
     try {
       const backupKey = `${key}_backup`;
       const backupData = localStorage.getItem(backupKey);
       if (backupData) {
         const backupParsed = JSON.parse(backupData);
-        logStorageError('getItem: Restored from backup due to JSON parse failure', new Error('Restored from backup due to JSON parse failure'), { 
-          key, 
+        logStorageError('getItem: Restored from backup due to JSON parse failure', new Error('Restored from backup due to JSON parse failure'), {
+          key,
           backupUsed: true,
           severity: ErrorSeverity.LOW,
           category: ErrorCategory.STORAGE
         });
-        
+
         return {
           success: true,
           data: backupParsed,
@@ -370,11 +371,11 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         };
       }
     } catch (backupError) {
-      logStorageError('getItem: Backup restore failed', backupError as Error, { 
+      logStorageError('getItem: Backup restore failed', backupError as Error, {
         operation: 'getItem',
-        key, 
+        key,
         additionalData: {
-          errorType: 'BACKUP_RESTORE_FAILED' 
+          errorType: 'BACKUP_RESTORE_FAILED'
         },
         timestamp: Date.now(),
         userAgent: navigator.userAgent,
@@ -383,7 +384,7 @@ export async function getItem<T>(key: string, defaultValue?: T): Promise<Storage
         category: ErrorCategory.CORRUPTION
       });
     }
-    
+
     return {
       success: false,
       error: `Failed to parse stored data for key '${key}'. Data may be corrupted.`,
@@ -401,14 +402,14 @@ async function processQueue(key: string): Promise<void> {
   if (processingKeys.has(key)) {
     return; // Already processing this key
   }
-  
+
   const transactions = pendingTransactions.get(key);
   if (!transactions || transactions.length === 0) {
     return;
   }
-  
+
   processingKeys.add(key);
-  
+
   try {
     while (transactions.length > 0) {
       const transaction = transactions.shift()!;
@@ -425,45 +426,45 @@ async function processQueue(key: string): Promise<void> {
  */
 async function executeTransaction(transaction: StorageTransaction): Promise<void> {
   const { key, data, retryCount, config } = transaction;
-  
+
   try {
     const serialized = JSON.stringify(data);
     const size = new Blob([serialized]).size;
-    
+
     // Check quota before write (use sync version for transaction processing)
     const quotaCheck = checkQuotaSync(size);
     if (!quotaCheck.withinLimit) {
       // Log quota exceeded error
       logQuotaExceeded(`Quota exceeded for ${key}`, { currentSize: quotaCheck.currentSize, quotaLimit: quotaCheck.quotaLimit });
-      
+
       // Call quota exceeded callback
       config?.onQuotaExceeded?.(key, quotaCheck.currentSize);
       throw new Error(`Quota exceeded: ${(quotaCheck.percentUsed * 100).toFixed(1)}% used (${(quotaCheck.currentSize / 1024 / 1024).toFixed(2)}MB / ${(quotaCheck.quotaLimit / 1024 / 1024).toFixed(2)}MB)`);
     }
-    
+
     // Warn if approaching limit
     if (quotaCheck.percentUsed > WARNING_THRESHOLD) {
       const warning = `Storage usage at ${(quotaCheck.percentUsed * 100).toFixed(1)}%! Consider exporting and archiving old data.`;
       config?.onWarning?.(warning);
     }
-    
+
     // Get old value for delta calculation
     const oldValue = localStorage.getItem(key);
-    
+
     localStorage.setItem(key, serialized);
-    
+
     // Update cached storage size
     updateStorageSizeDelta(key, oldValue, serialized);
-    
+
     // Trigger sync callbacks for multi-tab updates
     const callbacks = syncCallbacks.get(key);
     if (callbacks) {
       callbacks.forEach(callback => callback(data));
     }
-    
+
     // Resolve promise if awaited
     transaction.resolve?.();
-    
+
   } catch (error) {
     // Check if this is a quota error
     if (isQuotaError(error)) {
@@ -472,7 +473,7 @@ async function executeTransaction(transaction: StorageTransaction): Promise<void
       transaction.reject?.(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
-    
+
     // For other errors, retry if within limits
     const maxRetries = config?.maxRetries || MAX_RETRIES;
     if (retryCount < maxRetries) {
@@ -480,16 +481,16 @@ async function executeTransaction(transaction: StorageTransaction): Promise<void
       const baseDelay = config?.retryDelay || RETRY_BASE_DELAY;
       const delay = baseDelay * Math.pow(2, retryCount);
       await new Promise(resolve => setTimeout(resolve, delay));
-      
+
       const retryTransaction: StorageTransaction = {
         ...transaction,
         retryCount: retryCount + 1
       };
-      
+
       const queue = pendingTransactions.get(key) || [];
       queue.push(retryTransaction);
       pendingTransactions.set(key, queue);
-      
+
       await processQueue(key);
     } else {
       // Final failure - notify and reject
@@ -513,11 +514,11 @@ export function enqueueWrite(key: string, data: any, config?: Partial<StorageCon
     retryCount: 0,
     config
   };
-  
+
   const queue = pendingTransactions.get(key) || [];
   queue.push(transaction);
   pendingTransactions.set(key, queue);
-  
+
   // Start processing queue
   processQueue(key).catch(error => {
     console.error(`Queue processing failed for key ${key}:`, error);
@@ -556,7 +557,7 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
   try {
     const serialized = JSON.stringify(data);
     const size = new Blob([serialized]).size;
-    
+
     // Check quota
     const quotaCheck = await checkQuota(size);
     if (!quotaCheck.withinLimit) {
@@ -569,7 +570,7 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
         error
       };
     }
-    
+
     // Warn if approaching limit
     if (quotaCheck.percentUsed > WARNING_THRESHOLD) {
       const warning = `Storage usage at ${(quotaCheck.percentUsed * 100).toFixed(1)}%! Consider exporting and archiving old data.`;
@@ -577,7 +578,7 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
         config.onWarning(warning);
       }
     }
-    
+
     // Create backup if enabled
     if (config?.enableBackup) {
       const backupResult = createBackup(key);
@@ -585,7 +586,29 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
         console.warn(`Backup failed for ${key}:`, backupResult.error);
       }
     }
-    
+
+    // GUARD: Enforce submitted_payload immutability for leads key
+    let dataToWrite = data;
+    if (key === 'leads' && Array.isArray(data)) {
+      try {
+        const existingData = localStorage.getItem('leads');
+        if (existingData) {
+          const existingLeads = JSON.parse(existingData);
+          if (Array.isArray(existingLeads)) {
+            const validation = validateLeadsSubmittedPayloads(existingLeads, data);
+            if (!validation.valid) {
+              console.error('submitted_payload immutability violations detected:', validation.errors);
+              logValidationError('submitted_payload immutability violation', new Error(validation.errors.join('; ')));
+              // Use corrected leads with restored original submitted_payloads
+              dataToWrite = validation.correctedLeads;
+            }
+          }
+        }
+      } catch (guardError) {
+        console.error('Error in submitted_payload guard:', guardError);
+      }
+    }
+
     // Check if this is sensitive data that needs encryption
     if (isSensitiveKey(key)) {
       if (!hasMasterKey()) {
@@ -594,14 +617,14 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
           error: 'Master key not available for encrypting sensitive data'
         };
       }
-      
+
       try {
-        const encryptedData = await encryptData(serialized);
+        const encryptedData = await encryptData(JSON.stringify(dataToWrite));
         const encryptedSize = new Blob([encryptedData]).size;
-        
+
         // Execute write with encrypted data
         enqueueWrite(key, encryptedData, config);
-        
+
         return {
           success: true,
           bytesUsed: encryptedSize
@@ -615,19 +638,19 @@ export async function setItem(key: string, data: any, config?: Partial<StorageCo
         };
       }
     }
-    
+
     // Execute write for non-sensitive data
-    enqueueWrite(key, data, config);
-    
+    enqueueWrite(key, dataToWrite, config);
+
     return {
       success: true,
       bytesUsed: size
     };
-    
+
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
     logStorageError('setItem failed', errorObj, { key, severity: ErrorSeverity.MEDIUM, category: ErrorCategory.STORAGE });
-    
+
     if (config?.onError) {
       config.onError(errorObj);
     }
@@ -677,11 +700,11 @@ export async function setItemAwaited(key: string, data: any, config?: Partial<St
       resolve,
       reject
     };
-    
+
     const queue = pendingTransactions.get(key) || [];
     queue.push(transaction);
     pendingTransactions.set(key, queue);
-    
+
     // Start processing queue
     processQueue(key).catch(error => {
       console.error(`Queue processing failed for key ${key}:`, error);
@@ -719,7 +742,7 @@ export async function setItemSync(key: string, data: any, config?: Partial<Stora
   try {
     const serialized = JSON.stringify(data);
     const size = new Blob([serialized]).size;
-    
+
     // Check quota (sync version for emergency flush)
     const quotaCheck = checkQuotaSync(size);
     if (!quotaCheck.withinLimit) {
@@ -732,10 +755,10 @@ export async function setItemSync(key: string, data: any, config?: Partial<Stora
         error
       };
     }
-    
+
     // Get old value for delta calculation
     const oldValue = localStorage.getItem(key);
-    
+
     // Check if this is sensitive data that needs encryption
     if (isSensitiveKey(key)) {
       if (!hasMasterKey()) {
@@ -744,20 +767,20 @@ export async function setItemSync(key: string, data: any, config?: Partial<Stora
           error: 'Master key not available for encrypting sensitive data'
         };
       }
-      
+
       try {
         const encryptedData = await encryptData(serialized);
         localStorage.setItem(key, encryptedData);
-        
+
         // Update cached storage size with encrypted data
         updateStorageSizeDelta(key, oldValue, encryptedData);
-        
+
         // Trigger sync callbacks with original data
         const callbacks = syncCallbacks.get(key);
         if (callbacks) {
           callbacks.forEach(callback => callback(data));
         }
-        
+
         return {
           success: true,
           bytesUsed: new Blob([encryptedData]).size
@@ -769,23 +792,23 @@ export async function setItemSync(key: string, data: any, config?: Partial<Stora
         };
       }
     }
-    
+
     localStorage.setItem(key, serialized);
-    
+
     // Update cached storage size
     updateStorageSizeDelta(key, oldValue, serialized);
-    
+
     // Trigger sync callbacks
     const callbacks = syncCallbacks.get(key);
     if (callbacks) {
       callbacks.forEach(callback => callback(data));
     }
-    
+
     return {
       success: true,
       bytesUsed: size
     };
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     if (config?.onError) {
@@ -811,19 +834,19 @@ export async function removeItem(key: string, config?: Partial<StorageConfig>): 
         console.warn(`Backup failed for ${key}:`, backupResult.error);
       }
     }
-    
+
     // Get old value for delta calculation
     const oldValue = localStorage.getItem(key);
-    
+
     localStorage.removeItem(key);
-    
+
     // Update cached storage size (removing item reduces size)
     updateStorageSizeDelta(key, oldValue, '');
-    
+
     return {
       success: true
     };
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     if (config?.onError) {
@@ -849,14 +872,14 @@ export function createBackup(key: string): StorageResult<void> {
         error: `No data found for key ${key}`
       };
     }
-    
+
     const backupKey = `${key}_backup`;
     localStorage.setItem(backupKey, currentValue);
-    
+
     return {
       success: true
     };
-    
+
   } catch (error) {
     return {
       success: false,
@@ -873,16 +896,16 @@ export function restoreFromBackup(key: string): StorageResult<void> {
   try {
     const backupKey = `${key}_backup`;
     const backupValue = localStorage.getItem(backupKey);
-    
+
     if (backupValue === null) {
       return {
         success: false,
         error: `No backup found for key ${key}`
       };
     }
-    
+
     localStorage.setItem(key, backupValue);
-    
+
     // Trigger sync callbacks
     const callbacks = syncCallbacks.get(key);
     if (callbacks) {
@@ -890,8 +913,8 @@ export function restoreFromBackup(key: string): StorageResult<void> {
         const parsed = JSON.parse(backupValue);
         callbacks.forEach(callback => callback(parsed));
       } catch (parseError) {
-        logStorageError('restoreFromBackup: Backup parse failed', parseError as Error, { 
-          key, 
+        logStorageError('restoreFromBackup: Backup parse failed', parseError as Error, {
+          key,
           errorType: 'BACKUP_PARSE_FAILED',
           backupLength: backupValue.length,
           severity: ErrorSeverity.HIGH,
@@ -900,11 +923,11 @@ export function restoreFromBackup(key: string): StorageResult<void> {
         console.warn(`Backup data for '${key}' is corrupted and cannot be restored.`, parseError);
       }
     }
-    
+
     return {
       success: true
     };
-    
+
   } catch (error) {
     return {
       success: false,
@@ -939,10 +962,10 @@ export function setItemDebounced(key: string, data: any, delay: number, config?:
   if (existingTimer) {
     clearTimeout(existingTimer as number);
   }
-  
+
   // Store pending data
   pendingData.set(key, data);
-  
+
   // Set new timer
   const timer = window.setTimeout(() => {
     const pendingDataForKey = pendingData.get(key);
@@ -952,7 +975,7 @@ export function setItemDebounced(key: string, data: any, delay: number, config?:
     }
     debounceTimers.delete(key);
   }, delay);
-  
+
   debounceTimers.set(key, timer);
 }
 
@@ -983,7 +1006,7 @@ export async function flushPending(): Promise<void> {
   // Cancel all timers
   debounceTimers.forEach(timer => clearTimeout(timer as number));
   debounceTimers.clear();
-  
+
   // Write all pending data synchronously
   const promises: Promise<void>[] = [];
   pendingData.forEach((data, key) => {
@@ -997,7 +1020,7 @@ export async function flushPending(): Promise<void> {
       })
     );
   });
-  
+
   await Promise.all(promises);
   pendingData.clear();
 }
@@ -1037,7 +1060,7 @@ export async function flushPendingSyncFor(keys: string[]): Promise<void> {
       }
       pendingData.delete(key);
     }
-    
+
     // Cancel any pending timer for this key
     const timer = debounceTimers.get(key);
     if (timer) {
@@ -1055,10 +1078,10 @@ export function registerSyncCallback(key: string, callback: (data: any) => void)
   if (!syncCallbacks.has(key)) {
     syncCallbacks.set(key, new Set());
   }
-  
+
   const callbacks = syncCallbacks.get(key)!;
   callbacks.add(callback);
-  
+
   // Return unregister function
   return () => {
     callbacks.delete(callback);
@@ -1076,20 +1099,20 @@ export function initStorageSync(): void {
   if (isStorageSyncInitialized) {
     return;
   }
-  
+
   window.addEventListener('storage', (event) => {
     if (!event.key || !event.newValue) {
       return;
     }
-    
+
     const callbacks = syncCallbacks.get(event.key);
     if (callbacks) {
       try {
         const parsed = JSON.parse(event.newValue);
         callbacks.forEach(callback => callback(parsed));
       } catch (error) {
-        logStorageError('storageEvent: Parse failed', error as Error, { 
-          key: event.key, 
+        logStorageError('storageEvent: Parse failed', error as Error, {
+          key: event.key,
           errorType: 'STORAGE_EVENT_PARSE_FAILED',
           newValueLength: event.newValue?.length || 0,
           severity: ErrorSeverity.LOW,
@@ -1099,7 +1122,7 @@ export function initStorageSync(): void {
       }
     }
   });
-  
+
   isStorageSyncInitialized = true;
 }
 
@@ -1110,16 +1133,16 @@ export function initStorageSync(): void {
 export function initStorageManager(globalConfig?: Partial<StorageConfig>): void {
   // Initialize storage size cache
   initializeStorageSize();
-  
+
   // Initialize multi-tab sync
   initStorageSync();
-  
+
   // Flush pending writes before page unload
   const handleBeforeUnload = async () => {
     // Use synchronous flush for beforeunload
     debounceTimers.forEach(timer => clearTimeout(timer as number));
     debounceTimers.clear();
-    
+
     // Flush pending debounced data
     for (const [key, data] of pendingData.entries()) {
       const result = await setItemSync(key, data, globalConfig);
@@ -1128,7 +1151,7 @@ export function initStorageManager(globalConfig?: Partial<StorageConfig>): void 
       }
     }
     pendingData.clear();
-    
+
     // Flush queued transactions - write the last transaction for each key
     for (const [key, transactions] of pendingTransactions.entries()) {
       if (transactions.length > 0) {
@@ -1142,24 +1165,24 @@ export function initStorageManager(globalConfig?: Partial<StorageConfig>): void 
     pendingTransactions.clear();
     processingKeys.clear();
   };
-  
+
   // Flush when page becomes hidden (mobile/tab switching)
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
       // Perform reconciliation before flush
       reconcileStorageSize();
-      
+
       flushPending().catch(error => {
         console.error('Visibility change flush failed:', error);
       });
     }
   };
-  
+
   // Periodic reconciliation on idle
   const handleIdle = () => {
     reconcileStorageSize();
   };
-  
+
   // Use requestIdleCallback if available, otherwise setTimeout
   const scheduleReconciliation = () => {
     if ('requestIdleCallback' in window) {
@@ -1168,13 +1191,13 @@ export function initStorageManager(globalConfig?: Partial<StorageConfig>): void 
       setTimeout(handleIdle, 1000);
     }
   };
-  
+
   // Schedule periodic reconciliation
   const reconciliationInterval = setInterval(scheduleReconciliation, RECONCILIATION_INTERVAL);
-  
+
   window.addEventListener('beforeunload', handleBeforeUnload);
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  
+
   // Store cleanup function
   (window as any).__storageCleanup = () => {
     window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -1192,7 +1215,7 @@ export function cleanupStorageManager(): void {
     cleanup();
     delete (window as any).__storageCleanup;
   }
-  
+
   // Clear all pending operations
   debounceTimers.forEach(timer => clearTimeout(timer as number));
   debounceTimers.clear();
@@ -1200,7 +1223,7 @@ export function cleanupStorageManager(): void {
   pendingTransactions.clear();
   processingKeys.clear();
   syncCallbacks.clear();
-  
+
   isStorageSyncInitialized = false;
 }
 
@@ -1220,7 +1243,7 @@ export async function getStorageStats(): Promise<{
   let itemCount = 0;
   let largestKey = '';
   let largestSize = 0;
-  
+
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key) {
@@ -1229,7 +1252,7 @@ export async function getStorageStats(): Promise<{
         const size = new Blob([value]).size;
         totalSize += size;
         itemCount++;
-        
+
         if (size > largestSize) {
           largestSize = size;
           largestKey = key;
@@ -1237,11 +1260,11 @@ export async function getStorageStats(): Promise<{
       }
     }
   }
-  
+
   // Get dynamic quota information
   const quotaInfo = await getQuota();
   const quotaLimit = quotaInfo?.quota || STORAGE_QUOTA_LIMIT;
-  
+
   return {
     totalSize,
     percentUsed: totalSize / quotaLimit,
@@ -1269,7 +1292,7 @@ export function getStorageStatsSync(): {
   let itemCount = 0;
   let largestKey = '';
   let largestSize = 0;
-  
+
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key) {
@@ -1277,7 +1300,7 @@ export function getStorageStatsSync(): {
       if (value) {
         const size = new Blob([value]).size;
         itemCount++;
-        
+
         if (size > largestSize) {
           largestSize = size;
           largestKey = key;
@@ -1285,10 +1308,10 @@ export function getStorageStatsSync(): {
       }
     }
   }
-  
+
   // Use cached quota if available
   const quotaLimit = cachedQuota?.quota || STORAGE_QUOTA_LIMIT;
-  
+
   return {
     totalSize,
     percentUsed: totalSize / quotaLimit,
@@ -1304,14 +1327,14 @@ export function getStorageStatsSync(): {
  */
 export function clearAllBackups(): void {
   const keysToRemove: string[] = [];
-  
+
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key && key.endsWith('_backup')) {
       keysToRemove.push(key);
     }
   }
-  
+
   keysToRemove.forEach(key => localStorage.removeItem(key));
 }
 
@@ -1320,7 +1343,7 @@ export function clearAllBackups(): void {
  */
 export function exportStorage(): string {
   const data: Record<string, string> = {};
-  
+
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key) {
@@ -1330,7 +1353,7 @@ export function exportStorage(): string {
       }
     }
   }
-  
+
   return JSON.stringify(data, null, 2);
 }
 
@@ -1443,8 +1466,8 @@ export function validateImportData(data: Record<string, any>): ImportValidationR
         JSON.parse(value);
       } catch (parseError) {
         result.warnings.push(`Key '${key}' contains invalid JSON and will be skipped during import.`);
-        logStorageError('validateImportData: JSON parse failed', parseError as Error, { 
-          key, 
+        logStorageError('validateImportData: JSON parse failed', parseError as Error, {
+          key,
           errorType: 'IMPORT_VALIDATION_JSON_PARSE_FAILED',
           valueLength: value.length,
           severity: ErrorSeverity.MEDIUM,
@@ -1479,13 +1502,13 @@ export function dryRunImport(jsonString: string): ImportValidationResult {
     return validateImportData(data);
   } catch (error) {
     const errorObj = error instanceof Error ? error : new Error(String(error));
-    logStorageError('dryRunImport: JSON parse failed', errorObj, { 
+    logStorageError('dryRunImport: JSON parse failed', errorObj, {
       errorType: 'DRY_RUN_JSON_PARSE_FAILED',
       jsonStringLength: jsonString.length,
       severity: ErrorSeverity.MEDIUM,
       category: ErrorCategory.CORRUPTION
     });
-    
+
     return {
       valid: false,
       errors: [`Import file contains invalid JSON. Please check the file format. Error: ${errorObj.message}`],
@@ -1502,7 +1525,7 @@ export function dryRunImport(jsonString: string): ImportValidationResult {
 export function createImportBackup(): StorageResult<string> {
   try {
     const backupData: Record<string, string> = {};
-    
+
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key) {
@@ -1516,9 +1539,9 @@ export function createImportBackup(): StorageResult<string> {
     const backupJson = JSON.stringify(backupData, null, 2);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupKey = `_import_backup_${timestamp}`;
-    
+
     localStorage.setItem(backupKey, backupJson);
-    
+
     return {
       success: true,
       data: backupKey
@@ -1545,29 +1568,29 @@ export function restoreFromImportBackup(backupKey: string): StorageResult<void> 
     }
 
     const data = JSON.parse(backupData);
-    
+
     // Clear current data
     localStorage.clear();
-    
+
     // Restore backup data
     Object.entries(data).forEach(([key, value]) => {
       if (typeof value === 'string') {
         localStorage.setItem(key, value);
       }
     });
-    
+
     return {
       success: true
     };
   } catch (parseError) {
     const errorObj = parseError instanceof Error ? parseError : new Error(String(parseError));
-    logStorageError('restoreImportBackup: JSON parse failed', errorObj, { 
+    logStorageError('restoreImportBackup: JSON parse failed', errorObj, {
       errorType: 'IMPORT_BACKUP_JSON_PARSE_FAILED',
       backupDataLength: backupData?.length || 0,
       severity: ErrorSeverity.HIGH,
       category: ErrorCategory.CORRUPTION
     });
-    
+
     return {
       success: false,
       error: 'Import backup is corrupted and cannot be restored.'
@@ -1589,7 +1612,7 @@ export function importStorage(jsonString: string, options: ImportOptions = {}): 
 
   try {
     const data = JSON.parse(jsonString);
-    
+
     if (typeof data !== 'object' || data === null) {
       return {
         success: false,
@@ -1606,7 +1629,7 @@ export function importStorage(jsonString: string, options: ImportOptions = {}): 
           error: `Validation failed: ${validation.errors.join(', ')}`
         };
       }
-      
+
       if (validation.projectedSize > maxSize) {
         return {
           success: false,
@@ -1636,18 +1659,18 @@ export function importStorage(jsonString: string, options: ImportOptions = {}): 
     try {
       // Clear existing data
       localStorage.clear();
-      
+
       // Import new data
       Object.entries(data).forEach(([key, value]) => {
         if (typeof value === 'string') {
           localStorage.setItem(key, value);
         }
       });
-      
+
       return {
         success: true
       };
-      
+
     } catch (importError) {
       // Restore backup if import failed
       if (backupKey) {
@@ -1656,19 +1679,19 @@ export function importStorage(jsonString: string, options: ImportOptions = {}): 
           console.error('Failed to restore backup after import failure:', restoreResult.error);
         }
       }
-      
+
       throw importError;
     }
-    
+
   } catch (parseError) {
     const errorObj = parseError instanceof Error ? parseError : new Error(String(parseError));
-    logStorageError('importStorage: JSON parse failed', errorObj, { 
+    logStorageError('importStorage: JSON parse failed', errorObj, {
       errorType: 'IMPORT_STORAGE_JSON_PARSE_FAILED',
       jsonStringLength: jsonString.length,
       severity: ErrorSeverity.HIGH,
       category: ErrorCategory.CORRUPTION
     });
-    
+
     return {
       success: false,
     };
@@ -1716,7 +1739,7 @@ export async function setItemTyped<T>(key: string, data: T, validator: (data: un
       logValidationError(`Pre-save validation failed for ${key}`, undefined, { severity: ErrorSeverity.HIGH, category: ErrorCategory.VALIDATION });
       return { success: false, error: 'Data validation failed' };
     }
-    
+
     return await setItem(key, data, config);
   } catch (error) {
     logStorageError(`setItemTyped failed for ${key}`, error instanceof Error ? error : new Error('Unknown error'), { severity: ErrorSeverity.HIGH, category: ErrorCategory.STORAGE });
@@ -1732,10 +1755,10 @@ export async function setItemTyped<T>(key: string, data: T, validator: (data: un
  * @returns True if data is a Lead array
  */
 export function isLeadArray(data: unknown): data is Lead[] {
-  return Array.isArray(data) && data.every(item => 
-    typeof item === 'object' && 
-    item !== null && 
-    'id' in item && 
+  return Array.isArray(data) && data.every(item =>
+    typeof item === 'object' &&
+    item !== null &&
+    'id' in item &&
     'kva' in item &&
     'clientName' in item
   );
@@ -1747,12 +1770,12 @@ export function isLeadArray(data: unknown): data is Lead[] {
  * @returns True if data is a ColumnConfig array
  */
 export function isColumnConfigArray(data: unknown): data is ColumnConfig[] {
-  return Array.isArray(data) && data.every(item => 
-    typeof item === 'object' && 
-    item !== null && 
-    'id' in item && 
-    'fieldKey' in item && 
-    'label' in item && 
+  return Array.isArray(data) && data.every(item =>
+    typeof item === 'object' &&
+    item !== null &&
+    'id' in item &&
+    'fieldKey' in item &&
+    'label' in item &&
     'type' in item
   );
 }
@@ -1763,11 +1786,11 @@ export function isColumnConfigArray(data: unknown): data is ColumnConfig[] {
  * @returns True if data is a SavedView array
  */
 export function isSavedViewArray(data: unknown): data is SavedView[] {
-  return Array.isArray(data) && data.every(item => 
-    typeof item === 'object' && 
-    item !== null && 
-    'id' in item && 
-    'name' in item && 
+  return Array.isArray(data) && data.every(item =>
+    typeof item === 'object' &&
+    item !== null &&
+    'id' in item &&
+    'name' in item &&
     'filters' in item
   );
 }
@@ -1858,4 +1881,149 @@ export function repairColumnConfig(corruptedData: any): any[] {
       ...config
     };
   });
+}
+
+/**
+ * Validate that submitted_payload is not being modified
+ * This ensures immutability of form data after submission
+ */
+export function validateSubmittedPayloadImmutability(
+  existingLead: any,
+  updatedLead: any
+): { valid: boolean; error?: string } {
+  if (!existingLead?.submitted_payload) {
+    return { valid: true }; // No existing payload to protect
+  }
+
+  if (!updatedLead?.submitted_payload) {
+    return { valid: false, error: 'Cannot remove submitted_payload' };
+  }
+
+  // Deep comparison of submitted_payload
+  const existingPayload = JSON.stringify(existingLead.submitted_payload);
+  const updatedPayload = JSON.stringify(updatedLead.submitted_payload);
+
+  if (existingPayload !== updatedPayload) {
+    return { valid: false, error: 'Cannot modify submitted_payload after submission' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate leads array for submitted_payload mutations before persisting
+ * This should be called before saving leads to localStorage
+ */
+export function validateLeadsSubmittedPayloads(
+  existingLeads: any[],
+  updatedLeads: any[]
+): { valid: boolean; errors: string[]; correctedLeads: any[] } {
+  const errors: string[] = [];
+  const correctedLeads = updatedLeads.map(updatedLead => {
+    const existingLead = existingLeads.find((l: any) => l.id === updatedLead.id);
+    if (existingLead) {
+      const validation = validateSubmittedPayloadImmutability(existingLead, updatedLead);
+      if (!validation.valid) {
+        errors.push(`Lead ${updatedLead.id}: ${validation.error}`);
+        // Restore original submitted_payload
+        return {
+          ...updatedLead,
+          submitted_payload: existingLead.submitted_payload
+        };
+      }
+    }
+    return updatedLead;
+  });
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    correctedLeads
+  };
+}
+
+// Audit log storage key
+const SYSTEM_AUDIT_LOG_KEY = 'systemAuditLog';
+const MAX_AUDIT_LOGS = 10000; // Keep last 10k entries
+
+// Add audit log entry
+export function addAuditLog(entry: SystemAuditLog): void {
+  try {
+    const logsJson = localStorage.getItem(SYSTEM_AUDIT_LOG_KEY) || '[]';
+    const logs: SystemAuditLog[] = JSON.parse(logsJson);
+
+    logs.push(entry);
+
+    // Trim to max size (keep most recent)
+    if (logs.length > MAX_AUDIT_LOGS) {
+      logs.splice(0, logs.length - MAX_AUDIT_LOGS);
+    }
+
+    localStorage.setItem(SYSTEM_AUDIT_LOG_KEY, JSON.stringify(logs));
+  } catch (error) {
+    console.error('Error adding audit log:', error);
+  }
+}
+
+// Get all audit logs
+export function getAuditLogs(): SystemAuditLog[] {
+  try {
+    const logsJson = localStorage.getItem(SYSTEM_AUDIT_LOG_KEY) || '[]';
+    return JSON.parse(logsJson);
+  } catch (error) {
+    console.error('Error reading audit logs:', error);
+    return [];
+  }
+}
+
+// Get audit logs by entity
+export function getAuditLogsByEntity(entityType: 'lead' | 'case', entityId: string): SystemAuditLog[] {
+  const logs = getAuditLogs();
+  return logs.filter(log => log.entityType === entityType && log.entityId === entityId);
+}
+
+// Get audit logs by action type
+export function getAuditLogsByAction(actionType: AuditActionType): SystemAuditLog[] {
+  const logs = getAuditLogs();
+  return logs.filter(log => log.actionType === actionType);
+}
+
+// Get audit logs by date range
+export function getAuditLogsByDateRange(startDate: string, endDate: string): SystemAuditLog[] {
+  const logs = getAuditLogs();
+  return logs.filter(log => {
+    const logDate = new Date(log.performedAt);
+    return logDate >= new Date(startDate) && logDate <= new Date(endDate);
+  });
+}
+
+// Export audit logs as JSON (includes both system audit logs and deletion logs)
+export function exportAuditLogs(): string {
+  const systemLogs = getAuditLogs();
+
+  // Also include deletion audit logs for compliance
+  let deletionLogs = [];
+  try {
+    const deletionLogsJson = localStorage.getItem('leadDeletionAuditLog') || '[]';
+    deletionLogs = JSON.parse(deletionLogsJson);
+  } catch (error) {
+    console.error('Error reading deletion logs for export:', error);
+  }
+
+  const combinedExport = {
+    exportedAt: new Date().toISOString(),
+    systemAuditLogs: systemLogs,
+    leadDeletionAuditLogs: deletionLogs,
+    totals: {
+      systemLogs: systemLogs.length,
+      deletionLogs: deletionLogs.length
+    }
+  };
+
+  return JSON.stringify(combinedExport, null, 2);
+}
+
+// Clear audit logs (admin only)
+export function clearAuditLogs(): void {
+  localStorage.removeItem(SYSTEM_AUDIT_LOG_KEY);
 }

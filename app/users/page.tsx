@@ -1,17 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUsers } from '../context/UserContext';
 import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { User, UserRole } from '../types/processTypes';
 
 export default function UsersPage() {
-    const { users, createUser, updateUser, deleteUser, currentUser } = useUsers();
+    const { users, createUser, updateUser, deleteUser, resetUserPassword, currentUser } = useUsers();
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingUser, setEditingUser] = useState<Partial<User>>({});
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+
+    // Password reset modal state
+    const [resetPasswordModal, setResetPasswordModal] = useState<{ isOpen: boolean; userId: string; userName: string; newPassword: string | null }>(
+        { isOpen: false, userId: '', userName: '', newPassword: null }
+    );
 
     const resetForm = () => {
         setEditingUser({});
@@ -55,6 +60,44 @@ export default function UsersPage() {
             }
         }
     };
+
+    const handleResetPassword = (userId: string, userName: string) => {
+        if (confirm(`Are you sure you want to reset the password for ${userName}? This will generate a new random password.`)) {
+            const result = resetUserPassword(userId);
+            if (result.success && result.newPassword) {
+                setResetPasswordModal({
+                    isOpen: true,
+                    userId,
+                    userName,
+                    newPassword: result.newPassword
+                });
+            } else {
+                setError(result.message);
+                setTimeout(() => setError(''), 3000);
+            }
+        }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setSuccess('Password copied to clipboard!');
+            setTimeout(() => setSuccess(''), 2000);
+        });
+    };
+
+    const closePasswordModal = () => {
+        setResetPasswordModal({ isOpen: false, userId: '', userName: '', newPassword: null });
+    };
+
+    // Auto-dismiss password modal after 10 seconds
+    useEffect(() => {
+        if (resetPasswordModal.isOpen && resetPasswordModal.newPassword) {
+            const timer = setTimeout(() => {
+                closePasswordModal();
+            }, 10000);
+            return () => clearTimeout(timer);
+        }
+    }, [resetPasswordModal.isOpen, resetPasswordModal.newPassword]);
 
     return (
         <RoleGuard allowedRoles={['ADMIN']} fallback={<AccessDenied />}>
@@ -170,6 +213,8 @@ export default function UsersPage() {
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Password</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
@@ -191,6 +236,27 @@ export default function UsersPage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className="text-sm text-gray-900 font-mono">{user.username}</span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {user.plainPassword ? (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm text-gray-900 font-mono">{user.plainPassword}</span>
+                                                <button
+                                                    onClick={() => copyToClipboard(user.plainPassword!)}
+                                                    className="text-purple-600 hover:text-purple-800 transition-colors"
+                                                    title="Copy password"
+                                                >
+                                                    📋
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm text-gray-400 font-mono" title="Password not yet available (user created before this feature)">
+                                                ••••••••
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
                                             user.role === 'PROCESS_MANAGER' ? 'bg-indigo-100 text-indigo-800' :
                                                 user.role === 'PROCESS_EXECUTIVE' ? 'bg-blue-100 text-blue-800' :
@@ -209,14 +275,22 @@ export default function UsersPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                                         {user.userId !== 'admin-001' && user.userId !== currentUser?.userId && (
-                                            <button
-                                                onClick={() => handleDelete(user.userId)}
-                                                className="text-red-600 hover:text-red-900 ml-4"
-                                            >
-                                                Delete
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => handleResetPassword(user.userId, user.name)}
+                                                    className="text-amber-600 hover:text-amber-900"
+                                                >
+                                                    Reset PW
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(user.userId)}
+                                                    className="text-red-600 hover:text-red-900"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </>
                                         )}
                                     </td>
                                 </tr>
@@ -224,6 +298,45 @@ export default function UsersPage() {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Password Reset Modal */}
+                {resetPasswordModal.isOpen && resetPasswordModal.newPassword && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900">Password Reset Successful</h3>
+                                <button
+                                    onClick={closePasswordModal}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-4">
+                                New password for <strong>{resetPasswordModal.userName}</strong>:
+                            </p>
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between mb-4">
+                                <code className="text-lg font-mono text-gray-900 select-all">
+                                    {resetPasswordModal.newPassword}
+                                </code>
+                                <button
+                                    onClick={() => copyToClipboard(resetPasswordModal.newPassword!)}
+                                    className="ml-3 px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                <p className="text-sm text-amber-800">
+                                    ⚠️ Please share this password with the user securely. They should change it after logging in.
+                                </p>
+                            </div>
+                            <p className="text-xs text-gray-400 text-center">
+                                This dialog will auto-close in 10 seconds
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         </RoleGuard>
     );

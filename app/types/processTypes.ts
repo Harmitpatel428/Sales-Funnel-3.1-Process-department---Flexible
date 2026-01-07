@@ -31,10 +31,12 @@ export interface User {
     name: string;
     email: string;
     role: UserRole;
-    password: string; // Stored encrypted
+    password: string; // Stored encrypted (hashed)
+    plainPassword?: string; // Plain text password for admin display (in-memory only)
     isActive: boolean;
     createdAt: string;
     lastLoginAt?: string;
+    lastResetAt?: string; // Timestamp of last password reset
 }
 
 /**
@@ -110,6 +112,7 @@ export interface Case {
     updatedAt: string;
     closedAt?: string;
     closureReason?: string;
+    originalLeadData?: Record<string, any>; // Full lead data snapshot including submitted_payload
 
     // Denormalized lead info for display (copied at conversion time)
     clientName: string;
@@ -325,6 +328,7 @@ export interface UserContextType {
     createUser: (user: Omit<User, 'userId' | 'createdAt'>) => { success: boolean; message: string };
     updateUser: (userId: string, updates: Partial<User>) => { success: boolean; message: string };
     deleteUser: (userId: string) => { success: boolean; message: string };
+    resetUserPassword: (userId: string) => { success: boolean; newPassword?: string; message: string };
     getUserById: (userId: string) => User | undefined;
     getUsersByRole: (role: UserRole) => User[];
 
@@ -339,6 +343,10 @@ export interface UserContextType {
     canViewAllLeads: () => boolean;
     canAssignLeads: () => boolean;
     canReassignLeads: () => boolean;
+    canAccessSalesDashboard: () => boolean;
+    canAccessProcessDashboard: () => boolean;
+    canDeleteLeads: () => boolean;
+    canAssignBenefitTypes: () => boolean;
 }
 
 /**
@@ -382,6 +390,7 @@ export interface CaseContextType {
     getFilteredCases: (filters: CaseFilters) => Case[];
     getCasesByStatus: (status: ProcessStatus) => Case[];
     getCasesByAssignee: (userId: string) => Case[];
+    getCasesByAssigneeFiltered: (userId: string) => Case[];
 
     // Statistics
     getCaseStats: () => {

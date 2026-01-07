@@ -46,6 +46,8 @@ export default function AddLeadPage() {
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
+  const [hasManualEdit, setHasManualEdit] = useState(false); // Prevents auto-detection from overriding user input
+  const [isPreviewMode, setIsPreviewMode] = useState(false); // Toggle for submission preview panel
   const sanitizePhone = (num?: string) => (num ? num.replace(/[^0-9]/g, '').slice(0, 10) : '');
   const buildMobileNumbersFromLead = (leadData: any): MobileNumber[] => {
     const mobileNumbers: MobileNumber[] = [
@@ -296,7 +298,11 @@ export default function AddLeadPage() {
   }, [leads]);
 
   // Auto-detect client name when leads are loaded and first mobile number is complete
+  // Disable auto-detection in edit mode and after manual edits to preserve user input
   useEffect(() => {
+    // Disable auto-detection in edit mode or after manual edits
+    if (isEditMode || hasManualEdit) return;
+
     if (leads.length > 0 && formData.mobileNumbers[0]?.number?.length === 10 && !customFields.clientName?.trim()) {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 useEffect: Attempting auto-detection for mobile:', formData.mobileNumbers[0].number);
@@ -341,7 +347,7 @@ export default function AddLeadPage() {
         }
       }
     }
-  }, [leads, formData.mobileNumbers[0]?.number, customFields.clientName]);
+  }, [leads, formData.mobileNumbers[0]?.number, customFields.clientName, isEditMode, hasManualEdit]);
 
   // Handle ESC key to close/cancel form
   useEffect(() => {
@@ -545,6 +551,9 @@ export default function AddLeadPage() {
 
   // Handle mobile number changes - only allow numeric input with max 10 digits
   const handleMobileNumberChange = (index: number, value: string) => {
+    // Mark that user has manually edited - disables auto-detection
+    setHasManualEdit(true);
+
     // Only allow numeric characters (0-9) and limit to 10 digits
     const numericValue = value.replace(/[^0-9]/g, '').slice(0, 10);
 
@@ -659,6 +668,9 @@ export default function AddLeadPage() {
 
   // Handle custom field change
   const handleCustomFieldChange = (fieldKey: string, value: any) => {
+    // Mark that user has manually edited - disables auto-detection
+    setHasManualEdit(true);
+
     // Get column configuration for validation
     const visibleColumns = getVisibleColumns();
     const columnConfig = visibleColumns.find(col => col.fieldKey === fieldKey);
@@ -806,6 +818,15 @@ export default function AddLeadPage() {
           ...restCustom
         };
 
+        // Capture immutable snapshot of exact form values at submission time
+        const submittedPayload = {
+          ...formData,
+          ...restCustom,
+          unitType: formData.unitType === 'Other' ? customUnitType : formData.unitType,
+          submittedAt: new Date().toISOString()
+        };
+        updatedLead.submitted_payload = submittedPayload;
+
         // Simulate API call delay
         await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -946,6 +967,16 @@ export default function AddLeadPage() {
           // Include custom field values (excluding mobileNumber and companyLocation)
           ...restCustom
         };
+
+        // Capture immutable snapshot of exact form values at submission time
+        const submittedPayload = {
+          ...formData,
+          ...restCustom,
+          unitType: formData.unitType === 'Other' ? customUnitType : formData.unitType,
+          mobileNumbers: updatedMobileNumbers,
+          submittedAt: new Date().toISOString()
+        };
+        newLead.submitted_payload = submittedPayload;
 
         // Simulate API call delay
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1623,8 +1654,66 @@ export default function AddLeadPage() {
             );
           })()}
 
+          {/* Preview Mode Panel */}
+          {/* Preview Mode Panel - Shows exact snapshot that will be saved */}
+          {isPreviewMode && (() => {
+            // Build the exact same snapshot that will be saved as submitted_payload
+            const previewPayload = {
+              ...formData,
+              unitType: formData.unitType === 'Other' ? customUnitType : formData.unitType,
+              ...customFields,
+              submittedAt: new Date().toISOString()
+            };
+            return (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                  📋 Preview: Exact Snapshot That Will Be Saved
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                  <div><strong>Status:</strong> {previewPayload.status}</div>
+                  <div><strong>Unit Type:</strong> {previewPayload.unitType}</div>
+                  <div><strong>Follow-up Date:</strong> {previewPayload.followUpDate || 'Not set'}</div>
+                  <div><strong>Company Location:</strong> {previewPayload.companyLocation || 'Not set'}</div>
+                  {previewPayload.mobileNumbers.filter((m: any) => m.number).map((m: any, i: number) => (
+                    <div key={i}>
+                      <strong>Mobile {i + 1}:</strong> {m.number} {m.isMain ? '(Main)' : ''}
+                      {m.name && ` - ${m.name}`}
+                    </div>
+                  ))}
+                  {/* Display custom fields from previewPayload */}
+                  {Object.entries(customFields).filter(([_, v]) => v).map(([k, v]) => (
+                    <div key={k}><strong>{k}:</strong> {String(v)}</div>
+                  ))}
+                </div>
+                <div className="mt-3 p-2 bg-white rounded border border-blue-100">
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-blue-700 font-medium">View Full Payload (JSON)</summary>
+                    <pre className="mt-2 p-2 bg-gray-100 rounded overflow-x-auto text-[10px] max-h-40">
+                      {JSON.stringify(previewPayload, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+                <p className="text-xs text-blue-600 mt-2 italic">
+                  ⚠️ This snapshot will be saved as submitted_payload and <strong>cannot be modified</strong> after submission.
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Form Actions */}
           <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-200">
+            {/* Preview Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsPreviewMode(!isPreviewMode)}
+              className={`flex-1 sm:flex-none sm:px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-sm ${isPreviewMode
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'
+                }`}
+            >
+              {isPreviewMode ? '📋 Hide Preview' : '👁️ Preview Submission'}
+            </button>
+
             <button
               type="submit"
               disabled={isSubmitting}

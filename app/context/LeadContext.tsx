@@ -2,9 +2,11 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { parseDateFromDDMMYYYY } from '../utils/dateUtils';
-import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig, Activity } from '../types/shared';
+import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig, Activity, LeadDeletionAuditLog } from '../types/shared';
 import { getEmployeeName } from '../utils/employeeStorage';
 import { sanitizeLead } from '../utils/sanitizer'; // SV-004: XSS prevention
+import { addAuditLog } from '../utils/storage';
+import { SystemAuditLog, AuditActionType } from '../types/shared';
 
 // Helper function to format today's date as DD-MM-YYYY
 const todayDDMMYYYY = () => {
@@ -40,6 +42,34 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     // Fallback to native Date (ISO etc.)
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
+  };
+
+  const createLeadAuditLog = (
+    actionType: AuditActionType,
+    leadId: string,
+    description: string,
+    metadata?: Record<string, any>
+  ): void => {
+    try {
+      const currentUserJson = localStorage.getItem('currentUser');
+      const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
+
+      const auditLog: SystemAuditLog = {
+        id: crypto.randomUUID(),
+        actionType,
+        entityType: 'lead',
+        entityId: leadId,
+        performedBy: currentUser?.userId || 'system',
+        performedByName: currentUser?.name || 'System',
+        performedAt: new Date().toISOString(),
+        description,
+        metadata
+      };
+
+      addAuditLog(auditLog);
+    } catch (error) {
+      console.error('Error creating lead audit log:', error);
+    }
   };
 
   // Load leads from localStorage
@@ -116,13 +146,23 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
 
     // Ensure the lead has all required flags set correctly
+    // Preserve submitted_payload for immutability
     const finalLead = {
       ...leadWithDefaults,
       isUpdated: false,
       isDeleted: lead.isDeleted || false,
       isDone: lead.isDone || false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      submitted_payload: lead.submitted_payload // Preserve submitted_payload from input
     };
+
+    // Create audit log
+    createLeadAuditLog(
+      'LEAD_CREATED',
+      finalLead.id,
+      `Lead created: ${finalLead.clientName || finalLead.company}`,
+      { kva: finalLead.kva, status: finalLead.status }
+    );
 
     setLeads(prev => [...prev, finalLead]);
   }, []);
@@ -135,12 +175,28 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       prev.map(lead => lead.id === sanitizedLead.id ? {
         ...sanitizedLead,
         isUpdated: true,
-        lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate
+        lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate,
+        // Preserve original submitted_payload - this field is immutable after submission
+        submitted_payload: lead.submitted_payload || sanitizedLead.submitted_payload
       } : lead)
     );
-  }, []);
+
+    // Create audit log for updates
+    createLeadAuditLog(
+      'LEAD_UPDATED',
+      sanitizedLead.id,
+      `Lead updated: ${sanitizedLead.clientName || sanitizedLead.company}`,
+      {
+        oldStatus: leads.find(l => l.id === sanitizedLead.id)?.status,
+        newStatus: sanitizedLead.status
+      }
+    );
+  }, [leads]);
 
   const deleteLead = useCallback((id: string) => {
+    // Get lead info before deletion for audit log
+    const leadToDelete = leads.find(l => l.id === id);
+
     setLeads(prev =>
       prev.map(lead =>
         lead.id === id
@@ -148,13 +204,46 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           : lead
       )
     );
-  }, []);
+
+    // Create audit log for soft delete
+    if (leadToDelete) {
+      createLeadAuditLog(
+        'LEAD_DELETED',
+        id,
+        `Lead soft-deleted: ${leadToDelete.clientName || leadToDelete.company}`,
+        {
+          previousStatus: leadToDelete.status,
+          softDelete: true,
+          leadSnapshot: { ...leadToDelete }
+        }
+      );
+    }
+  }, [leads]);
 
   const permanentlyDeleteLead = useCallback((id: string) => {
+    // Get lead info before deletion for audit log
+    const leadToDelete = leads.find(l => l.id === id);
+
+    // Create audit log before removing the lead
+    if (leadToDelete) {
+      createLeadAuditLog(
+        'LEAD_PERMANENTLY_DELETED',
+        id,
+        `Lead permanently deleted: ${leadToDelete.clientName || leadToDelete.company}`,
+        {
+          leadSnapshot: { ...leadToDelete }
+        }
+      );
+    }
+
     setLeads(prev => prev.filter(lead => lead.id !== id));
-  }, []);
+  }, [leads]);
 
   const markAsDone = useCallback((id: string) => {
+    // Get lead info before status change for audit log
+    const leadToMark = leads.find(l => l.id === id);
+    const oldStatus = leadToMark?.status;
+
     setLeads(prev =>
       prev.map(l => (l.id === id ? {
         ...l,
@@ -162,7 +251,21 @@ export function LeadProvider({ children }: { children: ReactNode }) {
         lastActivityDate: new Date().toISOString() // Update timestamp when marked as done
       } : l))
     );
-  }, []);
+
+    // Create audit log for status change
+    if (leadToMark) {
+      createLeadAuditLog(
+        'LEAD_STATUS_CHANGED',
+        id,
+        `Lead marked as done: ${leadToMark.clientName || leadToMark.company}`,
+        {
+          oldStatus,
+          newStatus: 'Done',
+          isDone: true
+        }
+      );
+    }
+  }, [leads]);
 
   const addActivity = useCallback((
     leadId: string,
@@ -213,6 +316,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           : lead
       )
     );
+
+    // Create audit log
+    createLeadAuditLog(
+      'LEAD_ASSIGNED',
+      leadId,
+      `Lead assigned to user ${userId}`,
+      { assignedBy, assignedTo: userId }
+    );
   }, []);
 
   const unassignLead = useCallback((leadId: string) => {
@@ -229,7 +340,149 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           : lead
       )
     );
-  }, []);
+
+    // Create audit log
+    createLeadAuditLog(
+      'LEAD_UNASSIGNED',
+      leadId,
+      `Lead unassigned`,
+      { previousAssignee: leads.find(l => l.id === leadId)?.assignedTo }
+    );
+  }, [leads]);
+
+  const forwardToProcess = useCallback(async (
+    leadId: string,
+    reason?: string,
+    deletedFrom: 'sales_dashboard' | 'all_leads' = 'sales_dashboard'
+  ): Promise<{ success: boolean; message: string; caseIds?: string[] }> => {
+    // Find the lead
+    const lead = leads.find(l => l.id === leadId);
+    if (!lead) {
+      return { success: false, message: 'Lead not found' };
+    }
+
+    // Check if lead is already deleted
+    if (lead.isDeleted) {
+      return { success: false, message: 'Lead is already deleted' };
+    }
+
+    try {
+      // Get current user info
+      const currentUserJson = localStorage.getItem('currentUser');
+      const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
+
+      // Create case(s) in Process pipeline using CaseContext
+      // Access CaseContext's createCase method via localStorage to avoid circular dependency
+      const casesJson = localStorage.getItem('processCases') || '[]';
+      const existingCases = JSON.parse(casesJson);
+
+      // Generate case data from lead
+      const now = new Date().toISOString();
+      let caseCounter = 1;
+      try {
+        caseCounter = parseInt(localStorage.getItem('caseCounter') || '0', 10) + 1;
+        localStorage.setItem('caseCounter', caseCounter.toString());
+      } catch (e) { console.error(e) }
+
+      const year = new Date().getFullYear();
+      const paddedCounter = caseCounter.toString().padStart(4, '0');
+      const caseNumber = `CASE-${year}-${paddedCounter}`;
+      const caseId = crypto.randomUUID();
+
+      // Create a single case with full lead data preserved
+      const newCase = {
+        caseId,
+        leadId: lead.id,
+        caseNumber,
+        schemeType: 'Forward from Deletion', // Default scheme type
+        caseType: 'Standard',
+        benefitTypes: [], // Empty initially, can be assigned later
+        companyType: lead.unitType || 'Other',
+        contacts: lead.mobileNumbers?.map(m => ({
+          name: m.name || lead.clientName,
+          designation: 'Contact',
+          customDesignation: '',
+          phoneNumber: m.number
+        })) || [],
+        assignedProcessUserId: null,
+        assignedRole: null,
+        processStatus: 'DOCUMENTS_PENDING',
+        priority: 'MEDIUM',
+        createdAt: now,
+        updatedAt: now,
+        // Preserve all lead data - use submitted_payload if available
+        clientName: lead.submitted_payload?.clientName || lead.clientName || '',
+        company: lead.submitted_payload?.company || lead.company || '',
+        mobileNumber: lead.submitted_payload?.mobileNumber || lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
+        consumerNumber: lead.submitted_payload?.consumerNumber || lead.consumerNumber,
+        kva: lead.submitted_payload?.kva || lead.kva,
+        // Store full submitted_payload for complete data preservation
+        originalLeadData: lead.submitted_payload || lead
+      };
+
+      existingCases.push(newCase);
+      localStorage.setItem('processCases', JSON.stringify(existingCases));
+
+      // Create audit log entry
+      const auditLog: LeadDeletionAuditLog = {
+        id: crypto.randomUUID(),
+        leadId: lead.id,
+        leadData: { ...lead }, // Full snapshot
+        caseIds: [caseId],
+        deletedBy: currentUser?.userId || 'unknown',
+        deletedByName: currentUser?.name || 'Unknown User',
+        deletedFrom,
+        deletedAt: now,
+        reason: reason || undefined,
+        metadata: {
+          leadStatus: lead.status,
+          leadCreatedAt: lead.createdAt,
+          hasActivities: (lead.activities?.length || 0) > 0
+        }
+      };
+
+      // Store audit log
+      const auditLogsJson = localStorage.getItem('leadDeletionAuditLog') || '[]';
+      const auditLogs = JSON.parse(auditLogsJson);
+      auditLogs.push(auditLog);
+      localStorage.setItem('leadDeletionAuditLog', JSON.stringify(auditLogs));
+
+      // Create system audit log for forward-to-process action
+      createLeadAuditLog(
+        'LEAD_FORWARDED_TO_PROCESS',
+        lead.id,
+        `Lead forwarded to process: ${lead.clientName || lead.company}`,
+        {
+          deletedFrom,
+          reason: reason || undefined,
+          caseIds: [caseId],
+          caseNumber,
+          leadSnapshot: { ...lead }
+        }
+      );
+
+      // Now soft-delete the lead (mark as deleted, don't remove)
+      setLeads(prev =>
+        prev.map(l =>
+          l.id === leadId
+            ? { ...l, isDeleted: true, lastActivityDate: now }
+            : l
+        )
+      );
+
+      return {
+        success: true,
+        message: `Lead forwarded to Process pipeline and marked as deleted. Case ${caseNumber} created.`,
+        caseIds: [caseId]
+      };
+    } catch (error) {
+      console.error('Error forwarding lead to process:', error);
+      return {
+        success: false,
+        message: `Failed to forward lead: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }, [leads]);
 
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
@@ -594,7 +847,8 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     skipPersistence,
     setSkipPersistence,
     assignLead,
-    unassignLead
+    unassignLead,
+    forwardToProcess
   }), [
     leads,
     savedViews,
@@ -615,7 +869,8 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     getLeadWithDefaults,
     validateLeadAgainstColumns,
     assignLead,
-    unassignLead
+    unassignLead,
+    forwardToProcess
   ]);
 
   return (

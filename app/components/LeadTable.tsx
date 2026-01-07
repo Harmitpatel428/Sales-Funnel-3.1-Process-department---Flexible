@@ -414,6 +414,12 @@ const LeadTable = React.memo(function LeadTable({
     return mainNumber || lead.mobileNumber || '';
   }, [getMobileNumbers]);
 
+  // Helper function to get display value from submitted_payload or current lead fields
+  // Prioritizes submitted_payload as the source of truth for display
+  const getDisplayValue = useCallback((lead: Lead, fieldKey: string): any => {
+    return lead.submitted_payload?.[fieldKey] ?? (lead as any)[fieldKey];
+  }, []);
+
   // Memoized row component for virtual scrolling
   const LeadRow = React.memo<{
     index: number;
@@ -435,6 +441,7 @@ const LeadTable = React.memo(function LeadTable({
       setMobileModalOpen: (leadId: string | null) => void;
       getMobileNumbers: (lead: Lead) => any[];
       getMainMobileNumber: (lead: Lead) => string;
+      getDisplayValue: (lead: Lead, fieldKey: string) => any;
       highlightedLeadId?: string | null;
     };
   }>(({ index, style, data }) => {
@@ -494,7 +501,9 @@ const LeadTable = React.memo(function LeadTable({
         )}
         {data.getVisibleColumns().map((column) => {
           const fieldKey = column.fieldKey;
-          const value = (lead as any)[fieldKey] ?? '';
+          // Use mutable value for editable cells, getDisplayValue (submitted_payload) for read-only display
+          const mutableValue = (lead as any)[fieldKey] ?? '';
+          const snapshotValue = data.getDisplayValue(lead, fieldKey);
 
           // Debug logging for dynamic columns
           if (process.env.NODE_ENV === 'development') {
@@ -506,7 +515,8 @@ const LeadTable = React.memo(function LeadTable({
           // Get the column configuration for this field
           const columnConfig = data.getColumnByKey(fieldKey);
           const defaultValue = columnConfig?.defaultValue || '';
-          const displayValue = (lead as any)[fieldKey] ?? defaultValue;
+          // For display, prioritize submitted_payload via getDisplayValue
+          const displayValue = snapshotValue ?? defaultValue;
 
           // Special handling for mobile number field
           if (fieldKey === 'mobileNumber') {
@@ -574,11 +584,13 @@ const LeadTable = React.memo(function LeadTable({
 
           // Special handling for status field
           if (fieldKey === 'status') {
+            // Use snapshotValue for display, mutableValue for editable cells
+            const statusDisplayValue = snapshotValue ?? mutableValue;
             return (
               <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
                 {data.editable ? (
                   <EditableCell
-                    value={value}
+                    value={mutableValue}
                     type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type}
                     options={column.options || ['New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'Work Alloted', 'Hotlead', 'Mandate Sent', 'Documentation', 'Others']}
                     onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)}
@@ -588,8 +600,8 @@ const LeadTable = React.memo(function LeadTable({
                     className="text-xs"
                   />
                 ) : (
-                  <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${data.getStatusColor(lead.status)}`}>
-                    {lead.status === 'Work Alloted' ? 'WAO' : lead.status}
+                  <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${data.getStatusColor(statusDisplayValue || lead.status)}`}>
+                    {statusDisplayValue === 'Work Alloted' ? 'WAO' : statusDisplayValue}
                   </span>
                 )}
               </td>
@@ -598,11 +610,13 @@ const LeadTable = React.memo(function LeadTable({
 
           // Special handling for date fields
           if (column.type === 'date') {
+            // Use snapshotValue for display, mutableValue for editable cells
+            const dateDisplayValue = snapshotValue ?? mutableValue;
             return (
               <td key={fieldKey} className="px-0.5 py-0.5 whitespace-nowrap">
                 {data.editable ? (
                   <EditableCell
-                    value={data.formatDate(value)}
+                    value={data.formatDate(mutableValue)}
                     type="date"
                     onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)}
                     placeholder="DD-MM-YYYY"
@@ -611,7 +625,7 @@ const LeadTable = React.memo(function LeadTable({
                     className="text-xs min-w-16"
                   />
                 ) : (
-                  <div className="text-xs text-black min-w-16">{data.formatDate(value)}</div>
+                  <div className="text-xs text-black min-w-16">{data.formatDate(dateDisplayValue)}</div>
                 )}
               </td>
             );
@@ -788,6 +802,7 @@ const LeadTable = React.memo(function LeadTable({
                 setMobileModalOpen,
                 getMobileNumbers,
                 getMainMobileNumber,
+                getDisplayValue,
                 highlightedLeadId,
               }}
             >
@@ -818,6 +833,7 @@ const LeadTable = React.memo(function LeadTable({
                     setMobileModalOpen,
                     getMobileNumbers,
                     getMainMobileNumber,
+                    getDisplayValue,
                     highlightedLeadId,
                   }}
                 />

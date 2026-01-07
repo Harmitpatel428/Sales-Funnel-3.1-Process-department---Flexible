@@ -35,6 +35,30 @@ function generateUUID(): string {
     });
 }
 
+// Generate secure random password (12+ chars, mixed case, numbers, symbols)
+function generateSecurePassword(): string {
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numbers = '0123456789';
+    const symbols = '!@#$%^&*';
+    const allChars = lowercase + uppercase + numbers + symbols;
+
+    // Ensure at least one of each type
+    let password = '';
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += symbols[Math.floor(Math.random() * symbols.length)];
+
+    // Fill remaining 8 characters randomly
+    for (let i = 0; i < 8; i++) {
+        password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Shuffle the password
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+}
+
 // ============================================================================
 // DEFAULT ADMIN USER
 // ============================================================================
@@ -46,6 +70,7 @@ const DEFAULT_ADMIN: User = {
     email: 'admin@company.com',
     role: 'ADMIN',
     password: hashPassword('admin123'),
+    plainPassword: 'admin123', // Plain password for Admin visibility
     isActive: true,
     createdAt: new Date().toISOString()
 };
@@ -102,13 +127,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Persist users to localStorage
+    // SECURITY NOTE: Plain passwords are persisted for Admin visibility in offline desktop app
+    // Persist users to localStorage (including plainPassword for Admin access)
     useEffect(() => {
         if (!isHydrated) return;
 
         const timeoutId = setTimeout(() => {
             try {
-                localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+                // Persist users with plainPassword for Admin visibility
+                const usersToSave = users;
+                localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(usersToSave));
             } catch (error) {
                 console.error('Error saving users:', error);
             }
@@ -147,10 +175,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
             loginAt: new Date().toISOString()
         };
 
-        // Update last login
+        // Update last login and capture plainPassword in-memory for this user
+        // This allows admin to see passwords of users who have logged in during this session
         setUsers(prev => prev.map(u =>
             u.userId === user.userId
-                ? { ...u, lastLoginAt: new Date().toISOString() }
+                ? { ...u, lastLoginAt: new Date().toISOString(), plainPassword: password }
                 : u
         ));
 
@@ -185,6 +214,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             ...userData,
             userId: generateUUID(),
             password: hashPassword(userData.password),
+            plainPassword: userData.password,
             createdAt: new Date().toISOString()
         };
 
@@ -209,8 +239,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
             }
         }
 
-        // If updating password, hash it
+        // If updating password, hash it and store plain
         if (updates.password) {
+            updates.plainPassword = updates.password;
             updates.password = hashPassword(updates.password);
         }
 
@@ -235,6 +266,37 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setUsers(prev => prev.filter(u => u.userId !== userId));
         return { success: true, message: 'User deleted successfully' };
     }, [currentUser]);
+
+    const resetUserPassword = useCallback((userId: string): { success: boolean; newPassword?: string; message: string } => {
+        // RBAC: Only ADMIN can reset passwords
+        if (!currentUser || currentUser.role !== 'ADMIN') {
+            return { success: false, message: 'Unauthorized: Only admins can reset passwords' };
+        }
+
+        // Prevent resetting own password through this method
+        if (currentUser.userId === userId) {
+            return { success: false, message: 'Cannot reset your own password. Use profile settings instead.' };
+        }
+
+        const user = users.find(u => u.userId === userId);
+        if (!user) {
+            return { success: false, message: 'User not found' };
+        }
+
+        // Generate new secure password
+        const newPassword = generateSecurePassword();
+        const hashedPassword = hashPassword(newPassword);
+        const now = new Date().toISOString();
+
+        // Update user with new password (plainPassword in-memory only)
+        setUsers(prev => prev.map(u =>
+            u.userId === userId
+                ? { ...u, password: hashedPassword, plainPassword: newPassword, lastResetAt: now }
+                : u
+        ));
+
+        return { success: true, newPassword, message: 'Password reset successfully' };
+    }, [currentUser, users]);
 
     const getUserById = useCallback((userId: string): User | undefined => {
         return users.find(u => u.userId === userId);
@@ -289,6 +351,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return hasRole(['SALES_MANAGER', 'ADMIN']);
     }, [hasRole]);
 
+    const canAccessSalesDashboard = useCallback((): boolean => {
+        return hasRole(['ADMIN', 'SALES_EXECUTIVE', 'SALES_MANAGER']);
+    }, [hasRole]);
+
+    const canAccessProcessDashboard = useCallback((): boolean => {
+        return hasRole(['ADMIN', 'PROCESS_MANAGER', 'PROCESS_EXECUTIVE']);
+    }, [hasRole]);
+
+    const canDeleteLeads = useCallback((): boolean => {
+        return hasRole(['ADMIN']);
+    }, [hasRole]);
+
+    const canAssignBenefitTypes = useCallback((): boolean => {
+        return hasRole(['ADMIN', 'PROCESS_MANAGER']);
+    }, [hasRole]);
+
     // ============================================================================
     // CONTEXT VALUE
     // ============================================================================
@@ -303,6 +381,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         createUser,
         updateUser,
         deleteUser,
+        resetUserPassword,
         getUserById,
         getUsersByRole,
         hasRole,
@@ -314,7 +393,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
         canViewReports,
         canViewAllLeads,
         canAssignLeads,
-        canReassignLeads
+        canReassignLeads,
+        canAccessSalesDashboard,
+        canAccessProcessDashboard,
+        canDeleteLeads,
+        canAssignBenefitTypes
     };
 
     // Show loading state

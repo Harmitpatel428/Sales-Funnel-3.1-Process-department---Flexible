@@ -98,7 +98,7 @@ const _LEGACY_IMPORT_FIELD_MAPPINGS = {
 
 export default function AllLeadsPage() {
   const router = useRouter();
-  const { leads, setLeads, permanentlyDeleteLead, updateLead } = useLeads();
+  const { leads, setLeads, permanentlyDeleteLead, updateLead, forwardToProcess } = useLeads();
   // const { cases, updateCase } = useCases();
   const { headerConfig } = useHeaders();
   const { getVisibleColumns } = useColumns();
@@ -752,9 +752,17 @@ export default function AllLeadsPage() {
   };
 
   // Helper functions for delete operations
-  const performSingleDelete = (leadId: string) => {
-    permanentlyDeleteLead(leadId);
-    showToastNotification('Lead permanently deleted', 'success');
+  const performSingleDelete = async (leadId: string, reason?: string) => {
+    const result = await forwardToProcess(leadId, reason, 'all_leads');
+
+    if (result.success) {
+      showToastNotification(
+        `Lead forwarded to Process pipeline and deleted. Case ${result.caseIds?.[0] || ''} created.`,
+        'success'
+      );
+    } else {
+      showToastNotification(`Failed to delete lead: ${result.message}`, 'error');
+    }
 
     // Close Lead Detail Modal if it's open
     if (showLeadModal) {
@@ -763,19 +771,37 @@ export default function AllLeadsPage() {
     }
   };
 
-  const performBulkDelete = (leadIds: string[]) => {
-    leadIds.forEach(leadId => permanentlyDeleteLead(leadId));
+  const performBulkDelete = async (leadIds: string[], reason?: string) => {
+    const forwardPromises = leadIds.map(leadId =>
+      forwardToProcess(leadId, reason, 'all_leads')
+    );
+
+    const results = await Promise.all(forwardPromises);
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.length - successCount;
+
     setSelectedLeads(new Set());
-    showToastNotification(`${leadIds.length} leads permanently deleted`, 'success');
+
+    if (failCount === 0) {
+      showToastNotification(
+        `${successCount} lead(s) forwarded to Process pipeline and deleted successfully`,
+        'success'
+      );
+    } else {
+      showToastNotification(
+        `${successCount} succeeded, ${failCount} failed. Check console for details.`,
+        'error'
+      );
+    }
   };
 
-  const handlePasswordSuccess = () => {
+  const handlePasswordSuccess = async (reason?: string) => {
     if (!pendingDeleteOperation) return;
 
     if (pendingDeleteOperation.type === 'single' && pendingDeleteOperation.lead) {
-      performSingleDelete(pendingDeleteOperation.lead.id);
+      await performSingleDelete(pendingDeleteOperation.lead.id, reason);
     } else if (pendingDeleteOperation.type === 'bulk' && pendingDeleteOperation.leadIds) {
-      performBulkDelete(pendingDeleteOperation.leadIds);
+      await performBulkDelete(pendingDeleteOperation.leadIds, reason);
     }
 
     setShowPasswordModal(false);
@@ -2906,13 +2932,14 @@ export default function AllLeadsPage() {
             isOpen={showPasswordModal}
             onClose={handlePasswordCancel}
             operation="rowManagement"
-            onSuccess={handlePasswordSuccess}
+            onSuccess={(reason) => handlePasswordSuccess(reason)}
             title={pendingDeleteOperation?.type === 'bulk' ? 'Delete Multiple Leads' : 'Delete Lead'}
             description={
               pendingDeleteOperation?.type === 'bulk'
                 ? `You are about to permanently delete ${pendingDeleteOperation.leadIds?.length || 0} leads from the system. This action cannot be undone.`
                 : `You are about to permanently delete this lead from the system: ${pendingDeleteOperation?.lead?.clientName} - ${pendingDeleteOperation?.lead?.company}. This action cannot be undone.`
             }
+            captureReason={true}
           />
         </Suspense>
       )}

@@ -6,10 +6,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface DeleteConfirmModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onConfirm: () => void;
+    onConfirm: (reason?: string) => void;
     title?: string;
     message?: string;
     itemName?: string;
+    captureReason?: boolean; // New prop to enable reason capture
 }
 
 const DELETE_PASSWORD = 'admin123'; // You can change this or make it configurable
@@ -20,9 +21,11 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
     onConfirm,
     title = 'Delete Document',
     message = 'This action cannot be undone. Please enter password to confirm.',
-    itemName
+    itemName,
+    captureReason = false // Default to false for backward compatibility
 }) => {
     const [password, setPassword] = useState('');
+    const [reason, setReason] = useState('');
     const [error, setError] = useState('');
     const [isShaking, setIsShaking] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +33,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
     useEffect(() => {
         if (isOpen) {
             setPassword('');
+            setReason(''); // Reset reason
             setError('');
             // Focus input after modal opens
             setTimeout(() => inputRef.current?.focus(), 100);
@@ -56,7 +60,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         e.preventDefault();
 
         if (password === DELETE_PASSWORD) {
-            onConfirm();
+            onConfirm(reason || undefined); // Pass reason to callback
             onClose();
         } else {
             setError('Incorrect password. Please try again.');
@@ -157,6 +161,21 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
                                                 </p>
                                             )}
                                         </div>
+
+                                        {captureReason && (
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                    Reason for Deletion (Optional)
+                                                </label>
+                                                <textarea
+                                                    value={reason}
+                                                    onChange={(e) => setReason(e.target.value)}
+                                                    placeholder="Enter reason for deletion..."
+                                                    rows={3}
+                                                    className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 text-gray-900 dark:text-white dark:bg-gray-800 placeholder-gray-400 transition-colors border-gray-300 dark:border-gray-600"
+                                                />
+                                            </div>
+                                        )}
 
                                         {/* Buttons */}
                                         <div className="flex gap-3">
