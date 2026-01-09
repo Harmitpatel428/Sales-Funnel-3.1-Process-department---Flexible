@@ -16,13 +16,13 @@ interface ColumnManagementModalProps {
   };
 }
 
-const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
+const ColumnManagementModal = React.memo<ColumnManagementModalProps>(function ColumnManagementModal({
   isOpen,
   onClose,
   onColumnAdded,
   onColumnDeleted,
   operation
-}) => {
+}) {
   const [activeTab, setActiveTab] = useState<'add' | 'delete' | 'reorder'>('add');
   const [newColumn, setNewColumn] = useState({
     fieldKey: '',
@@ -41,7 +41,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  
+
   // Staging state for pending changes
   const [stagedColumns, setStagedColumns] = useState<ColumnConfig[]>([]);
   const [pendingChanges, setPendingChanges] = useState<{
@@ -57,11 +57,11 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  const { 
-    columns, 
-    addColumn, 
-    deleteColumn, 
-    reorderColumns, 
+  const {
+    columns,
+    addColumn,
+    deleteColumn,
+    reorderColumns,
     toggleColumnVisibility,
     getColumnByKey
   } = useColumns();
@@ -79,7 +79,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
         visibilityToggles: []
       });
       setHasUnsavedChanges(false);
-      
+
       // Set active tab based on operation
       if (operation?.type === 'delete') {
         setActiveTab('delete');
@@ -88,7 +88,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       } else {
         setActiveTab('add');
       }
-      
+
       setNewColumn({
         fieldKey: '',
         label: '',
@@ -122,14 +122,14 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
   // ESC key handler
   useEffect(() => {
     if (!isOpen) return;
-    
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         handleClose();
       }
     };
-    
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
@@ -150,7 +150,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       // Check if field key already exists in current columns or pending additions
       const existingInColumns = columns.some(col => col.fieldKey === newColumn.fieldKey);
       const existingInAdditions = pendingChanges.additions.some(col => col.fieldKey === newColumn.fieldKey);
-      
+
       if (existingInColumns || existingInAdditions) {
         setError('A column with this field key already exists.');
         return;
@@ -179,7 +179,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       // Add to staged columns for immediate UI feedback
       setStagedColumns(prev => {
         const newStagedColumns = [...prev];
-        
+
         // Handle column insertion based on operation
         if (operation?.type === 'addBefore' && operation.fieldKey) {
           const targetIndex = newStagedColumns.findIndex(col => col.fieldKey === operation.fieldKey);
@@ -198,17 +198,17 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
         } else {
           newStagedColumns.push(columnConfig);
         }
-        
+
         // Update pending reorders to match the staged order
         const newOrder = newStagedColumns.map(c => c.fieldKey);
         setPendingChanges(pc => ({ ...pc, reorders: newOrder }));
-        
+
         return newStagedColumns;
       });
 
       setHasUnsavedChanges(true);
       setSuccess('Column will be added when you click Save');
-      
+
       // Reset form
       setNewColumn({
         fieldKey: '',
@@ -255,14 +255,14 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
 
       // Check if this column is in pending additions - if so, remove from additions instead
       const isPendingAddition = pendingChanges.additions.some(col => col.fieldKey === fieldKey);
-      
+
       if (isPendingAddition) {
         // Remove from pending additions
         setPendingChanges(prev => ({
           ...prev,
           additions: prev.additions.filter(col => col.fieldKey !== fieldKey)
         }));
-        
+
         // Remove from staged columns
         setStagedColumns(prev => {
           const newStagedColumns = prev.filter(col => col.fieldKey !== fieldKey);
@@ -271,7 +271,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
           setPendingChanges(pc => ({ ...pc, reorders: newOrder }));
           return newStagedColumns;
         });
-        
+
         setSuccess('Column addition cancelled');
       } else {
         // Stage the deletion
@@ -288,7 +288,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
           setPendingChanges(pc => ({ ...pc, reorders: newOrder }));
           return newStagedColumns;
         });
-        
+
         setSuccess('Column will be deleted when you click Save');
       }
 
@@ -305,11 +305,11 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
     if (!column) return;
 
     const newVisibility = !column.visible;
-    
+
     // Update staged columns for immediate UI feedback
-    setStagedColumns(prev => 
-      prev.map(col => 
-        col.fieldKey === fieldKey 
+    setStagedColumns(prev =>
+      prev.map(col =>
+        col.fieldKey === fieldKey
           ? { ...col, visible: newVisibility }
           : col
       )
@@ -318,7 +318,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
     // Update or add to pending visibility toggles
     setPendingChanges(prev => {
       const existingToggleIndex = prev.visibilityToggles.findIndex(toggle => toggle.fieldKey === fieldKey);
-      
+
       if (existingToggleIndex !== -1) {
         // Update existing toggle
         const updatedToggles = [...prev.visibilityToggles];
@@ -351,14 +351,14 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
 
   const handleDrop = (e: React.DragEvent, targetFieldKey: string) => {
     e.preventDefault();
-    
+
     if (!draggedColumn || draggedColumn === targetFieldKey) {
       return;
     }
 
     const draggedIndex = stagedColumns.findIndex(col => col.fieldKey === draggedColumn);
     const targetIndex = stagedColumns.findIndex(col => col.fieldKey === targetFieldKey);
-    
+
     if (draggedIndex === -1 || targetIndex === -1) {
       return;
     }
@@ -367,17 +367,17 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
     const [draggedItem] = newOrder.splice(draggedIndex, 1);
     if (!draggedItem) return;
     newOrder.splice(targetIndex, 0, draggedItem);
-    
+
     // Update staged columns with new order
     setStagedColumns(newOrder);
-    
+
     // Store the new field key order in pending changes
     const fieldKeys = newOrder.map(col => col.fieldKey);
     setPendingChanges(prev => ({
       ...prev,
       reorders: fieldKeys
     }));
-    
+
     setHasUnsavedChanges(true);
     setDraggedColumn(null);
   };
@@ -407,7 +407,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
 
     try {
       // Apply changes in order to avoid conflicts
-      
+
       // 1. Deletions first
       for (const fieldKey of pendingChanges.deletions) {
         const result = deleteColumn(fieldKey);
@@ -443,7 +443,7 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
           setError(`Column ${toggle.fieldKey} not found`);
           return;
         }
-        
+
         // Only toggle if current visibility differs from staged visibility
         if (currentColumn.visible !== toggle.visible) {
           const ok = toggleColumnVisibility(toggle.fieldKey);
@@ -463,11 +463,11 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       });
       setHasUnsavedChanges(false);
       setSuccess('All changes saved successfully');
-      
+
       // Call callbacks for external components
       pendingChanges.additions.forEach(col => onColumnAdded?.(col));
       pendingChanges.deletions.forEach(fieldKey => onColumnDeleted?.(fieldKey));
-      
+
     } catch (err) {
       setError('An error occurred while saving changes. Please try again.');
     } finally {
@@ -515,11 +515,10 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key as any)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${
-                activeTab === tab.key
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === tab.key
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
               disabled={isLoading}
             >
               <span className="flex items-center gap-2">
@@ -767,11 +766,10 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
                   <div className="flex items-center space-x-3">
                     <button
                       onClick={() => handleToggleVisibility(column.fieldKey)}
-                      className={`px-3 py-1 text-sm rounded ${
-                        column.visible 
-                          ? 'bg-green-100 text-green-800' 
+                      className={`px-3 py-1 text-sm rounded ${column.visible
+                          ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'
-                      }`}
+                        }`}
                       disabled={isLoading}
                     >
                       {column.visible ? 'Visible' : 'Hidden'}
@@ -779,11 +777,10 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
                     <button
                       onClick={() => handleDeleteColumn(column.fieldKey)}
                       disabled={isLoading}
-                      className={`px-3 py-1 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed ${
-                        column.required 
-                          ? 'bg-orange-600 hover:bg-orange-700' 
+                      className={`px-3 py-1 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed ${column.required
+                          ? 'bg-orange-600 hover:bg-orange-700'
                           : 'bg-red-600 hover:bg-red-700'
-                      }`}
+                        }`}
                       title={column.required ? 'Delete required column (with warning)' : 'Delete column'}
                     >
                       Delete
@@ -837,8 +834,8 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
             <div className="text-sm text-gray-600">
               {hasUnsavedChanges ? (
                 <span>
-                  {pendingChanges.additions.length + pendingChanges.deletions.length + 
-                   (pendingChanges.reorders ? 1 : 0) + pendingChanges.visibilityToggles.length} pending change(s)
+                  {pendingChanges.additions.length + pendingChanges.deletions.length +
+                    (pendingChanges.reorders ? 1 : 0) + pendingChanges.visibilityToggles.length} pending change(s)
                 </span>
               ) : (
                 <span>No pending changes</span>
@@ -866,6 +863,8 @@ const ColumnManagementModal: React.FC<ColumnManagementModalProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ColumnManagementModal.displayName = 'ColumnManagementModal';
 
 export default ColumnManagementModal;

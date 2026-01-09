@@ -10,11 +10,11 @@ interface ActivityLoggerProps {
   compact?: boolean;
 }
 
-const ActivityLogger: React.FC<ActivityLoggerProps> = ({
+const ActivityLogger = React.memo<ActivityLoggerProps>(function ActivityLogger({
   leadId,
   onActivityAdded,
   compact = false
-}) => {
+}) {
   const { addActivity } = useLeads();
   const [description, setDescription] = useState('');
   const [activityType, setActivityType] = useState<Activity['activityType']>('note');
@@ -32,7 +32,7 @@ const ActivityLogger: React.FC<ActivityLoggerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
       alert('Please enter activity description');
@@ -43,7 +43,7 @@ const ActivityLogger: React.FC<ActivityLoggerProps> = ({
 
     try {
       const durationNum = duration ? parseInt(duration, 10) : undefined;
-      
+
       addActivity(leadId, trimmedDescription, {
         activityType,
         duration: durationNum
@@ -132,7 +132,9 @@ const ActivityLogger: React.FC<ActivityLoggerProps> = ({
       </button>
     </form>
   );
-};
+});
+
+ActivityLogger.displayName = 'ActivityLogger';
 
 export default ActivityLogger;
 

@@ -21,7 +21,7 @@ interface EditableHeaderCellProps {
   onColumnSettings?: (fieldKey: string) => void;
 }
 
-export default function EditableHeaderCell({
+const EditableHeaderCell = React.memo(function EditableHeaderCell({
   fieldKey,
   currentLabel,
   onSave,
@@ -97,14 +97,14 @@ export default function EditableHeaderCell({
 
   const handleSave = () => {
     const trimmedValue = editValue.trim();
-    
+
     // Use shared validation helper
     const err = validateHeaderName(trimmedValue, existingHeaders, fieldKey);
     if (err) {
       setError(err);
       return;
     }
-    
+
     if (trimmedValue === currentLabel) {
       // No change, just exit edit mode
       setIsEditing(false);
@@ -152,7 +152,7 @@ export default function EditableHeaderCell({
 
   const handleMenuAction = (action: string) => {
     setShowDropdown(false);
-    
+
     if (action === 'edit') {
       setIsEditing(true);
       setError(null);
@@ -174,7 +174,7 @@ export default function EditableHeaderCell({
 
   const handlePasswordSuccess = () => {
     setPasswordModalOpen(false);
-    
+
     switch (pendingOperation) {
       case 'addBefore':
         onAddColumnBefore?.(fieldKey);
@@ -189,7 +189,7 @@ export default function EditableHeaderCell({
         onColumnSettings?.(fieldKey);
         break;
     }
-    
+
     setPendingOperation(null);
   };
 
@@ -264,14 +264,14 @@ export default function EditableHeaderCell({
           </span>
         )}
       </div>
-      
+
       <div className="flex items-center space-x-1">
         {!disabled && isHovered && (
           <span className="ml-1 text-gray-400 text-xs opacity-70">
             ✏️
           </span>
         )}
-        
+
         {!disabled && (
           <div className="relative" ref={dropdownRef}>
             <button
@@ -284,7 +284,7 @@ export default function EditableHeaderCell({
                 <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
               </svg>
             </button>
-            
+
             {showDropdown && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                 <div className="py-1">
@@ -295,7 +295,7 @@ export default function EditableHeaderCell({
                     <span>✏️</span>
                     <span>Edit Header</span>
                   </button>
-                  
+
                   <button
                     onClick={() => handleMenuAction('addBefore')}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
@@ -303,7 +303,7 @@ export default function EditableHeaderCell({
                     <span>➕</span>
                     <span>Add Column Before</span>
                   </button>
-                  
+
                   <button
                     onClick={() => handleMenuAction('addAfter')}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
@@ -311,9 +311,9 @@ export default function EditableHeaderCell({
                     <span>➕</span>
                     <span>Add Column After</span>
                   </button>
-                  
+
                   <div className="border-t border-gray-100 my-1"></div>
-                  
+
                   <button
                     onClick={() => handleMenuAction('settings')}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
@@ -321,7 +321,7 @@ export default function EditableHeaderCell({
                     <span>⚙️</span>
                     <span>Column Settings</span>
                   </button>
-                  
+
                   {column && !column.required && (
                     <button
                       onClick={() => handleMenuAction('delete')}
@@ -351,4 +351,8 @@ export default function EditableHeaderCell({
       />
     </div>
   );
-}
+});
+
+EditableHeaderCell.displayName = 'EditableHeaderCell';
+
+export default EditableHeaderCell;

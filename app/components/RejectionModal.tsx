@@ -20,12 +20,12 @@ const REJECTION_REASONS = [
     'Other'
 ];
 
-const RejectionModal: React.FC<RejectionModalProps> = ({
+const RejectionModal = React.memo<RejectionModalProps>(function RejectionModal({
     isOpen,
     onClose,
     onConfirm,
     caseNumber
-}) => {
+}) {
     const [selectedReason, setSelectedReason] = useState('');
     const [customReason, setCustomReason] = useState('');
     const [isShaking, setIsShaking] = useState(false);
@@ -230,8 +230,8 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
                                                     whileTap={{ scale: 0.98 }}
                                                     onClick={() => setSelectedReason(reason)}
                                                     className={`px-3 py-2 text-sm rounded-lg border transition-all duration-150 ${selectedReason === reason
-                                                            ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/25'
-                                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                                        ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/25'
+                                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
                                                         }`}
                                                 >
                                                     {reason}
@@ -303,6 +303,8 @@ const RejectionModal: React.FC<RejectionModalProps> = ({
             )}
         </AnimatePresence>
     );
-};
+});
+
+RejectionModal.displayName = 'RejectionModal';
 
 export default RejectionModal;

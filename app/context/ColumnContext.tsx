@@ -177,8 +177,8 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setColumns(newColumns);
   };
 
-  // Add column
-  const addColumn = (config: Omit<ColumnConfig, 'id'>): { success: boolean; message: string } => {
+  // Add column - memoized for performance
+  const addColumn = useCallback((config: Omit<ColumnConfig, 'id'>): { success: boolean; message: string } => {
     try {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Starting column addition process:', config);
@@ -226,10 +226,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('❌ Error adding column:', error);
       return { success: false, message: 'An error occurred while adding the column. Please try again.' };
     }
-  };
+  }, [columns, leadsCtx]);
 
-  // Delete column
-  const deleteColumn = (fieldKey: string): { success: boolean; message: string } => {
+  // Delete column - memoized for performance
+  const deleteColumn = useCallback((fieldKey: string): { success: boolean; message: string } => {
     try {
       const column = columns.find(col => col.fieldKey === fieldKey);
       if (!column) {
@@ -260,10 +260,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error deleting column:', error);
       return { success: false, message: 'An error occurred while deleting the column. Please try again.' };
     }
-  };
+  }, [columns, leadsCtx]);
 
-  // Reorder columns
-  const reorderColumns = (newOrder: string[]): boolean => {
+  // Reorder columns - memoized for performance
+  const reorderColumns = useCallback((newOrder: string[]): boolean => {
     if (newOrder.length !== columns.length) {
       return false;
     }
@@ -274,10 +274,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     saveColumns(reorderedColumns);
     return true;
-  };
+  }, [columns]);
 
-  // Toggle column visibility
-  const toggleColumnVisibility = (fieldKey: string): boolean => {
+  // Toggle column visibility - memoized for performance
+  const toggleColumnVisibility = useCallback((fieldKey: string): boolean => {
     const column = columns.find(col => col.fieldKey === fieldKey);
     if (!column) {
       return false;
@@ -288,10 +288,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
     saveColumns(newColumns);
     return true;
-  };
+  }, [columns]);
 
-  // Update column
-  const updateColumn = (fieldKey: string, updates: Partial<ColumnConfig>): boolean => {
+  // Update column - memoized for performance
+  const updateColumn = useCallback((fieldKey: string, updates: Partial<ColumnConfig>): boolean => {
     const columnIndex = columns.findIndex(col => col.fieldKey === fieldKey);
     if (columnIndex === -1) {
       return false;
@@ -314,7 +314,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.log(`Column "${fieldKey}" updated successfully`);
     }
     return true;
-  };
+  }, [columns]);
 
   // Get column by key
   const getColumnByKey = useCallback((fieldKey: string): ColumnConfig | undefined => {
@@ -331,8 +331,8 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return visible;
   }, [columns]);
 
-  // Validate column configuration
-  const validateColumnConfig = (config: Partial<ColumnConfig>, isUpdate: boolean = false): { valid: boolean; errors: string[] } => {
+  // Validate column configuration - memoized for performance
+  const validateColumnConfig = useCallback((config: Partial<ColumnConfig>, isUpdate: boolean = false): { valid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
     // Check required fields
@@ -371,20 +371,20 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     return { valid: errors.length === 0, errors };
-  };
+  }, [columns]);
 
-  // Get column migration status
-  const getColumnMigrationStatus = (fieldKey: string): { migrated: boolean; totalLeads: number; migratedLeads: number } => {
+  // Get column migration status - memoized for performance
+  const getColumnMigrationStatus = useCallback((fieldKey: string): { migrated: boolean; totalLeads: number; migratedLeads: number } => {
     const leads = leadsCtx.leads;
     const totalLeads = leads.length;
     const migratedLeads = leads.filter(lead => (lead as any)[fieldKey] !== undefined).length;
     const migrated = migratedLeads === totalLeads;
 
     return { migrated, totalLeads, migratedLeads };
-  };
+  }, [leadsCtx.leads]);
 
-  // Reset column to default configuration
-  const resetColumnToDefault = (fieldKey: string): { success: boolean; message: string } => {
+  // Reset column to default configuration - memoized for performance
+  const resetColumnToDefault = useCallback((fieldKey: string): { success: boolean; message: string } => {
     try {
       const defaultColumn = DEFAULT_COLUMNS.find(col => col.fieldKey === fieldKey);
       if (!defaultColumn) {
@@ -411,10 +411,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error resetting column:', error);
       return { success: false, message: 'An error occurred while resetting the column' };
     }
-  };
+  }, [columns]);
 
-  // Export column configuration
-  const exportColumnConfig = (): string => {
+  // Export column configuration - memoized for performance
+  const exportColumnConfig = useCallback((): string => {
     try {
       const configToExport = {
         version: '1.0',
@@ -438,10 +438,10 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error exporting column config:', error);
       return '';
     }
-  };
+  }, [columns]);
 
-  // Import column configuration
-  const importColumnConfig = (configJson: string): { success: boolean; message: string } => {
+  // Import column configuration - memoized for performance
+  const importColumnConfig = useCallback((configJson: string): { success: boolean; message: string } => {
     try {
       const parsed = JSON.parse(configJson);
 
@@ -501,7 +501,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error importing column config:', error);
       return { success: false, message: 'Invalid JSON format or corrupted configuration' };
     }
-  };
+  }, [columns, validateColumnConfig]);
 
   // Memoize context value to prevent unnecessary re-renders
   const contextValue: ColumnContextType = useMemo(() => ({
@@ -518,7 +518,7 @@ export const ColumnProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     resetColumnToDefault,
     exportColumnConfig,
     importColumnConfig
-  }), [columns, getColumnByKey, getVisibleColumns]);
+  }), [columns, addColumn, deleteColumn, reorderColumns, toggleColumnVisibility, updateColumn, getColumnByKey, getVisibleColumns, validateColumnConfig, getColumnMigrationStatus, resetColumnToDefault, exportColumnConfig, importColumnConfig]);
 
   return (
     <ColumnContext.Provider value={contextValue}>

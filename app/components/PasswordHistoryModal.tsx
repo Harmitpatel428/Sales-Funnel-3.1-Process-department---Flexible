@@ -8,7 +8,7 @@ interface PasswordHistoryModalProps {
     history?: PasswordHistoryEntry[];
 }
 
-export default function PasswordHistoryModal({ isOpen, onClose, userName, history = [] }: PasswordHistoryModalProps) {
+const PasswordHistoryModal = React.memo(function PasswordHistoryModal({ isOpen, onClose, userName, history = [] }: PasswordHistoryModalProps) {
     if (!isOpen) return null;
 
     // Sort history by timestamp descending (newest first)
@@ -64,8 +64,8 @@ export default function PasswordHistoryModal({ isOpen, onClose, userName, histor
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${entry.type === 'SELF'
-                                                    ? 'bg-purple-100 text-purple-800'
-                                                    : 'bg-amber-100 text-amber-800'
+                                                ? 'bg-purple-100 text-purple-800'
+                                                : 'bg-amber-100 text-amber-800'
                                                 }`}>
                                                 {entry.type === 'SELF' ? 'Self' : 'Admin Reset'}
                                             </span>
@@ -91,4 +91,8 @@ export default function PasswordHistoryModal({ isOpen, onClose, userName, histor
             </div>
         </div>
     );
-}
+});
+
+PasswordHistoryModal.displayName = 'PasswordHistoryModal';
+
+export default PasswordHistoryModal;

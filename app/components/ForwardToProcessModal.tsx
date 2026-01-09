@@ -81,7 +81,7 @@ const TALUKA_CATEGORIES = ['1', '2', '3'];
 const STORAGE_KEY = 'forwardToProcess_policyTypes';
 const BENEFITS_STORAGE_KEY = 'forwardToProcess_benefitTypes';
 
-export default function ForwardToProcessModal({
+const ForwardToProcessModal = React.memo(function ForwardToProcessModal({
     isOpen,
     onClose,
     onSubmit,
@@ -1100,4 +1100,8 @@ export default function ForwardToProcessModal({
             )}
         </AnimatePresence>
     );
-}
+});
+
+ForwardToProcessModal.displayName = 'ForwardToProcessModal';
+
+export default ForwardToProcessModal;

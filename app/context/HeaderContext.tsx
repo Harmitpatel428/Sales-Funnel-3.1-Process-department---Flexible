@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { DEFAULT_HEADER_LABELS } from '../constants/columnConfig';
 import { validateHeaderName, sanitizeHeaderName } from '../hooks/useValidation';
 
@@ -61,10 +61,10 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
   // Update header configuration
   const updateHeader = useCallback((field: string, newLabel: string) => {
     const trimmedLabel = newLabel.trim();
-    
+
     // Build existing headers for validation
     const existingHeaders = Object.values(headerConfig);
-    
+
     // Use shared validation helper
     const err = validateHeaderName(trimmedLabel, existingHeaders, field);
     if (err) {
@@ -95,7 +95,7 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
   const addHeader = useCallback((fieldKey: string, label: string) => {
     const trimmedLabel = label.trim();
     const sanitizedLabel = sanitizeHeaderName(trimmedLabel);
-    
+
     setHeaderConfig(prev => {
       const newConfig = { ...prev, [fieldKey]: sanitizedLabel };
       saveToStorage(newConfig);
@@ -118,12 +118,12 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
     return headerConfig[field] || DEFAULT_HEADER_LABELS[field as keyof typeof DEFAULT_HEADER_LABELS] || field;
   }, [headerConfig]);
 
-  // Check if headers are customized
-  const isCustomized = Object.keys(headerConfig).some(
+  // Check if headers are customized - memoized
+  const isCustomized = useMemo(() => Object.keys(headerConfig).some(
     key => headerConfig[key] !== DEFAULT_HEADER_LABELS[key as keyof typeof DEFAULT_HEADER_LABELS]
-  );
+  ), [headerConfig]);
 
-  const value: HeaderContextType = {
+  const value: HeaderContextType = useMemo(() => ({
     headerConfig,
     updateHeader,
     addHeader,
@@ -131,7 +131,7 @@ export function HeaderProvider({ children }: { children: React.ReactNode }) {
     resetHeaders,
     getDisplayName,
     isCustomized
-  };
+  }), [headerConfig, updateHeader, addHeader, removeHeader, resetHeaders, getDisplayName, isCustomized]);
 
   return (
     <HeaderContext.Provider value={value}>

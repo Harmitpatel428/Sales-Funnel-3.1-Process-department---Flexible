@@ -19,8 +19,8 @@ const todayDDMMYYYY = () => {
 
 const LeadContext = createContext<LeadContextType | undefined>(undefined);
 
-// Non-searchable fields to avoid performance issues and irrelevant data
-const NON_SEARCHABLE_KEYS = ['id', 'isDeleted', 'isDone', 'isUpdated', 'activities', 'mobileNumbers'];
+// Non-searchable fields to avoid performance issues and irrelevant data (Set for O(1) lookup)
+const NON_SEARCHABLE_KEYS = new Set(['id', 'isDeleted', 'isDone', 'isUpdated', 'activities', 'mobileNumbers']);
 
 export function LeadProvider({ children }: { children: ReactNode }) {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -118,10 +118,18 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('Error saving leads to localStorage:', error);
       }
-    }, 500); // Increased debounce for better performance
+    }, 1000); // Increased debounce from 500ms to 1000ms for better batching performance
 
     return () => clearTimeout(timeoutId);
   }, [leads, isHydrated]);
+
+  // Batch update helper for bulk operations - wraps multiple state updates
+  const batchUpdate = useCallback((updates: () => void) => {
+    setSkipPersistence(true);
+    updates();
+    // Reset skipPersistence after a micro-task to allow state updates to complete
+    Promise.resolve().then(() => setSkipPersistence(false));
+  }, []);
 
   // Save views to localStorage whenever they change (debounced)
   useEffect(() => {
@@ -486,151 +494,116 @@ export function LeadProvider({ children }: { children: ReactNode }) {
 
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
+    // Pre-compute values outside the filter loop for better performance
+    const searchTermLower = filters.searchTerm?.toLowerCase() || '';
+    const isPhoneSearch = filters.searchTerm ? /^\d+$/.test(filters.searchTerm) : false;
+
+    // Use Set for O(1) status lookup instead of array.includes (O(n))
+    const statusSet = filters.status && filters.status.length > 0
+      ? new Set(filters.status)
+      : null;
+
+    // Pre-parse date filters once
+    const startDate = toDate(filters.followUpDateStart);
+    const endDate = toDate(filters.followUpDateEnd);
+
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 getFilteredLeads called with filters:', filters);
       console.log('📊 Total leads before filtering:', leads.length);
-      console.log('📊 All leads details:', leads.map(l => ({
-        id: l.id,
-        kva: l.kva,
-        status: l.status,
-        isDeleted: l.isDeleted,
-        isDone: l.isDone,
-        clientName: l.clientName
-      })));
     }
 
     const filtered = leads.filter(lead => {
       // Filter out deleted leads (isDeleted: true) - they should not appear in dashboard
       if (lead.isDeleted) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ Lead filtered out (deleted):', lead.clientName || lead.kva);
-        }
         return false;
       }
 
       // Filter out completed leads (isDone: true)
       if (lead.isDone) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ Lead filtered out (done):', lead.clientName || lead.kva);
-        }
         return false;
       }
 
-      // For main dashboard (no status filter), show all non-deleted, non-done leads
-      // Only filter by status if explicitly provided
-      if (filters.status && filters.status.length > 0 && !filters.status.includes(lead.status)) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ Lead filtered out (status):', lead.clientName || lead.kva, 'status:', lead.status, 'filter:', filters.status);
-        }
+      // Status filter with O(1) Set lookup
+      if (statusSet && !statusSet.has(lead.status)) {
         return false;
       }
 
-      // Filter by follow-up date range - parse dates as Date objects for accurate comparison
+      // Filter by follow-up date range
       const leadDate = toDate(lead.followUpDate);
-      const startDate = toDate(filters.followUpDateStart);
-      const endDate = toDate(filters.followUpDateEnd);
 
       if (startDate && leadDate && leadDate < startDate) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ Lead filtered out (follow-up date start):', lead.clientName || lead.kva);
-        }
         return false;
       }
       if (endDate && leadDate && leadDate > endDate) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ Lead filtered out (follow-up date end):', lead.clientName || lead.kva);
-        }
         return false;
       }
 
-      // Debug log for invalid dates
-      if (lead.followUpDate && !leadDate) {
-        console.warn('Invalid followUpDate', lead.id, lead.followUpDate);
-      }
-
-      // Search term (search in all lead properties dynamically)
-      if (filters.searchTerm) {
-        const searchTerm = filters.searchTerm.toLowerCase();
-
-        // Check if it's a phone number search (only digits)
-        if (/^\d+$/.test(filters.searchTerm)) {
+      // Search term filter - optimized with early returns
+      if (searchTermLower) {
+        // Phone number search (only digits)
+        if (isPhoneSearch) {
           // Search in all mobile numbers
           const allMobileNumbers = [
-            lead.mobileNumber, // backward compatibility
+            lead.mobileNumber,
             ...(lead.mobileNumbers || []).map(m => m.number)
           ];
 
           for (const mobileNumber of allMobileNumbers) {
             if (mobileNumber) {
               const phoneDigits = mobileNumber.replace(/[^0-9]/g, '');
-              if (phoneDigits.includes(filters.searchTerm)) {
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('✅ Lead matches phone search:', lead.clientName || lead.kva);
-                }
-                return true;
+              if (phoneDigits.includes(filters.searchTerm!)) {
+                return true; // Early return on match
               }
             }
           }
 
           // Also search in consumer number digits
-          if (extractDigits(lead.consumerNumber).includes(filters.searchTerm)) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('✅ Lead matches consumer number search:', lead.clientName || lead.kva);
-            }
-            return true;
+          if (extractDigits(lead.consumerNumber).includes(filters.searchTerm!)) {
+            return true; // Early return on match
           }
         }
 
-        // Dynamic text search through all lead properties
-        const nonSearchableKeys = NON_SEARCHABLE_KEYS;
-        const searchableValues: string[] = [];
+        // Text search - using for...in for better performance
+        let matched = false;
 
-        // Include all mobile numbers and mobile names explicitly for compatibility
-        const allMobileNumbers = [
-          lead.mobileNumber, // backward compatibility
-          ...(lead.mobileNumbers || []).map(m => m.number)
-        ].filter(Boolean);
-
-        const allMobileNames = (lead.mobileNumbers || []).map(m => m.name).filter(Boolean);
-
-        // Add mobile numbers and names to searchable values
-        searchableValues.push(...allMobileNumbers.map(num => num.toLowerCase()));
-        searchableValues.push(...allMobileNames.map(name => name.toLowerCase()));
-
-        // Iterate through all enumerable properties of the lead object
-        Object.entries(lead).forEach(([key, value]) => {
-          // Skip non-searchable fields
-          if (nonSearchableKeys.includes(key)) {
-            return;
+        // Include mobile numbers and names explicitly
+        const mobileNumbers = lead.mobileNumbers || [];
+        for (const m of mobileNumbers) {
+          if (m.number && m.number.toLowerCase().includes(searchTermLower)) {
+            matched = true;
+            break;
           }
-
-          // Handle different value types
-          if (value !== null && value !== undefined) {
-            if (Array.isArray(value)) {
-              // Skip arrays - we handle mobileNumbers specially above
-              return;
-            } else if (typeof value === 'object') {
-              // Skip objects to avoid performance issues
-              return;
-            } else {
-              // Handle primitives (string, number, boolean, date)
-              searchableValues.push(String(value).toLowerCase());
-            }
-          }
-        });
-
-        const matches = searchableValues.some(value => value.includes(searchTerm));
-        if (!matches) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('❌ Lead filtered out (search term):', lead.clientName || lead.kva);
+          if (m.name && m.name.toLowerCase().includes(searchTermLower)) {
+            matched = true;
+            break;
           }
         }
-        return matches;
+
+        if (!matched && lead.mobileNumber?.toLowerCase().includes(searchTermLower)) {
+          matched = true;
+        }
+
+        // Search other properties if not yet matched
+        if (!matched) {
+          for (const key in lead) {
+            // Skip non-searchable keys using O(1) Set lookup
+            if (NON_SEARCHABLE_KEYS.has(key)) {
+              continue;
+            }
+
+            const value = (lead as any)[key];
+            if (value !== null && value !== undefined && typeof value !== 'object' && !Array.isArray(value)) {
+              if (String(value).toLowerCase().includes(searchTermLower)) {
+                matched = true;
+                break; // Early exit on first match
+              }
+            }
+          }
+        }
+
+        return matched;
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Lead passes all filters:', lead.clientName || lead.kva);
-      }
       return true;
     });
 

@@ -2,11 +2,11 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, ChevronDown, Search } from 'lucide-react';
-import { 
-  getTalukasByDistrict, 
+import {
+  getTalukasByDistrict,
   getCategoryByTaluka,
   searchDistricts,
-  type TalukaInfo 
+  type TalukaInfo
 } from '../constants/districtTalukaData';
 
 interface BenefitsModalProps {
@@ -147,112 +147,111 @@ const TalukaDropdown: React.FC<{
   onToggle,
   onClose
 }) => {
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (isOpen && searchRef.current) {
-      searchRef.current.focus();
-    }
-  }, [isOpen]);
+    useEffect(() => {
+      if (isOpen && searchRef.current) {
+        searchRef.current.focus();
+      }
+    }, [isOpen]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+          onClose();
+        }
+      };
+
+      if (isOpen) {
+        document.addEventListener('mousedown', handleClickOutside);
+      }
+
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }, [isOpen, onClose]);
+
+    const handleOptionClick = (taluka: TalukaInfo) => {
+      onChange(taluka.name);
+      onClose();
+      onSearchChange('');
+    };
+
+    const handleKeyDown = (event: React.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
         onClose();
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    const filteredTalukas = searchTerm.trim()
+      ? talukas.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      : talukas;
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, onClose]);
+    return (
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between"
+        >
+          <span className={value ? 'text-gray-900' : 'text-black'}>
+            {value || 'Select Taluka'}
+          </span>
+          <ChevronDown className="h-4 w-4 text-gray-400" />
+        </button>
 
-  const handleOptionClick = (taluka: TalukaInfo) => {
-    onChange(taluka.name);
-    onClose();
-    onSearchChange('');
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-    }
-  };
-
-  const filteredTalukas = searchTerm.trim()
-    ? talukas.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()))
-    : talukas;
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between"
-      >
-        <span className={value ? 'text-gray-900' : 'text-black'}>
-          {value || 'Select Taluka'}
-        </span>
-        <ChevronDown className="h-4 w-4 text-gray-400" />
-      </button>
-
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
-          <div className="p-2 border-b border-gray-200">
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={searchTerm}
-                onChange={(e) => onSearchChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Search talukas..."
-                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black placeholder:text-black"
-              />
+        {isOpen && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+            <div className="p-2 border-b border-gray-200">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search talukas..."
+                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black placeholder:text-black"
+                />
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              {filteredTalukas.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-gray-500">No talukas found</div>
+              ) : (
+                filteredTalukas.map((taluka) => (
+                  <button
+                    key={taluka.name}
+                    type="button"
+                    onClick={() => handleOptionClick(taluka)}
+                    className="w-full px-3 py-2 text-left text-sm text-black hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center justify-between"
+                    title={`Select ${taluka.name} (Category ${taluka.category})`}
+                  >
+                    <span>{taluka.name}</span>
+                    <span className={`px-2 py-1 text-xs rounded-full ${taluka.category === 'I' ? 'bg-green-100 text-green-800' :
+                        taluka.category === 'II' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                      }`}>
+                      Category {taluka.category}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
-          <div className="max-h-60 overflow-y-auto">
-            {filteredTalukas.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-500">No talukas found</div>
-            ) : (
-              filteredTalukas.map((taluka) => (
-                <button
-                  key={taluka.name}
-                  type="button"
-                  onClick={() => handleOptionClick(taluka)}
-                  className="w-full px-3 py-2 text-left text-sm text-black hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center justify-between"
-                  title={`Select ${taluka.name} (Category ${taluka.category})`}
-                >
-                  <span>{taluka.name}</span>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    taluka.category === 'I' ? 'bg-green-100 text-green-800' :
-                    taluka.category === 'II' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    Category {taluka.category}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
+      </div>
+    );
+  };
 
-const BenefitsModal: React.FC<BenefitsModalProps> = ({
+const BenefitsModal = React.memo<BenefitsModalProps>(function BenefitsModal({
   isOpen,
   onClose,
   onCategoryResolved
-}) => {
+}) {
   const [selectedDistrict, setSelectedDistrict] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('lastDistrict') || '';
@@ -306,14 +305,14 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
   // ESC key handler
   useEffect(() => {
     if (!isOpen) return;
-    
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         handleClose();
       }
     };
-    
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
@@ -323,7 +322,7 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
     setSelectedTaluka('');
     setTalukaSearchTerm('');
     setResolvedCategory(null);
-    
+
     // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('lastDistrict', district);
@@ -349,7 +348,7 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
     setIsDistrictDropdownOpen(false);
     setIsTalukaDropdownOpen(false);
     setResolvedCategory(null);
-    
+
     // Clear from localStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem('lastDistrict');
@@ -359,7 +358,7 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60"
       onKeyDown={(e) => e.key === 'Escape' && e.stopPropagation()}
     >
@@ -415,11 +414,10 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
             <div className="p-4 bg-gray-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-700 mb-2">Resolved Category</h3>
               <div className="flex items-center space-x-3">
-                <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-                  resolvedCategory === 'I' ? 'bg-green-100 text-green-800' :
-                  resolvedCategory === 'II' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-red-100 text-red-800'
-                }`}>
+                <span className={`px-3 py-1 text-sm font-medium rounded-full ${resolvedCategory === 'I' ? 'bg-green-100 text-green-800' :
+                    resolvedCategory === 'II' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                  }`}>
                   Category {resolvedCategory}
                 </span>
                 <span className="text-sm text-gray-600">
@@ -454,6 +452,8 @@ const BenefitsModal: React.FC<BenefitsModalProps> = ({
       </div>
     </div>
   );
-};
+});
+
+BenefitsModal.displayName = 'BenefitsModal';
 
 export default BenefitsModal;

@@ -13,7 +13,7 @@ interface PasswordModalProps {
   captureReason?: boolean; // New prop
 }
 
-const PasswordModal: React.FC<PasswordModalProps> = ({
+const PasswordModal = React.memo<PasswordModalProps>(function PasswordModal({
   isOpen,
   onClose,
   operation,
@@ -21,7 +21,7 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
   title,
   description,
   captureReason = false
-}) => {
+}) {
   const [password, setPassword] = useState('');
   const [reason, setReason] = useState(''); // State for reason
   const [showPassword, setShowPassword] = useState(false);
@@ -288,6 +288,8 @@ const PasswordModal: React.FC<PasswordModalProps> = ({
       </div >
     </div >
   );
-};
+});
+
+PasswordModal.displayName = 'PasswordModal';
 
 export default PasswordModal;

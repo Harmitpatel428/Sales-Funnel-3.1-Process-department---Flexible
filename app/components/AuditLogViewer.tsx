@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useDebounce } from '../hooks/usePerformance';
 import { LeadDeletionAuditLog, SystemAuditLog, AuditActionType } from '../types/shared';
 import { getAuditLogs, exportAuditLogs, clearAuditLogs } from '../utils/storage';
 import { useUsers } from '../context/UserContext';
@@ -13,7 +14,10 @@ const ACTION_CATEGORIES = {
     SECURITY: ['ADMIN_IMPERSONATION_STARTED', 'ADMIN_IMPERSONATION_ENDED', 'USER_PASSWORD_CHANGED', 'USER_PASSWORD_RESET_BY_ADMIN', 'USER_LOGIN_FAILED']
 };
 
-export default function AuditLogViewer() {
+// Page size options for pagination
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+
+const AuditLogViewer = React.memo(function AuditLogViewer() {
     const [systemLogs, setSystemLogs] = useState<SystemAuditLog[]>([]);
     const [deletionLogs, setDeletionLogs] = useState<LeadDeletionAuditLog[]>([]);
     const [filterAction, setFilterAction] = useState<AuditActionType | 'ALL' | 'DELETIONS'>('ALL');
@@ -23,44 +27,121 @@ export default function AuditLogViewer() {
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
+
     const { canManageUsers } = useUsers();
     const isAdmin = canManageUsers();
+
+    // Debounced values for expensive filter operations
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
+    const debouncedDateRange = useDebounce(dateRange, 300);
 
     useEffect(() => {
         loadLogs();
     }, []);
 
     const loadLogs = () => {
-        const logs = getAuditLogs();
-        setSystemLogs(logs.reverse());
+        // Progressive loading for large datasets
+        // Clone the array before reversing to avoid mutating the cached data
+        const logs = [...getAuditLogs()];
+
+        // For very large datasets, load in chunks to keep UI responsive
+        if (logs.length > 1000) {
+            // Show first batch immediately for faster perceived loading
+            setSystemLogs([...logs].slice(0, 500).reverse());
+
+            // Load remaining logs asynchronously (clone again before reverse)
+            setTimeout(() => {
+                setSystemLogs([...logs].reverse());
+            }, 0);
+        } else {
+            setSystemLogs([...logs].reverse());
+        }
 
         const deletionLogsJson = localStorage.getItem('leadDeletionAuditLog') || '[]';
         const parsedDeletionLogs = JSON.parse(deletionLogsJson);
-        setDeletionLogs(parsedDeletionLogs.reverse());
+        // Clone deletion logs before reversing too
+        setDeletionLogs([...parsedDeletionLogs].reverse());
     };
 
-    const filteredLogs = useMemo(() => {
-        let filtered = systemLogs;
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterAction, filterCategory, filterEntity, debouncedSearchTerm, debouncedDateRange]);
 
-        // Filter by category first
+    // Indexed structures for faster filtering (built once when logs change)
+    const logsByCategory = useMemo(() => {
+        const index = new Map<string, SystemAuditLog[]>();
+        Object.keys(ACTION_CATEGORIES).forEach(cat => index.set(cat, []));
+
+        systemLogs.forEach(log => {
+            if (ACTION_CATEGORIES.LEAD.includes(log.actionType)) index.get('LEAD')!.push(log);
+            if (ACTION_CATEGORIES.CASE.includes(log.actionType)) index.get('CASE')!.push(log);
+            if (ACTION_CATEGORIES.USER.includes(log.actionType)) index.get('USER')!.push(log);
+            if (ACTION_CATEGORIES.SECURITY.includes(log.actionType)) index.get('SECURITY')!.push(log);
+        });
+
+        return index;
+    }, [systemLogs]);
+
+    const logsByAction = useMemo(() => {
+        const index = new Map<string, SystemAuditLog[]>();
+        systemLogs.forEach(log => {
+            if (!index.has(log.actionType)) {
+                index.set(log.actionType, []);
+            }
+            index.get(log.actionType)!.push(log);
+        });
+        return index;
+    }, [systemLogs]);
+
+    const logsByEntity = useMemo(() => {
+        const index = new Map<string, SystemAuditLog[]>();
+        systemLogs.forEach(log => {
+            if (!index.has(log.entityType)) {
+                index.set(log.entityType, []);
+            }
+            index.get(log.entityType)!.push(log);
+        });
+        return index;
+    }, [systemLogs]);
+
+    // Optimized filtering using indexed structures
+    const filteredLogs = useMemo(() => {
+        // Start with the most restrictive filter using indexes
+        let filtered: SystemAuditLog[];
+
+        // Use category index if category filter is active
         if (filterCategory !== 'ALL') {
-            const actions = ACTION_CATEGORIES[filterCategory];
-            filtered = filtered.filter(log => actions.includes(log.actionType));
+            filtered = logsByCategory.get(filterCategory) || [];
+        }
+        // Use action index if action filter is active
+        else if (filterAction !== 'ALL' && filterAction !== 'DELETIONS') {
+            filtered = logsByAction.get(filterAction) || [];
+        }
+        // Use entity index if entity filter is active
+        else if (filterEntity !== 'all') {
+            filtered = logsByEntity.get(filterEntity) || [];
+        }
+        // Default to all logs
+        else {
+            filtered = systemLogs;
         }
 
-        // Filter by specific action type
-        if (filterAction !== 'ALL' && filterAction !== 'DELETIONS') {
+        // Apply remaining filters on smaller dataset
+        if (filterCategory !== 'ALL' && filterAction !== 'ALL' && filterAction !== 'DELETIONS') {
             filtered = filtered.filter(log => log.actionType === filterAction);
         }
 
-        // Filter by entity type
-        if (filterEntity !== 'all') {
+        if ((filterCategory !== 'ALL' || (filterAction !== 'ALL' && filterAction !== 'DELETIONS')) && filterEntity !== 'all') {
             filtered = filtered.filter(log => log.entityType === filterEntity);
         }
 
-        // Search filter
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
+        // Search filter - apply last (most expensive)
+        if (debouncedSearchTerm) {
+            const term = debouncedSearchTerm.toLowerCase();
             filtered = filtered.filter(log =>
                 log.description.toLowerCase().includes(term) ||
                 log.performedByName.toLowerCase().includes(term) ||
@@ -70,29 +151,50 @@ export default function AuditLogViewer() {
         }
 
         // Date range filter
-        if (dateRange.start) {
-            filtered = filtered.filter(log => new Date(log.performedAt) >= new Date(dateRange.start));
+        if (debouncedDateRange.start) {
+            const startTime = new Date(debouncedDateRange.start).getTime();
+            filtered = filtered.filter(log => new Date(log.performedAt).getTime() >= startTime);
         }
-        if (dateRange.end) {
-            const endDate = new Date(dateRange.end);
+        if (debouncedDateRange.end) {
+            const endDate = new Date(debouncedDateRange.end);
             endDate.setHours(23, 59, 59, 999);
-            filtered = filtered.filter(log => new Date(log.performedAt) <= endDate);
+            const endTime = endDate.getTime();
+            filtered = filtered.filter(log => new Date(log.performedAt).getTime() <= endTime);
         }
 
         return filtered;
-    }, [systemLogs, filterAction, filterCategory, filterEntity, searchTerm, dateRange]);
+    }, [systemLogs, filterAction, filterCategory, filterEntity, debouncedSearchTerm, debouncedDateRange, logsByCategory, logsByAction, logsByEntity]);
+
+    // Paginated logs for display
+    const paginatedLogs = useMemo(() => {
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        return filteredLogs.slice(startIndex, endIndex);
+    }, [filteredLogs, currentPage, pageSize]);
+
+    // Calculate total pages
+    const totalPages = useMemo(() => Math.ceil(filteredLogs.length / pageSize), [filteredLogs.length, pageSize]);
+
+    // Page change handlers
+    const handlePageChange = useCallback((newPage: number) => {
+        setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
+    }, [totalPages]);
+
+    const handlePageSizeChange = useCallback((newSize: number) => {
+        setPageSize(newSize);
+        setCurrentPage(1); // Reset to first page when page size changes
+    }, []);
 
     // Statistics by category
     const categoryStats = useMemo(() => {
         const stats: Record<string, number> = { LEAD: 0, CASE: 0, USER: 0, SECURITY: 0 };
-        systemLogs.forEach(log => {
-            if (ACTION_CATEGORIES.LEAD.includes(log.actionType)) stats.LEAD++;
-            if (ACTION_CATEGORIES.CASE.includes(log.actionType)) stats.CASE++;
-            if (ACTION_CATEGORIES.USER.includes(log.actionType)) stats.USER++;
-            if (ACTION_CATEGORIES.SECURITY.includes(log.actionType)) stats.SECURITY++;
-        });
+        // Use pre-built indexes for faster stats
+        stats.LEAD = logsByCategory.get('LEAD')?.length || 0;
+        stats.CASE = logsByCategory.get('CASE')?.length || 0;
+        stats.USER = logsByCategory.get('USER')?.length || 0;
+        stats.SECURITY = logsByCategory.get('SECURITY')?.length || 0;
         return stats;
-    }, [systemLogs]);
+    }, [logsByCategory]);
 
     const handleExport = () => {
         const data = exportAuditLogs();
@@ -148,8 +250,8 @@ export default function AuditLogViewer() {
         <div className="p-6 max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">System Audit Log</h2>
-                    <p className="text-sm text-gray-500">Track all system activities and security events</p>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">System Audit Log</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Track all system activities and security events</p>
                 </div>
                 <div className="flex gap-2">
                     <button
@@ -332,9 +434,23 @@ export default function AuditLogViewer() {
                 )}
             </div>
 
-            {/* Result count */}
-            <div className="text-sm text-gray-500 mb-4">
-                Showing {filteredLogs.length} of {systemLogs.length} logs
+            {/* Result count with pagination controls */}
+            <div className="flex items-center justify-between mb-4">
+                <div className="text-sm text-gray-500">
+                    Showing {Math.min((currentPage - 1) * pageSize + 1, filteredLogs.length)}-{Math.min(currentPage * pageSize, filteredLogs.length)} of {filteredLogs.length} logs (total: {systemLogs.length})
+                </div>
+                <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600">Per page:</label>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                    >
+                        {PAGE_SIZE_OPTIONS.map(size => (
+                            <option key={size} value={size}>{size}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {/* Logs Display */}
@@ -359,8 +475,8 @@ export default function AuditLogViewer() {
                     )) : (
                         <div className="text-center py-8 text-gray-500">No deletion logs found.</div>
                     )
-                ) : filteredLogs.length > 0 ? (
-                    filteredLogs.map(log => (
+                ) : paginatedLogs.length > 0 ? (
+                    paginatedLogs.map(log => (
                         <div key={log.id} className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${ACTION_CATEGORIES.SECURITY.includes(log.actionType) ? 'border-orange-500' :
                             log.entityType === 'user' ? 'border-amber-500' :
                                 log.entityType === 'case' ? 'border-purple-500' : 'border-blue-500'
@@ -454,6 +570,47 @@ export default function AuditLogViewer() {
                     </div>
                 )}
             </div>
+
+            {/* Pagination Navigation */}
+            {filterAction !== 'DELETIONS' && totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6 pb-4">
+                    <button
+                        onClick={() => handlePageChange(1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        First
+                    </button>
+                    <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Previous
+                    </button>
+                    <span className="px-4 py-1 text-sm text-gray-700">
+                        Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Next
+                    </button>
+                    <button
+                        onClick={() => handlePageChange(totalPages)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Last
+                    </button>
+                </div>
+            )}
         </div>
     );
-}
+});
+
+AuditLogViewer.displayName = 'AuditLogViewer';
+
+export default AuditLogViewer;

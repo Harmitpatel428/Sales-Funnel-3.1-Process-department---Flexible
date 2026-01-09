@@ -7,10 +7,42 @@ import { useCard3D } from './hooks/useCard3D';
 import { getEmployeeName, calculateWorkStats, getWorkSessions } from './utils/employeeStorage';
 import { useLeads } from './context/LeadContext';
 
+// Word-level animation component for better performance compared to letter-level
+const AnimatedWord = ({ word, index, delayOffset }: { word: string, index: number, delayOffset: number }) => (
+  <motion.span
+    initial={{ opacity: 0, y: 20 }}
+    animate={{
+      opacity: 1,
+      y: 0,
+      color: "#ffffff"
+    }}
+    transition={{
+      opacity: { duration: 0.5, delay: delayOffset + index * 0.1, ease: [0.25, 0.46, 0.45, 0.94] },
+      y: { duration: 0.5, delay: delayOffset + index * 0.1, ease: [0.25, 0.46, 0.45, 0.94] },
+      color: { duration: 0.8, delay: 1.8 + index * 0.1, ease: "easeInOut" }
+    }}
+    className="inline-block text-pink-400 mr-2 last:mr-0"
+    layout={false} // Disable layout animation for performance
+  >
+    {word}
+  </motion.span>
+);
+
 export default function HomePage() {
   const router = useRouter();
   const { cursorBlobRef } = useCard3D();
   const { leads } = useLeads();
+  const [isLowPowerMode, setIsLowPowerMode] = useState(false);
+
+  // Check for low power mode / low end device on mount
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+      const cores = navigator.hardwareConcurrency || 4;
+      if (cores < 4) {
+        setIsLowPowerMode(true);
+      }
+    }
+  }, []);
 
   // Get employee name and calculate today's work stats
   const employeeName = getEmployeeName();
@@ -52,10 +84,15 @@ export default function HomePage() {
     router.push('/dashboard');
   }, [router]);
 
+  // Words to animate
+  const titleWords = ["V4U", "Biz", "Solutions"];
+
   return (
     <div className="min-h-screen w-full bg-black py-8">
-      {/* Cursor Blob */}
-      <div ref={cursorBlobRef} className="cursor-blob hidden"></div>
+      {/* Cursor Blob - Conditionally rendered based on performance */}
+      {!isLowPowerMode && (
+        <div ref={cursorBlobRef} className="cursor-blob hidden" style={{ willChange: 'transform' }}></div>
+      )}
 
       <div className="max-w-7xl mx-auto px-8">
         {/* Hero Section */}
@@ -66,44 +103,37 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="relative inline-block"
+            layout={false}
           >
-            {/* Subtle glow effect behind text */}
+            {/* Subtle glow effect behind text - simplified for performance */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.2 }}
               transition={{ duration: 2, delay: 0.5 }}
               className="absolute inset-0 blur-3xl bg-gradient-to-r from-purple-600 via-pink-500 to-cyan-400"
+              style={{ willChange: 'opacity' }}
             />
 
             <h1 className="relative text-5xl md:text-7xl font-extrabold mb-6 leading-tight">
-              {/* Smooth letter by letter animation with color transition */}
-              {"V4U Biz Solutions".split("").map((letter, index) => (
-                <motion.span
+              {/* Optimized word-by-word animation instead of letter-by-letter */}
+              {titleWords.map((word, index) => (
+                <AnimatedWord
                   key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    color: "#ffffff"
-                  }}
-                  transition={{
-                    opacity: { duration: 0.5, delay: 0.3 + index * 0.04, ease: [0.25, 0.46, 0.45, 0.94] },
-                    y: { duration: 0.5, delay: 0.3 + index * 0.04, ease: [0.25, 0.46, 0.45, 0.94] },
-                    color: { duration: 0.8, delay: 1.8 + index * 0.03, ease: "easeInOut" }
-                  }}
-                  className="inline-block text-pink-400"
-                >
-                  {letter === " " ? "\u00A0" : letter}
-                </motion.span>
+                  word={word}
+                  index={index}
+                  delayOffset={0.3}
+                />
               ))}
             </h1>
 
             {/* Smooth animated underline */}
             <motion.div
-              initial={{ scaleX: 0, opacity: 0 }}
+              initial={{ scaleX: 0, opacity: 0 }} // opacity 0 initially to prevent flash
               animate={{ scaleX: 1, opacity: 1 }}
               transition={{ duration: 0.8, delay: 1.2, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent rounded-full mx-auto w-3/4"
+              style={{ willChange: 'transform, opacity' }}
+              layout={false}
             />
           </motion.div>
 
@@ -113,19 +143,21 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 1.0, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed w-full mt-6"
+            layout={false}
           >
             Professional CRM Solution By HPX Eigen
           </motion.p>
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
               onClick={handleGetStarted}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-4 text-lg font-semibold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-4 text-lg font-semibold rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               Add New Lead
             </button>
             <button
               onClick={handleViewDashboard}
-              className="bg-white hover:bg-gray-50 text-purple-600 border-2 border-purple-600 px-8 py-4 text-lg font-semibold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl"
+              className="bg-white hover:bg-gray-50 text-purple-600 border-2 border-purple-600 px-8 py-4 text-lg font-semibold rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl"
             >
               View Dashboard
             </button>
@@ -134,9 +166,10 @@ export default function HomePage() {
 
         {/* Features Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16 w-full">
+          {/* Card 1: Lead Management */}
           <button
             onClick={() => router.push('/dashboard')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-purple-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-purple-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -152,10 +185,10 @@ export default function HomePage() {
             </div>
           </button>
 
-
+          {/* Card 2: Work Tracker */}
           <button
             onClick={() => router.push('/work-tracker')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -170,9 +203,10 @@ export default function HomePage() {
             </div>
           </button>
 
+          {/* Card 3: Mandate & Documentation */}
           <button
             onClick={() => router.push('/follow-up-mandate')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-green-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-green-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -187,9 +221,10 @@ export default function HomePage() {
             </div>
           </button>
 
+          {/* Card 4: Quick Actions */}
           <button
             onClick={() => router.push('/add-lead?from=home')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-yellow-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-yellow-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -204,9 +239,10 @@ export default function HomePage() {
             </div>
           </button>
 
+          {/* Card 5: Team Collaboration */}
           <button
             onClick={() => router.push('/dashboard')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-indigo-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-indigo-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -221,9 +257,10 @@ export default function HomePage() {
             </div>
           </button>
 
+          {/* Card 6: My Work Today */}
           <button
             onClick={() => router.push('/work-tracker')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-teal-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -262,9 +299,10 @@ export default function HomePage() {
             </div>
           </button>
 
+          {/* Card 7: Follow-up Management */}
           <button
             onClick={() => router.push('/upcoming')}
-            className="card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-cyan-500 hover:shadow-xl transition-all duration-200"
+            className={`card-3d bg-gray-900 rounded-xl shadow-md p-8 text-center border border-gray-700 hover:border-cyan-500 hover:shadow-xl transition-all duration-200 ${isLowPowerMode ? 'transform-none' : ''}`}
           >
             <div className="card-3d-content">
               <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -280,7 +318,7 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions Panel */}
         <div className="bg-gray-900 rounded-lg shadow-lg p-8 border border-gray-700">
           <h2 className="text-2xl font-bold text-white mb-6 text-center">Quick Actions</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

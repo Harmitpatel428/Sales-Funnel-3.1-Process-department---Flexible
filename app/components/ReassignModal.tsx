@@ -16,7 +16,7 @@ interface ReassignModalProps {
     defaultUserId?: string;
 }
 
-export default function ReassignModal({
+const ReassignModal = React.memo(function ReassignModal({
     isOpen,
     onClose,
     onSubmit,
@@ -148,4 +148,8 @@ export default function ReassignModal({
             </div>
         </div>
     );
-}
+});
+
+ReassignModal.displayName = 'ReassignModal';
+
+export default ReassignModal;

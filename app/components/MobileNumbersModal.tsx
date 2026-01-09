@@ -11,12 +11,12 @@ interface MobileNumbersModalProps {
   onSave: (updatedLead: Lead) => void;
 }
 
-const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
+const MobileNumbersModal = React.memo<MobileNumbersModalProps>(function MobileNumbersModal({
   isOpen,
   onClose,
   lead,
   onSave
-}) => {
+}) {
   const [mobileNumbers, setMobileNumbers] = useState<MobileNumber[]>([
     { id: '1', number: '', name: '', isMain: true },
     { id: '2', number: '', name: '', isMain: false },
@@ -33,7 +33,7 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
         { id: '2', number: '', name: '', isMain: false },
         { id: '3', number: '', name: '', isMain: false }
       ];
-      
+
       lead.mobileNumbers.forEach((mobile, index) => {
         if (index < 3) {
           initializedNumbers[index] = {
@@ -44,7 +44,7 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
           };
         }
       });
-      
+
       setMobileNumbers(initializedNumbers);
     } else if (lead.mobileNumber) {
       // Convert old format to new format
@@ -79,9 +79,9 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
   const handleMobileNumberChange = (index: number, value: string) => {
     // Only allow numeric characters (0-9) and limit to 10 digits
     const numericValue = value.replace(/[^0-9]/g, '').slice(0, 10);
-    
-    setMobileNumbers(prev => 
-      prev.map((mobile, i) => 
+
+    setMobileNumbers(prev =>
+      prev.map((mobile, i) =>
         i === index ? { ...mobile, number: numericValue } : mobile
       )
     );
@@ -98,15 +98,15 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
   };
 
   const handleMobileNameChange = (index: number, value: string) => {
-    setMobileNumbers(prev => 
-      prev.map((mobile, i) => 
+    setMobileNumbers(prev =>
+      prev.map((mobile, i) =>
         i === index ? { ...mobile, name: value } : mobile
       )
     );
   };
 
   const handleMainMobileNumberChange = (index: number) => {
-    setMobileNumbers(prev => 
+    setMobileNumbers(prev =>
       prev.map((mobile, i) => ({
         ...mobile,
         isMain: i === index
@@ -140,7 +140,7 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
     try {
       // Get main mobile number for backward compatibility
       const mainMobileNumber = mobileNumbers.find(mobile => mobile.isMain)?.number || mobileNumbers[0]?.number || '';
-      
+
       const updatedLead: Lead = {
         ...lead,
         mobileNumbers: mobileNumbers,
@@ -207,9 +207,8 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
                       type="text"
                       value={mobile.number}
                       onChange={(e) => handleMobileNumberChange(index, e.target.value)}
-                      className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black ${
-                        errors[`mobileNumber_${index}`] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                      }`}
+                      className={`w-full px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black ${errors[`mobileNumber_${index}`] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                        }`}
                       placeholder={`Mobile ${index + 1}`}
                       disabled={isSubmitting}
                       pattern="[0-9]*"
@@ -220,15 +219,13 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
                     type="button"
                     onClick={() => handleMainMobileNumberChange(index)}
                     disabled={isSubmitting}
-                    className={`flex items-center space-x-1 px-2 py-1 text-xs rounded border transition-all duration-200 ${
-                      mobile.isMain
+                    className={`flex items-center space-x-1 px-2 py-1 text-xs rounded border transition-all duration-200 ${mobile.isMain
                         ? 'border-purple-500 bg-purple-50 text-purple-700'
                         : 'border-gray-300 bg-white text-gray-600 hover:border-purple-300 hover:bg-purple-25'
-                    }`}
+                      }`}
                   >
-                    <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${
-                      mobile.isMain ? 'border-purple-500 bg-purple-500' : 'border-gray-400'
-                    }`}>
+                    <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${mobile.isMain ? 'border-purple-500 bg-purple-500' : 'border-gray-400'
+                      }`}>
                       {mobile.isMain && (
                         <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                       )}
@@ -273,11 +270,10 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
             type="button"
             onClick={handleSave}
             disabled={isSubmitting}
-            className={`px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm ${
-              isSubmitting
+            className={`px-4 py-2 rounded font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 text-sm ${isSubmitting
                 ? 'bg-gray-400 cursor-not-allowed text-white'
                 : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-            }`}
+              }`}
           >
             {isSubmitting ? (
               <span className="flex items-center">
@@ -295,6 +291,8 @@ const MobileNumbersModal: React.FC<MobileNumbersModalProps> = ({
       </div>
     </div>
   );
-};
+});
+
+MobileNumbersModal.displayName = 'MobileNumbersModal';
 
 export default MobileNumbersModal;

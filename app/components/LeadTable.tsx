@@ -71,13 +71,12 @@ const LeadTable = React.memo(function LeadTable({
   const [columnOperation, setColumnOperation] = useState<{ type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string } | null>(null);
 
   // Virtualization settings
-  // Virtual scrolling disabled for <5000 leads to maintain proper HTML table structure
-  // react-window's List component with innerElementType="tbody" can break table rendering
+  // Virtual scrolling enabled for >100 leads to improve performance
   const [useVirtualization, setUseVirtualization] = useState(false);
   const [virtualizationError, setVirtualizationError] = useState(false);
   const ROW_HEIGHT = 40; // Matches current row height with padding
   const CONTAINER_HEIGHT = 800; // Visible table height - increased for better UX
-  const VIRTUALIZATION_THRESHOLD = 5000; // Enable when >5000 leads - prevents table structure issues with react-window
+  const VIRTUALIZATION_THRESHOLD = 100; // Enable when >100 leads
 
   // Use custom leads if provided, otherwise use context leads
   const leads = customLeads || contextLeads;
@@ -214,69 +213,117 @@ const LeadTable = React.memo(function LeadTable({
     return result;
   }, [getFilteredLeads, filters, leads.length, customLeads, roleFilter]);
 
-  // Helper function to parse dates for sorting
-  const parseDateForSorting = useCallback((dateString: string): Date => {
-    if (!dateString) return new Date(0); // Return epoch for empty dates
+  // Optimized Intl.Collator for faster string comparisons (created once)
+  const stringCollator = useMemo(() => new Intl.Collator(undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  }), []);
+
+  // Parse caches for avoiding repeated parsing during sorting
+  const dateParseCache = useMemo(() => new Map<string, number>(), [filteredLeads.length]);
+  const numberParseCache = useMemo(() => new Map<string, number>(), [filteredLeads.length]);
+
+  // Helper function to parse dates for sorting with caching
+  const parseDateForSorting = useCallback((dateString: string): number => {
+    if (!dateString) return 0; // Return epoch for empty dates
+
+    // Check cache first
+    const cached = dateParseCache.get(dateString);
+    if (cached !== undefined) return cached;
+
+    let timestamp: number;
 
     // Handle DD-MM-YYYY format
     if (dateString.match(/^\d{2}-\d{2}-\d{4}$/)) {
       const [day, month, year] = dateString.split('-');
       if (day && month && year) {
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        timestamp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).getTime();
+      } else {
+        timestamp = 0;
       }
+    } else {
+      // Handle ISO format or other formats
+      const date = new Date(dateString);
+      timestamp = isNaN(date.getTime()) ? 0 : date.getTime();
     }
 
-    // Handle ISO format or other formats
-    const date = new Date(dateString);
-    return isNaN(date.getTime()) ? new Date(0) : date;
-  }, []);
+    // Cache and return
+    dateParseCache.set(dateString, timestamp);
+    return timestamp;
+  }, [dateParseCache]);
 
-  // Helper function to parse numeric values for sorting
+  // Helper function to parse numeric values for sorting with caching
   const parseNumericForSorting = useCallback((value: string): number => {
     if (!value) return 0;
 
+    // Check cache first
+    const cached = numberParseCache.get(value);
+    if (cached !== undefined) return cached;
+
     // Extract numbers from the string
     const numericMatch = value.toString().match(/\d+/);
-    return numericMatch ? parseInt(numericMatch[0]) : 0;
-  }, []);
+    const parsed = numericMatch ? parseInt(numericMatch[0]) : 0;
 
-  // Sort leads based on current sort field and direction
-  const sortedLeads = useMemo(() => {
-    if (!sortField) return filteredLeads;
+    // Cache and return
+    numberParseCache.set(value, parsed);
+    return parsed;
+  }, [numberParseCache]);
 
-    // Get the column configuration for the sort field
-    const column = getColumnByKey(sortField);
+  // Memoized comparator function based on column type
+  const createComparator = useMemo(() => {
+    const column = sortField ? getColumnByKey(sortField) : null;
+    const columnType = column?.type;
 
-    return [...filteredLeads].sort((a, b) => {
-      const aValue = a[sortField];
-      const bValue = b[sortField];
+    return (a: Lead, b: Lead, aIndex: number, bIndex: number): number => {
+      const aValue = sortField ? a[sortField] : undefined;
+      const bValue = sortField ? b[sortField] : undefined;
 
-      if (aValue === undefined || bValue === undefined) return 0;
+      if (aValue === undefined && bValue === undefined) return aIndex - bIndex;
+      if (aValue === undefined) return 1;
+      if (bValue === undefined) return -1;
 
       let comparison = 0;
 
       // Handle date fields
-      if (column?.type === 'date') {
-        const aDate = parseDateForSorting(String(aValue || ''));
-        const bDate = parseDateForSorting(String(bValue || ''));
-        comparison = aDate.getTime() - bDate.getTime();
+      if (columnType === 'date') {
+        const aTimestamp = parseDateForSorting(String(aValue || ''));
+        const bTimestamp = parseDateForSorting(String(bValue || ''));
+        comparison = aTimestamp - bTimestamp;
       }
       // Handle numeric fields
-      else if (column?.type === 'number') {
+      else if (columnType === 'number') {
         const aNum = parseNumericForSorting(String(aValue || ''));
         const bNum = parseNumericForSorting(String(bValue || ''));
         comparison = aNum - bNum;
       }
-      // Handle string fields
+      // Handle string fields with optimized Intl.Collator
       else if (typeof aValue === 'string' && typeof bValue === 'string') {
-        comparison = aValue.localeCompare(bValue);
+        comparison = stringCollator.compare(aValue, bValue);
       } else {
         comparison = aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
       }
 
+      // Stable sort: use index as tiebreaker for equal elements
+      if (comparison === 0) {
+        return aIndex - bIndex;
+      }
+
       return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [filteredLeads, sortField, sortDirection, getColumnByKey]);
+    };
+  }, [sortField, sortDirection, getColumnByKey, parseDateForSorting, parseNumericForSorting, stringCollator]);
+
+  // Sort leads based on current sort field and direction with optimized comparator
+  const sortedLeads = useMemo(() => {
+    if (!sortField) return filteredLeads;
+
+    // Create indexed array for stable sort
+    const indexed = filteredLeads.map((lead, index) => ({ lead, index }));
+
+    // Sort with memoized comparator
+    indexed.sort((a, b) => createComparator(a.lead, b.lead, a.index, b.index));
+
+    return indexed.map(item => item.lead);
+  }, [filteredLeads, sortField, createComparator]);
 
   // Enable virtual scrolling for large datasets to improve performance
   useEffect(() => {
@@ -414,11 +461,50 @@ const LeadTable = React.memo(function LeadTable({
     return mainNumber || lead.mobileNumber || '';
   }, [getMobileNumbers]);
 
-  // Helper function to get display value from submitted_payload or current lead fields
-  // Prioritizes submitted_payload as the source of truth for display
   const getDisplayValue = useCallback((lead: Lead, fieldKey: string): any => {
     return lead.submitted_payload?.[fieldKey] ?? (lead as any)[fieldKey];
   }, []);
+
+  // Memoize the itemData object to prevent LeadRow re-renders
+  const itemData = useMemo(() => ({
+    leads: sortedLeads,
+    onLeadClick,
+    selectedLeads,
+    onLeadSelection,
+    getVisibleColumns,
+    editable,
+    handleCellUpdate,
+    validationErrors,
+    showActions,
+    actionButtons,
+    getStatusColor,
+    formatDate,
+    getColumnByKey,
+    setMobileModalOpen,
+    getMobileNumbers,
+    getMainMobileNumber,
+    getDisplayValue,
+    highlightedLeadId,
+  }), [
+    sortedLeads,
+    onLeadClick,
+    selectedLeads,
+    onLeadSelection,
+    getVisibleColumns,
+    editable,
+    handleCellUpdate,
+    validationErrors,
+    showActions,
+    actionButtons,
+    getStatusColor,
+    formatDate,
+    getColumnByKey,
+    setMobileModalOpen,
+    getMobileNumbers,
+    getMainMobileNumber,
+    getDisplayValue,
+    highlightedLeadId,
+  ]);
 
   // Memoized row component for virtual scrolling
   const LeadRow = React.memo<{
@@ -785,26 +871,7 @@ const LeadTable = React.memo(function LeadTable({
               overscanCount={10}
               innerElementType="tbody"
               className="bg-white divide-y divide-gray-200"
-              itemData={{
-                leads: sortedLeads,
-                ...(onLeadClick && { onLeadClick }),
-                selectedLeads,
-                ...(onLeadSelection && { onLeadSelection }),
-                getVisibleColumns,
-                editable,
-                handleCellUpdate,
-                validationErrors,
-                showActions,
-                ...(actionButtons && { actionButtons }),
-                getStatusColor,
-                formatDate,
-                getColumnByKey,
-                setMobileModalOpen,
-                getMobileNumbers,
-                getMainMobileNumber,
-                getDisplayValue,
-                highlightedLeadId,
-              }}
+              itemData={itemData}
             >
               {LeadRow}
             </List>
@@ -816,26 +883,7 @@ const LeadTable = React.memo(function LeadTable({
                 <LeadRow
                   key={lead.id}
                   index={index}
-                  data={{
-                    leads: sortedLeads,
-                    ...(onLeadClick && { onLeadClick }),
-                    selectedLeads,
-                    ...(onLeadSelection && { onLeadSelection }),
-                    getVisibleColumns,
-                    editable,
-                    handleCellUpdate,
-                    validationErrors,
-                    showActions,
-                    ...(actionButtons && { actionButtons }),
-                    getStatusColor,
-                    formatDate,
-                    getColumnByKey,
-                    setMobileModalOpen,
-                    getMobileNumbers,
-                    getMainMobileNumber,
-                    getDisplayValue,
-                    highlightedLeadId,
-                  }}
+                  data={itemData}
                 />
               ))}
             </tbody>

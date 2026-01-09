@@ -7,7 +7,7 @@ import { useImpersonation } from '../context/ImpersonationContext';
  * Banner displayed when admin is impersonating another user.
  * Uses ImpersonationContext for state and actions.
  */
-export default function ImpersonationBanner() {
+const ImpersonationBanner = React.memo(function ImpersonationBanner() {
     const { isImpersonating, originalUser, impersonatedUser, stopImpersonation } = useImpersonation();
 
     if (!isImpersonating || !impersonatedUser || !originalUser) {
@@ -47,4 +47,8 @@ export default function ImpersonationBanner() {
             </div>
         </div>
     );
-}
+});
+
+ImpersonationBanner.displayName = 'ImpersonationBanner';
+
+export default ImpersonationBanner;

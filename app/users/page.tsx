@@ -1,12 +1,23 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { FixedSizeList as List } from 'react-window';
 import { useUsers } from '../context/UserContext';
 import { useImpersonation } from '../context/ImpersonationContext';
 import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { User, UserRole, PasswordHistoryEntry } from '../types/processTypes';
-import AuditLogViewer from '../components/AuditLogViewer';
-import PasswordHistoryModal from '../components/PasswordHistoryModal';
+
+// Dynamically imported components for bundle optimization
+const AuditLogViewer = dynamic(() => import('../components/AuditLogViewer'), {
+    loading: () => <div className="flex items-center justify-center p-8"><div className="text-gray-500">Loading audit logs...</div></div>,
+    ssr: false
+});
+
+const PasswordHistoryModal = dynamic(() => import('../components/PasswordHistoryModal'), {
+    loading: () => <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"><div className="bg-white rounded-xl p-6"><div className="text-gray-500">Loading...</div></div></div>,
+    ssr: false
+});
 
 export default function UsersPage() {
     const { users, createUser, updateUser, deleteUser, resetUserPassword, currentUser } = useUsers();
@@ -28,7 +39,7 @@ export default function UsersPage() {
     });
 
     // Handle impersonation start using context
-    const handleStartImpersonation = async (user: User) => {
+    const handleStartImpersonation = useCallback(async (user: User) => {
         const result = await startImpersonation(user.userId);
 
         if (result.success) {
@@ -39,16 +50,16 @@ export default function UsersPage() {
             setError(result.message);
             setTimeout(() => setError(''), 3000);
         }
-    };
+    }, [startImpersonation]);
 
-    const resetForm = () => {
+    const resetForm = useCallback(() => {
         setEditingUser({});
         setIsEditing(false);
         setError('');
         setSuccess('');
-    };
+    }, []);
 
-    const handleCreate = (e: React.FormEvent) => {
+    const handleCreate = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         if (!editingUser.username || !editingUser.password || !editingUser.name || !editingUser.email || !editingUser.role) {
             setError('All fields are required');
@@ -66,13 +77,18 @@ export default function UsersPage() {
 
         if (result.success) {
             setSuccess(result.message);
-            setTimeout(resetForm, 2000);
+            setTimeout(() => {
+                setEditingUser({});
+                setIsEditing(false);
+                setError('');
+                setSuccess('');
+            }, 2000);
         } else {
             setError(result.message);
         }
-    };
+    }, [editingUser, createUser]);
 
-    const handleDelete = (userId: string) => {
+    const handleDelete = useCallback((userId: string) => {
         if (confirm('Are you sure you want to delete this user?')) {
             const result = deleteUser(userId);
             if (result.success) {
@@ -82,9 +98,9 @@ export default function UsersPage() {
                 setError(result.message);
             }
         }
-    };
+    }, [deleteUser]);
 
-    const handleResetPassword = (userId: string, userName: string) => {
+    const handleResetPassword = useCallback((userId: string, userName: string) => {
         if (confirm(`Are you sure you want to reset the password for ${userName}? This will generate a new random password.`)) {
             const result = resetUserPassword(userId);
             if (result.success && result.newPassword) {
@@ -99,27 +115,45 @@ export default function UsersPage() {
                 setTimeout(() => setError(''), 3000);
             }
         }
-    };
+    }, [resetUserPassword]);
 
-    const copyToClipboard = (text: string) => {
+    const copyToClipboard = useCallback((text: string) => {
         navigator.clipboard.writeText(text).then(() => {
             setSuccess('Password copied to clipboard!');
             setTimeout(() => setSuccess(''), 2000);
         });
-    };
+    }, []);
 
-    const handleViewHistory = (user: User) => {
+    const handleViewHistory = useCallback((user: User) => {
         setHistoryModal({
             isOpen: true,
             userId: user.userId,
             userName: user.name,
             history: user.passwordHistory || []
         });
-    };
+    }, []);
 
-    const closePasswordModal = () => {
+    const closePasswordModal = useCallback(() => {
         setResetPasswordModal({ isOpen: false, userId: '', userName: '', newPassword: null });
-    };
+    }, []);
+
+    // Virtualization threshold - enable for large user lists
+    const VIRTUALIZATION_THRESHOLD = 50;
+    const shouldVirtualize = users.length > VIRTUALIZATION_THRESHOLD;
+
+    // Pagination state and computed values for large user lists
+    const [userPage, setUserPage] = useState(1);
+    const usersPerPage = 25;
+    const totalUserPages = Math.ceil(users.length / usersPerPage);
+
+    // Paginated users for display when shouldVirtualize is true
+    const paginatedUsers = useMemo(() => {
+        const startIndex = (userPage - 1) * usersPerPage;
+        return users.slice(startIndex, startIndex + usersPerPage);
+    }, [users, userPage, usersPerPage]);
+
+    // Memoize user row render data to prevent unnecessary re-renders
+    const memoizedUsers = useMemo(() => users, [users]);
 
     // Auto-dismiss password modal after 10 seconds
     useEffect(() => {
@@ -129,7 +163,7 @@ export default function UsersPage() {
             }, 10000);
             return () => clearTimeout(timer);
         }
-    }, [resetPasswordModal.isOpen, resetPasswordModal.newPassword]);
+    }, [resetPasswordModal.isOpen, resetPasswordModal.newPassword, closePasswordModal]);
 
     return (
         <RoleGuard allowedRoles={['ADMIN']} fallback={<AccessDenied />}>
@@ -283,7 +317,15 @@ export default function UsersPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {users.map(user => (
+                                    {/* Paginated user rendering for better performance when >50 users */}
+                                    {shouldVirtualize && (
+                                        <tr>
+                                            <td colSpan={7} className="px-6 py-2 bg-blue-50 text-blue-700 text-sm text-center">
+                                                ⚡ Pagination enabled for {users.length} users - Showing {Math.min(usersPerPage, paginatedUsers.length)} per page
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {(shouldVirtualize ? paginatedUsers : memoizedUsers).map(user => (
                                         <tr key={user.userId}>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
@@ -301,8 +343,8 @@ export default function UsersPage() {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {user.plainPassword ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm text-gray-900 font-mono">{user.plainPassword}</span>
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="text-sm text-gray-900 font-mono min-w-0 inline-block max-w-[200px] truncate" title={user.plainPassword}>{user.plainPassword}</span>
                                                         <button
                                                             onClick={() => copyToClipboard(user.plainPassword!)}
                                                             className="text-purple-600 hover:text-purple-800 transition-colors"
@@ -312,7 +354,7 @@ export default function UsersPage() {
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <span className="text-sm text-gray-400 font-mono" title="Password not yet available (user created before this feature)">
+                                                    <span className="text-sm text-gray-400 font-mono min-w-0 inline-block max-w-[200px] truncate" title="Password not yet available (user created before this feature)">
                                                         ••••••••
                                                     </span>
                                                 )}
@@ -377,6 +419,43 @@ export default function UsersPage() {
                                     ))}
                                 </tbody>
                             </table>
+
+                            {/* Pagination Controls for large user lists */}
+                            {shouldVirtualize && totalUserPages > 1 && (
+                                <div className="flex items-center justify-center gap-2 py-4 bg-gray-50 border-t">
+                                    <button
+                                        onClick={() => setUserPage(1)}
+                                        disabled={userPage === 1}
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        First
+                                    </button>
+                                    <button
+                                        onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                                        disabled={userPage === 1}
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Previous
+                                    </button>
+                                    <span className="px-4 py-1 text-sm text-gray-700">
+                                        Page {userPage} of {totalUserPages}
+                                    </span>
+                                    <button
+                                        onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
+                                        disabled={userPage === totalUserPages}
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Next
+                                    </button>
+                                    <button
+                                        onClick={() => setUserPage(totalUserPages)}
+                                        disabled={userPage === totalUserPages}
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Last
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Password Reset Modal */}

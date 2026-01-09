@@ -30,7 +30,7 @@ const PRIORITY_CONFIG: Record<CasePriority, {
  * 
  * Displays a case summary card for list views.
  */
-export function CaseCard({ caseData, onClick, showAssignee = true, assigneeName }: CaseCardProps) {
+const CaseCard = React.memo(function CaseCard({ caseData, onClick, showAssignee = true, assigneeName }: CaseCardProps) {
     const priorityConfig = PRIORITY_CONFIG[caseData.priority];
 
     return (
@@ -102,6 +102,9 @@ export function CaseCard({ caseData, onClick, showAssignee = true, assigneeName 
             </div>
         </div>
     );
-}
+});
 
+CaseCard.displayName = 'CaseCard';
+
+export { CaseCard };
 export default CaseCard;

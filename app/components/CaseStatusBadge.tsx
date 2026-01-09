@@ -82,7 +82,7 @@ const STATUS_CONFIG: Record<ProcessStatus, {
  * 
  * Displays a colored badge for case status.
  */
-export function CaseStatusBadge({ status, size = 'md', showIcon = true }: CaseStatusBadgeProps) {
+const CaseStatusBadge = React.memo(function CaseStatusBadge({ status, size = 'md', showIcon = true }: CaseStatusBadgeProps) {
     const config = STATUS_CONFIG[status];
 
     const sizeClasses = {
@@ -103,7 +103,9 @@ export function CaseStatusBadge({ status, size = 'md', showIcon = true }: CaseSt
             {config.label}
         </span>
     );
-}
+});
+
+CaseStatusBadge.displayName = 'CaseStatusBadge';
 
 /**
  * Get status configuration for external use
@@ -126,4 +128,5 @@ export const STATUS_ORDER: ProcessStatus[] = [
     'CLOSED'
 ];
 
+export { CaseStatusBadge };
 export default CaseStatusBadge;

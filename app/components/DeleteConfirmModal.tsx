@@ -15,7 +15,7 @@ interface DeleteConfirmModalProps {
 
 const DELETE_PASSWORD = 'admin123'; // You can change this or make it configurable
 
-const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
+const DeleteConfirmModal = React.memo<DeleteConfirmModalProps>(function DeleteConfirmModal({
     isOpen,
     onClose,
     onConfirm,
@@ -23,7 +23,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
     message = 'This action cannot be undone. Please enter password to confirm.',
     itemName,
     captureReason = false // Default to false for backward compatibility
-}) => {
+}) {
     const [password, setPassword] = useState('');
     const [reason, setReason] = useState('');
     const [error, setError] = useState('');
@@ -216,6 +216,8 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             )}
         </AnimatePresence>
     );
-};
+});
+
+DeleteConfirmModal.displayName = 'DeleteConfirmModal';
 
 export default DeleteConfirmModal;

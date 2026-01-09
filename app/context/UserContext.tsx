@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import {
     User,
     UserSession,
@@ -729,7 +729,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // CONTEXT VALUE
     // ============================================================================
 
-    const contextValue: UserContextType = {
+    const contextValue: UserContextType = useMemo(() => ({
         currentUser,
         users,
         isAuthenticated: currentUser !== null,
@@ -758,7 +758,35 @@ export function UserProvider({ children }: { children: ReactNode }) {
         canAccessProcessDashboard,
         canDeleteLeads,
         canAssignBenefitTypes
-    };
+    }), [
+        currentUser,
+        users,
+        isLoading,
+        login,
+        logout,
+        createUser,
+        updateUser,
+        deleteUser,
+        resetUserPassword,
+        changeOwnPassword,
+        getUserById,
+        getUsersByRole,
+        overrideCurrentUser,
+        hasRole,
+        canManageLeads,
+        canConvertToCase,
+        canManageCases,
+        canViewAllCases,
+        canManageUsers,
+        canViewReports,
+        canViewAllLeads,
+        canAssignLeads,
+        canReassignLeads,
+        canAccessSalesDashboard,
+        canAccessProcessDashboard,
+        canDeleteLeads,
+        canAssignBenefitTypes
+    ]);
 
     // Show loading state
     if (isLoading) {

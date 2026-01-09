@@ -8,7 +8,6 @@ import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { CaseStatusBadge } from '../components/CaseStatusBadge';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { Case, UserRole, CasePriority, ProcessStatus } from '../types/processTypes';
-import * as XLSX from 'xlsx';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -392,8 +391,11 @@ export default function ProcessDashboardPage() {
         setIsReassigningBulk(false);
     }, [caseToReassign, isReassigningBulk, selectedCases, assignCase, bulkAssignCases, showToast]);
 
-    const handleExport = useCallback(() => {
+    const handleExport = useCallback(async () => {
         try {
+            // Dynamically import XLSX to reduce initial bundle size
+            const XLSX = await import('xlsx');
+
             // Flatten grouped cases for export, sorting by company then benefit type
             const exportData: any[] = [];
 

@@ -10,12 +10,12 @@ interface ApprovalModalProps {
     caseNumber?: string;
 }
 
-const ApprovalModal: React.FC<ApprovalModalProps> = ({
+const ApprovalModal = React.memo<ApprovalModalProps>(function ApprovalModal({
     isOpen,
     onClose,
     onConfirm,
     caseNumber
-}) => {
+}) {
     const [approvalNote, setApprovalNote] = useState('');
     const [showFireworks, setShowFireworks] = useState(false);
 
@@ -356,6 +356,8 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({
             )}
         </AnimatePresence>
     );
-};
+});
+
+ApprovalModal.displayName = 'ApprovalModal';
 
 export default ApprovalModal;

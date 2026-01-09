@@ -5,7 +5,6 @@ import { useCases } from '../context/CaseContext';
 import { useUsers } from '../context/UserContext';
 import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { ProcessStatus, CasePriority } from '../types/processTypes';
-import * as XLSX from 'xlsx';
 
 // Utility functions
 function calculateDaysBetween(start: string, end: string): number {
@@ -243,8 +242,9 @@ export default function ReportsPage() {
     }, [cases]);
 
     // Export functionality
-    const handleExport = () => {
+    const handleExport = async () => {
         try {
+            const XLSX = await import('xlsx');
             const wb = XLSX.utils.book_new();
 
             // Summary sheet

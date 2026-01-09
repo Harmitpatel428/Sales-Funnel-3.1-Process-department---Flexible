@@ -155,34 +155,30 @@ const EditableTable: React.FC<EditableTableProps> = ({
     }
   }, [onCellUpdate, customLeads]);
 
-  // Undo functionality
+  // Undo functionality - batched state updates
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0 || !onCellUpdate) return;
 
     const lastAction = undoStack[undoStack.length - 1];
     if (!lastAction) return;
 
-    // Add to redo stack
+    // Batch state updates - use functional updates to avoid stale closures
     setRedoStack(prev => [...prev, lastAction]);
-
-    // Remove from undo stack
     setUndoStack(prev => prev.slice(0, -1));
 
     // Perform undo
     onCellUpdate(lastAction.leadId, lastAction.field, lastAction.oldValue);
   }, [undoStack, onCellUpdate]);
 
-  // Redo functionality
+  // Redo functionality - batched state updates
   const handleRedo = useCallback(() => {
     if (redoStack.length === 0 || !onCellUpdate) return;
 
     const lastAction = redoStack[redoStack.length - 1];
     if (!lastAction) return;
 
-    // Add back to undo stack
+    // Batch state updates - use functional updates to avoid stale closures
     setUndoStack(prev => [...prev, lastAction]);
-
-    // Remove from redo stack
     setRedoStack(prev => prev.slice(0, -1));
 
     // Perform redo

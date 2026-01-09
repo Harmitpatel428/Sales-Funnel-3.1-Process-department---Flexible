@@ -86,7 +86,7 @@ const ContentEditableEditor: React.FC<ContentEditableEditorProps> = ({ content, 
   );
 };
 
-const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, onSave }) => {
+const QuickBenefitModal = React.memo<QuickBenefitModalProps>(function QuickBenefitModal({ isOpen, onClose, onSave }) {
   const { templates, activeTemplateId, setActiveTemplateId, createTemplate, deleteTemplate, renameTemplate, updateTemplateContent, getTemplateById } = useTemplates();
   const [showBenefitsModal, setShowBenefitsModal] = useState(false);
   const [resolvedBenefit, setResolvedBenefit] = useState<{ district: string; taluka: string; category: 'I' | 'II' | 'III' } | null>(null);
@@ -399,6 +399,8 @@ const QuickBenefitModal: React.FC<QuickBenefitModalProps> = ({ isOpen, onClose, 
       )}
     </div>
   );
-};
+});
+
+QuickBenefitModal.displayName = 'QuickBenefitModal';
 
 export default QuickBenefitModal;

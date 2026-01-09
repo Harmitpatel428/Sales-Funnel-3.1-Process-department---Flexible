@@ -8,7 +8,6 @@ import { RoleGuard, AccessDenied } from '../components/RoleGuard';
 import { CaseStatusBadge } from '../components/CaseStatusBadge';
 import DeleteConfirmModal from '../components/DeleteConfirmModal'; // Using Dashboard's modal for consistency
 import { Case, UserRole, CasePriority, ProcessStatus } from '../types/processTypes';
-import * as XLSX from 'xlsx';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -429,8 +428,11 @@ export default function CasesPage() {
     }, [caseToDelete, selectedCases, deleteCase, showToast]);
 
     // Export Handler
-    const handleExport = useCallback(() => {
+    const handleExport = useCallback(async () => {
         try {
+            // Dynamically import XLSX to reduce initial bundle size
+            const XLSX = await import('xlsx');
+
             const exportData: any[] = [];
             groupedCases.forEach(group => {
                 group.cases.forEach(c => {

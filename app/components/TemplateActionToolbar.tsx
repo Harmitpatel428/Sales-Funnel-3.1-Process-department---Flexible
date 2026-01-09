@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, MessageCircle, ChevronDown } from 'lucide-react';
-import { 
-  openWhatsApp, 
-  getMainPhoneNumber, 
-  sanitizeContent, 
+import {
+  openWhatsApp,
+  getMainPhoneNumber,
+  sanitizeContent,
   hasValidContent,
-  type WhatsAppOptions 
+  type WhatsAppOptions
 } from '../utils/whatsappUtils';
 
 interface Lead {
@@ -27,12 +27,12 @@ interface TemplateActionToolbarProps {
   className?: string;
 }
 
-const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
+const TemplateActionToolbar = React.memo<TemplateActionToolbarProps>(function TemplateActionToolbar({
   templateContent,
   lead,
   onCopy,
   className = ''
-}) => {
+}) {
   const [copySuccess, setCopySuccess] = useState(false);
   const [showWhatsAppDropdown, setShowWhatsAppDropdown] = useState(false);
   const [showNumberInput, setShowNumberInput] = useState(false);
@@ -58,7 +58,7 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-          buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
+        buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
         setShowWhatsAppDropdown(false);
         setShowNumberInput(false);
         setPhoneNumber('');
@@ -92,7 +92,7 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
       await navigator.clipboard.writeText(plainText);
       setCopySuccess(true);
       onCopy?.();
-      
+
       // Clear success message after 2 seconds
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (error) {
@@ -102,13 +102,13 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
 
   const handleWhatsAppSend = async (phoneNumber: string) => {
     if (isLoading) return; // Prevent multiple clicks
-    
+
     setIsLoading(true);
     setPhoneError('');
 
     try {
       const plainText = sanitizeContent(templateContent);
-      
+
       const options: WhatsAppOptions = {
         phoneNumber,
         message: plainText,
@@ -117,7 +117,7 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
       };
 
       const result = await openWhatsApp(options);
-      
+
       if (result.success) {
         // Close dropdown after successful send
         setShowWhatsAppDropdown(false);
@@ -207,10 +207,10 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
 
       {/* WhatsApp Dropdown - Rendered via Portal */}
       {showWhatsAppDropdown && typeof window !== 'undefined' && createPortal(
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-48 bg-white border border-gray-200 rounded-md shadow-lg z-[70]"
-          style={{  
+          style={{
             top: `${dropdownPosition.top}px`,
             left: `${dropdownPosition.left}px`
           }}
@@ -222,11 +222,10 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
                 type="button"
                 onClick={() => handleWhatsAppOption('main')}
                 disabled={!hasMainNumber || isLoading}
-                className={`w-full px-4 py-2 text-sm text-left rounded-t-md ${
-                  hasMainNumber && !isLoading
-                    ? 'text-gray-700 hover:bg-gray-100' 
+                className={`w-full px-4 py-2 text-sm text-left rounded-t-md ${hasMainNumber && !isLoading
+                    ? 'text-gray-700 hover:bg-gray-100'
                     : 'text-gray-400 cursor-not-allowed'
-                }`}
+                  }`}
                 title={hasMainNumber ? `Send to main number: ${mainNumber}` : 'No lead selected'}
               >
                 Main Number
@@ -303,6 +302,8 @@ const TemplateActionToolbar: React.FC<TemplateActionToolbarProps> = ({
       )}
     </>
   );
-};
+});
+
+TemplateActionToolbar.displayName = 'TemplateActionToolbar';
 
 export default TemplateActionToolbar;

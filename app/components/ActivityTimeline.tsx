@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import type { Activity } from '../types/shared';
 import ActivityLogger from './ActivityLogger';
 
@@ -9,7 +10,7 @@ interface ActivityTimelineProps {
   leadId?: string;
 }
 
-export default function ActivityTimeline({ activities = [], onAddActivity, leadId }: ActivityTimelineProps) {
+const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [], onAddActivity, leadId }: ActivityTimelineProps) {
   // Format date for display
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -54,20 +55,20 @@ export default function ActivityTimeline({ activities = [], onAddActivity, leadI
     };
     return colors[type || 'note'];
   };
-  
+
   return (
     <div className="space-y-4">
       {/* Add New Activity using ActivityLogger */}
       {onAddActivity && leadId && (
         <div className="mb-6">
-          <ActivityLogger 
-            leadId={leadId} 
-            onActivityAdded={() => {/* Activity already added via context */}}
+          <ActivityLogger
+            leadId={leadId}
+            onActivityAdded={() => {/* Activity already added via context */ }}
             compact={true}
           />
         </div>
       )}
-      
+
       {/* Activity List */}
       {activities && activities.length > 0 ? (
         activities.map((activity, index) => (
@@ -92,10 +93,10 @@ export default function ActivityTimeline({ activities = [], onAddActivity, leadI
                     </span>
                   )}
                 </div>
-                
+
                 {/* Description */}
                 <p className="text-gray-900 mb-1">{activity.description}</p>
-                
+
                 {/* Footer Row - Employee Name */}
                 {activity.employeeName && (
                   <p className="text-xs text-gray-500">by {activity.employeeName}</p>
@@ -109,4 +110,8 @@ export default function ActivityTimeline({ activities = [], onAddActivity, leadI
       )}
     </div>
   );
-}
+});
+
+ActivityTimeline.displayName = 'ActivityTimeline';
+
+export default ActivityTimeline;

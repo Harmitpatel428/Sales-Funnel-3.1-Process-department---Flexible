@@ -14,7 +14,7 @@ interface StatusUpdateModalProps {
     showConfetti?: boolean;
 }
 
-const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
+const StatusUpdateModal = React.memo<StatusUpdateModalProps>(function StatusUpdateModal({
     isOpen,
     onClose,
     type,
@@ -23,7 +23,7 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
     actionLabel = 'Got it',
     onAction,
     showConfetti = false
-}) => {
+}) {
     // Close on escape key
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
@@ -266,6 +266,8 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({
             )}
         </AnimatePresence>
     );
-};
+});
+
+StatusUpdateModal.displayName = 'StatusUpdateModal';
 
 export default StatusUpdateModal;

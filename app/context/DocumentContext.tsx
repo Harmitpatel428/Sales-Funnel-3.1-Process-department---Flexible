@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import {
     CaseDocument,
     DocumentStatus,
@@ -169,7 +169,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // CONTEXT VALUE
     // ============================================================================
 
-    const contextValue: DocumentContextType = {
+    const contextValue: DocumentContextType = useMemo(() => ({
         documents,
         addDocument,
         updateDocument,
@@ -178,7 +178,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         rejectDocument,
         getDocumentsByCaseId,
         getDocumentsByStatus
-    };
+    }), [documents, addDocument, updateDocument, deleteDocument, verifyDocument, rejectDocument, getDocumentsByCaseId, getDocumentsByStatus]);
 
     return (
         <DocumentContext.Provider value={contextValue}>

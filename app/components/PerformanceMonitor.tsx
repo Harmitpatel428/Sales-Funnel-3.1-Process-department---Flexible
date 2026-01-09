@@ -28,18 +28,35 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
   });
 
   const [isVisible, setIsVisible] = useState(false);
+  const lastMeasureTime = React.useRef<number>(0);
+  const measurementThrottleMs = 1000; // Throttle measurements to once per second
 
   const measurePerformance = useCallback(() => {
+    // Skip measurements when hidden and no performance issue callback
+    // This avoids setMetrics updates and re-render overhead during normal use
+    if (!isVisible && !onPerformanceIssue) {
+      return;
+    }
+
+    // Throttle measurements to reduce performance overhead
+    const now = Date.now();
+    if (now - lastMeasureTime.current < measurementThrottleMs) {
+      return;
+    }
+    lastMeasureTime.current = now;
+
     const startTime = performance.now();
-    
+
     // Simulate render measurement
     requestAnimationFrame(() => {
+      // Double-check visibility before updating state to avoid stale closures
+      // Only proceed if visible or if there's a performance issue callback
       const endTime = performance.now();
       const renderTime = endTime - startTime;
-      
+
       // Get memory usage if available
-      const memoryUsage = (performance as any).memory 
-        ? (performance as any).memory.usedJSHeapSize / 1024 / 1024 
+      const memoryUsage = (performance as any).memory
+        ? (performance as any).memory.usedJSHeapSize / 1024 / 1024
         : 0;
 
       const newMetrics: PerformanceMetrics = {
@@ -49,18 +66,24 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
         filterCount
       };
 
-      setMetrics(newMetrics);
+      // Only update state if visible (to display in UI)
+      if (isVisible) {
+        setMetrics(newMetrics);
+      }
 
-      // Check for performance issues
+      // Check for performance issues regardless of visibility
       if (renderTime > 16 || memoryUsage > 100 || leadCount > 1000) {
         onPerformanceIssue?.(newMetrics);
       }
     });
-  }, [leadCount, filterCount, onPerformanceIssue]);
+  }, [leadCount, filterCount, onPerformanceIssue, isVisible]);
 
   useEffect(() => {
-    measurePerformance();
-  }, [measurePerformance]);
+    // Only measure when visible or when there's a performance issue callback
+    if (isVisible || onPerformanceIssue) {
+      measurePerformance();
+    }
+  }, [measurePerformance, isVisible, onPerformanceIssue]);
 
   // Toggle visibility with Ctrl+Shift+P
   useEffect(() => {
@@ -93,7 +116,7 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
           ✕
         </button>
       </div>
-      
+
       <div className="space-y-2 text-xs">
         <div className="flex justify-between">
           <span className="text-gray-600">Render Time:</span>
@@ -101,21 +124,21 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
             {metrics.renderTime.toFixed(2)}ms
           </span>
         </div>
-        
+
         <div className="flex justify-between">
           <span className="text-gray-600">Memory Usage:</span>
           <span className={getPerformanceColor(metrics.memoryUsage, [50, 100])}>
             {metrics.memoryUsage.toFixed(1)}MB
           </span>
         </div>
-        
+
         <div className="flex justify-between">
           <span className="text-gray-600">Lead Count:</span>
           <span className={getPerformanceColor(metrics.leadCount, [500, 1000])}>
             {metrics.leadCount}
           </span>
         </div>
-        
+
         <div className="flex justify-between">
           <span className="text-gray-600">Filter Count:</span>
           <span className={getPerformanceColor(metrics.filterCount, [5, 10])}>
@@ -123,7 +146,7 @@ const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
           </span>
         </div>
       </div>
-      
+
       <div className="mt-3 pt-2 border-t border-gray-200">
         <p className="text-xs text-gray-500">
           Press Ctrl+Shift+P to toggle

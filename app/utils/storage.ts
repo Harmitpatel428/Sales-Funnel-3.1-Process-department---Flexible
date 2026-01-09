@@ -1946,6 +1946,17 @@ export function validateLeadsSubmittedPayloads(
 const SYSTEM_AUDIT_LOG_KEY = 'systemAuditLog';
 const MAX_AUDIT_LOGS = 10000; // Keep last 10k entries
 
+// In-memory cache for audit logs to avoid repeated localStorage reads
+let auditLogsCache: SystemAuditLog[] | null = null;
+let auditLogsCacheTimestamp: number = 0;
+const AUDIT_CACHE_TTL = 5000; // 5 seconds cache TTL
+
+// Helper to invalidate the audit logs cache
+function invalidateAuditLogsCache(): void {
+  auditLogsCache = null;
+  auditLogsCacheTimestamp = 0;
+}
+
 // Add audit log entry
 export function addAuditLog(entry: SystemAuditLog): void {
   try {
@@ -1960,35 +1971,49 @@ export function addAuditLog(entry: SystemAuditLog): void {
     }
 
     localStorage.setItem(SYSTEM_AUDIT_LOG_KEY, JSON.stringify(logs));
+
+    // Invalidate cache after adding new log
+    invalidateAuditLogsCache();
   } catch (error) {
     console.error('Error adding audit log:', error);
   }
 }
 
-// Get all audit logs
+// Get all audit logs with caching
 export function getAuditLogs(): SystemAuditLog[] {
   try {
+    const now = Date.now();
+
+    // Return cached data if valid
+    if (auditLogsCache !== null && (now - auditLogsCacheTimestamp) < AUDIT_CACHE_TTL) {
+      return auditLogsCache;
+    }
+
+    // Read from localStorage and cache
     const logsJson = localStorage.getItem(SYSTEM_AUDIT_LOG_KEY) || '[]';
-    return JSON.parse(logsJson);
+    auditLogsCache = JSON.parse(logsJson);
+    auditLogsCacheTimestamp = now;
+
+    return auditLogsCache!;
   } catch (error) {
     console.error('Error reading audit logs:', error);
     return [];
   }
 }
 
-// Get audit logs by entity
+// Get audit logs by entity (uses cached data)
 export function getAuditLogsByEntity(entityType: 'lead' | 'case', entityId: string): SystemAuditLog[] {
   const logs = getAuditLogs();
   return logs.filter(log => log.entityType === entityType && log.entityId === entityId);
 }
 
-// Get audit logs by action type
+// Get audit logs by action type (uses cached data)
 export function getAuditLogsByAction(actionType: AuditActionType): SystemAuditLog[] {
   const logs = getAuditLogs();
   return logs.filter(log => log.actionType === actionType);
 }
 
-// Get audit logs by date range
+// Get audit logs by date range (uses cached data)
 export function getAuditLogsByDateRange(startDate: string, endDate: string): SystemAuditLog[] {
   const logs = getAuditLogs();
   return logs.filter(log => {
@@ -2026,4 +2051,6 @@ export function exportAuditLogs(): string {
 // Clear audit logs (admin only)
 export function clearAuditLogs(): void {
   localStorage.removeItem(SYSTEM_AUDIT_LOG_KEY);
+  // Invalidate cache after clearing
+  invalidateAuditLogsCache();
 }
