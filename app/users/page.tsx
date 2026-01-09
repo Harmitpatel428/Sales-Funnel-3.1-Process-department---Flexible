@@ -167,7 +167,7 @@ export default function UsersPage() {
 
     return (
         <RoleGuard allowedRoles={['ADMIN']} fallback={<AccessDenied />}>
-            <div className="p-6 max-w-6xl mx-auto">
+            <div className="p-6 w-full max-w-[98%] xl:max-w-[1920px] mx-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
                     {activeTab === 'users' && (
@@ -378,42 +378,44 @@ export default function UsersPage() {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                                {user.userId !== 'admin-001' && user.userId !== currentUser?.userId && (
-                                                    <>
-                                                        {user.role !== 'ADMIN' && user.isActive && (
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <div className="flex justify-end items-center gap-3">
+                                                    {user.userId !== 'admin-001' && user.userId !== currentUser?.userId && (
+                                                        <>
+                                                            {user.role !== 'ADMIN' && user.isActive && (
+                                                                <button
+                                                                    onClick={() => handleStartImpersonation(user)}
+                                                                    className="text-indigo-600 hover:text-indigo-900 inline-flex items-center gap-1"
+                                                                    title={`View as ${user.name}`}
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                    </svg>
+                                                                    View As
+                                                                </button>
+                                                            )}
                                                             <button
-                                                                onClick={() => handleStartImpersonation(user)}
-                                                                className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
-                                                                title={`View as ${user.name}`}
+                                                                onClick={() => handleResetPassword(user.userId, user.name)}
+                                                                className="text-amber-600 hover:text-amber-900"
                                                             >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                                </svg>
-                                                                View As
+                                                                Reset PW
                                                             </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => handleResetPassword(user.userId, user.name)}
-                                                            className="text-amber-600 hover:text-amber-900"
-                                                        >
-                                                            Reset PW
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(user.userId)}
-                                                            className="text-red-600 hover:text-red-900"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleViewHistory(user)}
-                                                            className="text-blue-600 hover:text-blue-900"
-                                                        >
-                                                            History
-                                                        </button>
-                                                    </>
-                                                )}
+                                                            <button
+                                                                onClick={() => handleDelete(user.userId)}
+                                                                className="text-red-600 hover:text-red-900"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleViewHistory(user)}
+                                                                className="text-blue-600 hover:text-blue-900"
+                                                            >
+                                                                History
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
