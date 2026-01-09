@@ -1,6 +1,16 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  encryptData,
+  decryptData,
+  hasMasterKey,
+  setMasterKey as setMasterKeyUtil,
+  verifyMasterKey as verifyMasterKeyUtil,
+  requiresFirstRunSetup,
+  getEncryptionStatus as getEncryptionStatusUtil,
+  clearMasterKey as clearMasterKeyUtil
+} from '../utils/encryption';
 
 // Password configuration interface
 export interface PasswordConfig {
@@ -15,14 +25,25 @@ export interface PasswordConfig {
 // Password context type
 export interface PasswordContextType {
   verifyPassword: (operation: keyof PasswordConfig, password: string) => boolean;
-  changePassword: (operation: keyof PasswordConfig, newPassword: string) => boolean;
+  changePassword: (operation: keyof PasswordConfig, newPassword: string) => Promise<boolean>;
   getPasswordHint: (operation: keyof PasswordConfig) => string;
   getPasswordStrength: (password: string) => { score: number; feedback: string[] };
   isPasswordExpired: (operation: keyof PasswordConfig) => boolean;
-  resetPassword: (operation: keyof PasswordConfig) => boolean;
+  resetPassword: (operation: keyof PasswordConfig) => Promise<boolean>;
   getSecurityQuestion: (operation: keyof PasswordConfig) => string;
   verifySecurityAnswer: (operation: keyof PasswordConfig, answer: string) => boolean;
-  setSecurityQuestion: (operation: keyof PasswordConfig, answer: string) => void;
+  setSecurityQuestion: (operation: keyof PasswordConfig, answer: string) => Promise<void>;
+
+  // Encryption management
+  setMasterKey: (passphrase: string) => Promise<boolean>;
+  verifyMasterKey: (passphrase: string) => Promise<boolean>;
+  getEncryptionStatus: () => {
+    status: 'unset' | 'needsVerify' | 'ready' | 'error';
+    hasMasterKey: boolean;
+    requiresSetup: boolean;
+    sensitiveKeysCount: number;
+  };
+  requiresSetup: () => boolean;
 }
 
 // Default passwords
@@ -63,52 +84,122 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [passwords, setPasswords] = useState<PasswordConfig>(DEFAULT_PASSWORDS);
   const [securityAnswers, setSecurityAnswers] = useState<Record<keyof PasswordConfig, string>>({} as Record<keyof PasswordConfig, string>);
   const [passwordExpiry, setPasswordExpiry] = useState<Record<keyof PasswordConfig, number>>({} as Record<keyof PasswordConfig, number>);
+  const [masterStatus, setMasterStatus] = useState<'unset' | 'needsVerify' | 'ready' | 'error'>('unset');
 
-  // Load passwords from localStorage on mount
+  // Initialize master key status
   useEffect(() => {
-    const savedPasswords = localStorage.getItem('leadPasswordConfig');
-    const savedAnswers = localStorage.getItem('leadSecurityAnswers');
-    const savedExpiry = localStorage.getItem('leadPasswordExpiry');
-
-    if (savedPasswords) {
-      try {
-        const parsed = JSON.parse(savedPasswords);
-        setPasswords({ ...DEFAULT_PASSWORDS, ...parsed });
-      } catch (error) {
-        console.error('Error loading password config:', error);
-      }
-    }
-
-    if (savedAnswers) {
-      try {
-        setSecurityAnswers(JSON.parse(savedAnswers));
-      } catch (error) {
-        console.error('Error loading security answers:', error);
-      }
-    }
-
-    if (savedExpiry) {
-      try {
-        setPasswordExpiry(JSON.parse(savedExpiry));
-      } catch (error) {
-        console.error('Error loading password expiry:', error);
-      }
+    if (requiresFirstRunSetup()) {
+      setMasterStatus('unset');
+    } else if (hasMasterKey()) {
+      setMasterStatus('ready');
+    } else {
+      setMasterStatus('needsVerify');
     }
   }, []);
 
-  // Save passwords to localStorage
-  const savePasswords = (newPasswords: PasswordConfig) => {
-    localStorage.setItem('leadPasswordConfig', JSON.stringify(newPasswords));
-    setPasswords(newPasswords);
+  // Load passwords from localStorage when master key is ready
+  useEffect(() => {
+    const loadData = async () => {
+      if (requiresFirstRunSetup()) {
+        setMasterStatus('unset');
+        return;
+      }
+
+      if (!hasMasterKey()) {
+        setMasterStatus('needsVerify');
+        return;
+      }
+
+      const savedPasswords = localStorage.getItem('leadPasswordConfig');
+      const savedAnswers = localStorage.getItem('leadSecurityAnswers');
+      const savedExpiry = localStorage.getItem('leadPasswordExpiry');
+
+      if (savedPasswords) {
+        try {
+          // Try to decrypt
+          const decrypted = await decryptData(savedPasswords);
+          const parsed = JSON.parse(decrypted);
+          setPasswords({ ...DEFAULT_PASSWORDS, ...parsed });
+        } catch (error) {
+          console.warn('Failed to decrypt passwords, checking for legacy plaintext:', error);
+          // Fallback: try parsing as plaintext (migration path)
+          try {
+            const parsed = JSON.parse(savedPasswords);
+            setPasswords({ ...DEFAULT_PASSWORDS, ...parsed });
+            // Should optionally trigger a re-save here to encrypt it
+          } catch (parseError) {
+            console.error('Error loading password config and legacy fallback failed:', parseError);
+            // Strict Verbatim: On decrypt fail (and assuming invalid data if legacy also fails), remove item
+            localStorage.removeItem('leadPasswordConfig');
+            console.warn('Cleared invalid data for leadPasswordConfig');
+            setPasswords(DEFAULT_PASSWORDS);
+          }
+        }
+      }
+
+      if (savedAnswers) {
+        try {
+          const decrypted = await decryptData(savedAnswers);
+          setSecurityAnswers(JSON.parse(decrypted));
+        } catch (error) {
+          console.warn('Failed to decrypt security answers, checking for legacy plaintext:', error);
+          try {
+            setSecurityAnswers(JSON.parse(savedAnswers));
+          } catch (parseError) {
+            console.error('Error loading security answers and legacy fallback failed:', parseError);
+            localStorage.removeItem('leadSecurityAnswers');
+            console.warn('Cleared invalid data for leadSecurityAnswers');
+          }
+        }
+      }
+
+      if (savedExpiry) {
+        try {
+          // Expiry is not currently encrypted as it's not sensitive, but consistent
+          setPasswordExpiry(JSON.parse(savedExpiry));
+        } catch (error) {
+          console.error('Error loading password expiry:', error);
+        }
+      }
+    };
+
+    if (masterStatus === 'ready') {
+      loadData();
+    }
+  }, [masterStatus]);
+
+  // Save passwords to localStorage (Encrypted)
+  const savePasswords = async (newPasswords: PasswordConfig) => {
+    if (!hasMasterKey()) {
+      console.error('Master key required'); // Verbatim behavior implies error or block
+      throw new Error('Master key required');
+    }
+    try {
+      const encrypted = await encryptData(JSON.stringify(newPasswords));
+      localStorage.setItem('leadPasswordConfig', encrypted);
+      setPasswords(newPasswords);
+    } catch (error) {
+      console.error('Failed to encrypt and save passwords:', error);
+      throw error;
+    }
   };
 
-  // Save security answers to localStorage
-  const saveSecurityAnswers = (newAnswers: Record<keyof PasswordConfig, string>) => {
-    localStorage.setItem('leadSecurityAnswers', JSON.stringify(newAnswers));
-    setSecurityAnswers(newAnswers);
+  // Save security answers to localStorage (Encrypted)
+  const saveSecurityAnswers = async (newAnswers: Record<keyof PasswordConfig, string>) => {
+    if (!hasMasterKey()) {
+      throw new Error('Master key required');
+    }
+    try {
+      const encrypted = await encryptData(JSON.stringify(newAnswers));
+      localStorage.setItem('leadSecurityAnswers', encrypted);
+      setSecurityAnswers(newAnswers);
+    } catch (error) {
+      console.error('Failed to encrypt and save security answers:', error);
+      throw error;
+    }
   };
 
-  // Save password expiry to localStorage
+  // Save password expiry to localStorage (Not encrypted)
   const savePasswordExpiry = (newExpiry: Record<keyof PasswordConfig, number>) => {
     localStorage.setItem('leadPasswordExpiry', JSON.stringify(newExpiry));
     setPasswordExpiry(newExpiry);
@@ -116,17 +207,24 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Verify password
   const verifyPassword = (operation: keyof PasswordConfig, password: string): boolean => {
+    // If passwords aren't loaded yet (not ready), this might fail or return false.
+    // Assuming UI prevents reaching here if not ready, or defaults handle it.
     return passwords[operation] === password;
   };
 
   // Change password
-  const changePassword = (operation: keyof PasswordConfig, newPassword: string): boolean => {
+  const changePassword = async (operation: keyof PasswordConfig, newPassword: string): Promise<boolean> => {
     if (newPassword.length < 6) {
       return false;
     }
 
+    if (masterStatus !== 'ready') {
+      console.error('Cannot change password: Master key not ready');
+      return false;
+    }
+
     const newPasswords = { ...passwords, [operation]: newPassword };
-    savePasswords(newPasswords);
+    await savePasswords(newPasswords);
 
     // Set expiry to 90 days from now
     const expiryDate = Date.now() + (90 * 24 * 60 * 60 * 1000);
@@ -172,9 +270,17 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Reset password
-  const resetPassword = (operation: keyof PasswordConfig): boolean => {
+  const resetPassword = async (operation: keyof PasswordConfig): Promise<boolean> => {
+    if (masterStatus !== 'ready') return false;
+
     const newPasswords = { ...passwords, [operation]: DEFAULT_PASSWORDS[operation] };
-    savePasswords(newPasswords);
+    await savePasswords(newPasswords);
+
+    // Refresh expiry on reset (Comment 3)
+    const expiryDate = Date.now() + (90 * 24 * 60 * 60 * 1000);
+    const newExpiry = { ...passwordExpiry, [operation]: expiryDate };
+    savePasswordExpiry(newExpiry);
+
     return true;
   };
 
@@ -189,10 +295,41 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Set security question and answer
-  const setSecurityQuestion = (operation: keyof PasswordConfig, answer: string): void => {
+  const setSecurityQuestion = async (operation: keyof PasswordConfig, answer: string): Promise<void> => {
     const newAnswers = { ...securityAnswers, [operation]: answer };
-    saveSecurityAnswers(newAnswers);
+    await saveSecurityAnswers(newAnswers);
   };
+
+  // Encryption Management Methods
+  const setMasterKey = async (passphrase: string): Promise<boolean> => {
+    const success = await setMasterKeyUtil(passphrase);
+    if (success) {
+      setMasterStatus('ready');
+      // Proactively encrypt existing passwords when master key is first set
+      await savePasswords(passwords);
+      return true;
+    }
+    return false;
+  };
+
+  const verifyMasterKey = async (passphrase: string): Promise<boolean> => {
+    const isValid = await verifyMasterKeyUtil(passphrase);
+    if (isValid) {
+      setMasterStatus('ready');
+      return true;
+    }
+    return false;
+  };
+
+  const getEncryptionStatus = () => {
+    const utilsStatus = getEncryptionStatusUtil();
+    return {
+      status: masterStatus,
+      ...utilsStatus
+    };
+  };
+
+  const requiresSetup = () => requiresFirstRunSetup();
 
   const contextValue: PasswordContextType = {
     verifyPassword,
@@ -203,7 +340,11 @@ export const PasswordProvider: React.FC<{ children: ReactNode }> = ({ children }
     resetPassword,
     getSecurityQuestion,
     verifySecurityAnswer,
-    setSecurityQuestion
+    setSecurityQuestion,
+    setMasterKey,
+    verifyMasterKey,
+    getEncryptionStatus,
+    requiresSetup
   };
 
   return (

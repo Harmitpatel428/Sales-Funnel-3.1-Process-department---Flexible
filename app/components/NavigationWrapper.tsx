@@ -2,13 +2,16 @@
 
 import { useNavigation } from '../context/NavigationContext';
 import Navigation from './Navigation';
-
+import ImpersonationBanner from './ImpersonationBanner';
 export default function NavigationWrapper() {
   const { onExportClick } = useNavigation();
-  
+
   return (
-    <Navigation 
-      onExportClick={onExportClick}
-    />
+    <>
+      <ImpersonationBanner />
+      <Navigation
+        onExportClick={onExportClick}
+      />
+    </>
   );
 }

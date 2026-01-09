@@ -118,102 +118,7 @@ function RoleBadge({ role }: { role: UserRole | null }) {
     );
 }
 
-// ============================================================================
-// REASSIGNMENT MODAL COMPONENT
-// ============================================================================
-
-interface ReassignModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSubmit: (userId: string, role: UserRole) => void;
-    caseNumber: string;
-    getUsersByRole: (role: UserRole) => { userId: string; name: string }[];
-}
-
-function ReassignModal({ isOpen, onClose, onSubmit, caseNumber, getUsersByRole }: ReassignModalProps) {
-    const [selectedRole, setSelectedRole] = useState<UserRole>('PROCESS_EXECUTIVE');
-    const [selectedUserId, setSelectedUserId] = useState<string>('');
-
-    const usersForRole = useMemo(() => {
-        return getUsersByRole(selectedRole);
-    }, [selectedRole, getUsersByRole]);
-
-    if (!isOpen) return null;
-
-    const handleSubmit = () => {
-        if (selectedUserId) {
-            onSubmit(selectedUserId, selectedRole);
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-            <div className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">Reassign Case</h3>
-                <p className="text-sm text-gray-500 mb-4">Reassigning case: <strong>{caseNumber}</strong></p>
-
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Select Role
-                        </label>
-                        <select
-                            value={selectedRole}
-                            onChange={(e) => {
-                                setSelectedRole(e.target.value as UserRole);
-                                setSelectedUserId('');
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                        >
-                            <option value="PROCESS_MANAGER">Process Manager</option>
-                            <option value="PROCESS_EXECUTIVE">Process Executive</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Select User
-                        </label>
-                        <select
-                            value={selectedUserId}
-                            onChange={(e) => setSelectedUserId(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                        >
-                            <option value="" className="text-black">Select a user...</option>
-                            {usersForRole.map(user => (
-                                <option key={user.userId} value={user.userId}>
-                                    {user.name}
-                                </option>
-                            ))}
-                        </select>
-                        {usersForRole.length === 0 && (
-                            <p className="text-sm text-amber-600 mt-1">
-                                No active users found for this role
-                            </p>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                    <button
-                        onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!selectedUserId}
-                        className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Reassign
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
+import ReassignModal from '../components/ReassignModal';
 
 // ============================================================================
 // TOAST NOTIFICATION COMPONENT
@@ -244,7 +149,7 @@ function Toast({ message, type, onClose }: ToastProps) {
 
 export default function ProcessDashboardPage() {
     const router = useRouter();
-    const { cases, isLoading, getCaseStats, assignCase, deleteCase } = useCases();
+    const { cases, isLoading, getCaseStats, assignCase, bulkAssignCases, deleteCase } = useCases();
     const { currentUser, getUserById, getUsersByRole, canAssignBenefitTypes } = useUsers();
 
     // ========================================================================
@@ -264,6 +169,7 @@ export default function ProcessDashboardPage() {
     const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
     const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
     const [reassignModalOpen, setReassignModalOpen] = useState(false);
+    const [isReassigningBulk, setIsReassigningBulk] = useState(false);
     const [caseToReassign, setCaseToReassign] = useState<Case | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -451,22 +357,40 @@ export default function ProcessDashboardPage() {
     const handleReassignClick = useCallback((caseData: Case, e: React.MouseEvent) => {
         e.stopPropagation();
         setCaseToReassign(caseData);
+        setIsReassigningBulk(false);
         setReassignModalOpen(true);
     }, []);
 
-    const handleReassignSubmit = useCallback((userId: string, role: UserRole) => {
-        if (!caseToReassign) return;
+    const handleBulkReassignClick = useCallback(() => {
+        if (selectedCases.size === 0) return;
+        setCaseToReassign(null);
+        setIsReassigningBulk(true);
+        setReassignModalOpen(true);
+    }, [selectedCases.size]);
 
-        const result = assignCase(caseToReassign.caseId, userId, role);
-        if (result.success) {
-            showToast('Case reassigned successfully!', 'success');
+    const handleReassignSubmit = useCallback((userId: string, role: UserRole) => {
+        if (isReassigningBulk) {
+            const result = bulkAssignCases(Array.from(selectedCases), userId, role);
+            if (result.success) {
+                showToast(result.message, 'success');
+                setSelectedCases(new Set());
+            } else {
+                showToast(result.message, 'error');
+            }
         } else {
-            showToast(result.message || 'Failed to reassign case', 'error');
+            if (!caseToReassign) return;
+            const result = assignCase(caseToReassign.caseId, userId, role);
+            if (result.success) {
+                showToast('Case reassigned successfully!', 'success');
+            } else {
+                showToast(result.message || 'Failed to reassign case', 'error');
+            }
         }
 
         setReassignModalOpen(false);
         setCaseToReassign(null);
-    }, [caseToReassign, assignCase, showToast]);
+        setIsReassigningBulk(false);
+    }, [caseToReassign, isReassigningBulk, selectedCases, assignCase, bulkAssignCases, showToast]);
 
     const handleExport = useCallback(() => {
         try {
@@ -623,6 +547,17 @@ export default function ProcessDashboardPage() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
                                     Delete ({selectedCases.size})
+                                </button>
+                            )}
+                            {canReassign && !isReadOnly && selectedCases.size > 0 && (
+                                <button
+                                    onClick={handleBulkReassignClick}
+                                    className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                    </svg>
+                                    Reassign ({selectedCases.size})
                                 </button>
                             )}
                             <button

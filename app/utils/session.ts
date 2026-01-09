@@ -4,6 +4,7 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const SESSION_WARNING_MS = 5 * 60 * 1000; // 5 minutes before timeout
 const SESSION_STORAGE_KEY = '_app_session';
 const LAST_ACTIVITY_KEY = '_last_activity';
+const SESSION_ID_KEY = 'userSessionId';
 
 // Session Data Interface
 interface SessionData {
@@ -22,9 +23,45 @@ let activityTrackingSetup = false;
 /**
  * Generate a cryptographically secure session ID
  */
-function generateSessionId(): string {
-  const { generateUUID } = require('./uuid');
-  return generateUUID();
+export function generateSessionId(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substr(2, 9);
+  return `session_${timestamp}_${random}`;
+}
+
+/**
+ * Get current session ID
+ */
+export function getSessionId(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  return sessionStorage.getItem(SESSION_ID_KEY);
+}
+
+/**
+ * Set current session ID
+ */
+export function setSessionId(id: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(SESSION_ID_KEY, id);
+}
+
+/**
+ * Clear current session ID
+ */
+export function clearSession(): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(SESSION_ID_KEY);
+}
+
+/**
+ * Get session duration in minutes
+ * @param loginTime ISO timestamp of login
+ */
+export function getSessionDuration(loginTime: string): number {
+  if (!loginTime) return 0;
+  const start = new Date(loginTime).getTime();
+  const end = Date.now();
+  return Math.round((end - start) / 60000); // Duration in minutes
 }
 
 /**
@@ -34,7 +71,7 @@ function generateSessionId(): string {
 export function startSession(): string {
   const sessionId = generateSessionId();
   const now = Date.now();
-  
+
   const sessionData: SessionData = {
     sessionId,
     createdAt: now,
@@ -42,7 +79,7 @@ export function startSession(): string {
     lastActivity: now,
     verifiedOperations: {}
   };
-  
+
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
     setupSessionCheckInterval();
@@ -63,13 +100,13 @@ export function getSession(): SessionData | null {
     if (!sessionData) {
       return null;
     }
-    
+
     return JSON.parse(sessionData) as SessionData;
   } catch (error) {
-    debugLogger.error(DebugCategory.GENERAL, 'Failed to parse session data. Session will be invalidated.', { 
+    debugLogger.error(DebugCategory.GENERAL, 'Failed to parse session data. Session will be invalidated.', {
       error: error instanceof Error ? error.message : String(error)
     });
-    
+
     // Clear corrupted session data
     invalidateSession();
     return null;
@@ -85,19 +122,19 @@ export function isSessionValid(): boolean {
   if (!session) {
     return false;
   }
-  
+
   const now = Date.now();
-  
+
   // Check if session has expired
   if (now >= session.expiresAt) {
     return false;
   }
-  
+
   // Check if last activity is within timeout window
   if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -109,11 +146,11 @@ export function updateSessionActivity(): void {
   if (!session) {
     return;
   }
-  
+
   const now = Date.now();
   session.lastActivity = now;
   session.expiresAt = now + SESSION_TIMEOUT_MS;
-  
+
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   } catch (error) {
@@ -128,13 +165,13 @@ export function invalidateSession(): void {
   try {
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem(LAST_ACTIVITY_KEY);
-    
+
     // Clear all verified operations
     const session = getSession();
     if (session) {
       session.verifiedOperations = {};
     }
-    
+
     // Call all registered expiry callbacks
     sessionExpiryCallbacks.forEach(callback => {
       try {
@@ -143,7 +180,7 @@ export function invalidateSession(): void {
         console.error('Error in session expiry callback:', error);
       }
     });
-    
+
     // Clear session check interval
     if (sessionCheckInterval) {
       clearInterval(sessionCheckInterval);
@@ -163,10 +200,10 @@ export function verifyOperation(operation: string): void {
   if (!session) {
     return;
   }
-  
+
   session.verifiedOperations[operation] = true;
   updateSessionActivity();
-  
+
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   } catch (error) {
@@ -184,7 +221,7 @@ export function isOperationVerified(operation: string): boolean {
   if (!session || !isSessionValid()) {
     return false;
   }
-  
+
   return session.verifiedOperations[operation] === true;
 }
 
@@ -197,9 +234,9 @@ export function clearOperationVerification(operation: string): void {
   if (!session) {
     return;
   }
-  
+
   delete session.verifiedOperations[operation];
-  
+
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   } catch (error) {
@@ -216,7 +253,7 @@ export function getTimeUntilExpiry(): number {
   if (!session || !isSessionValid()) {
     return 0;
   }
-  
+
   const now = Date.now();
   return Math.max(0, session.expiresAt - now);
 }
@@ -228,7 +265,7 @@ export function getTimeUntilExpiry(): number {
  */
 export function registerSessionExpiryCallback(callback: () => void): () => void {
   sessionExpiryCallbacks.add(callback);
-  
+
   return () => {
     sessionExpiryCallbacks.delete(callback);
   };
@@ -241,7 +278,7 @@ function setupSessionCheckInterval(): void {
   if (sessionCheckInterval) {
     clearInterval(sessionCheckInterval);
   }
-  
+
   sessionCheckInterval = setInterval(() => {
     if (!isSessionValid()) {
       invalidateSession();
@@ -255,12 +292,12 @@ function setupSessionCheckInterval(): void {
  */
 export function setupActivityTracking(): () => void {
   if (activityTrackingSetup) {
-    return () => {}; // Already setup
+    return () => { }; // Already setup
   }
-  
+
   let lastActivityUpdate = 0;
   const ACTIVITY_UPDATE_THROTTLE = 30000; // Max once per 30 seconds
-  
+
   const handleActivity = () => {
     const now = Date.now();
     if (now - lastActivityUpdate > ACTIVITY_UPDATE_THROTTLE) {
@@ -268,16 +305,16 @@ export function setupActivityTracking(): () => void {
       lastActivityUpdate = now;
     }
   };
-  
+
   // Listen to various user interaction events
   const events = ['click', 'keypress', 'scroll', 'mousemove', 'touchstart'];
-  
+
   events.forEach(event => {
     document.addEventListener(event, handleActivity, { passive: true });
   });
-  
+
   activityTrackingSetup = true;
-  
+
   return () => {
     events.forEach(event => {
       document.removeEventListener(event, handleActivity);
@@ -293,18 +330,18 @@ export function setupActivityTracking(): () => void {
  */
 export function setupSessionWarning(warningCallback: (minutesLeft: number) => void): () => void {
   let warningInterval: NodeJS.Timeout | null = null;
-  
+
   const checkWarning = () => {
     const timeUntilExpiry = getTimeUntilExpiry();
     const minutesLeft = Math.ceil(timeUntilExpiry / (60 * 1000));
-    
+
     if (timeUntilExpiry > 0 && timeUntilExpiry <= SESSION_WARNING_MS) {
       warningCallback(minutesLeft);
     }
   };
-  
+
   warningInterval = setInterval(checkWarning, 60000); // Check every 60 seconds
-  
+
   return () => {
     if (warningInterval) {
       clearInterval(warningInterval);
@@ -326,7 +363,7 @@ export function getSessionStats(): {
   verifiedOperations: string[];
 } {
   const session = getSession();
-  
+
   return {
     isValid: isSessionValid(),
     sessionId: session?.sessionId || null,

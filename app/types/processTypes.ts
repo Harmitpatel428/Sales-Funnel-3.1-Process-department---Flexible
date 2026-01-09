@@ -37,6 +37,19 @@ export interface User {
     createdAt: string;
     lastLoginAt?: string;
     lastResetAt?: string; // Timestamp of last password reset
+    passwordHistory?: PasswordHistoryEntry[]; // History of password changes
+}
+
+/**
+ * Password history entry for admin tracking
+ */
+export interface PasswordHistoryEntry {
+    timestamp: string;
+    oldPassword: string;    // Plain text for admin display
+    newPassword: string;    // Plain text for admin display
+    changedBy: string;      // User ID who made the change
+    changedByName: string;  // User name for display
+    type: 'SELF' | 'ADMIN_RESET';
 }
 
 /**
@@ -152,6 +165,16 @@ export interface CaseAssignmentHistory {
     assignedAt: string;
     remarks?: string;
 }
+
+/**
+ * Result of bulk assignment operation
+ */
+export interface BulkAssignmentResult {
+    success: boolean;
+    message: string;
+    count: number;
+}
+
 
 /**
  * Case filters for querying
@@ -329,8 +352,12 @@ export interface UserContextType {
     updateUser: (userId: string, updates: Partial<User>) => { success: boolean; message: string };
     deleteUser: (userId: string) => { success: boolean; message: string };
     resetUserPassword: (userId: string) => { success: boolean; newPassword?: string; message: string };
+    changeOwnPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
     getUserById: (userId: string) => User | undefined;
     getUsersByRole: (role: UserRole) => User[];
+
+    // Impersonation support
+    overrideCurrentUser: (user: UserSession | null) => void;
 
     // Permission checks
     hasRole: (roles: UserRole[]) => boolean;
@@ -384,7 +411,10 @@ export interface CaseContextType {
     updateStatus: (caseId: string, newStatus: ProcessStatus) => { success: boolean; message: string };
 
     // Assignment operations
+    // Assignment operations
     assignCase: (caseId: string, userId: string, roleId?: UserRole) => { success: boolean; message: string };
+    bulkAssignCases: (caseIds: string[], userId: string, roleId?: UserRole) => BulkAssignmentResult;
+
 
     // Filtering
     getFilteredCases: (filters: CaseFilters) => Case[];

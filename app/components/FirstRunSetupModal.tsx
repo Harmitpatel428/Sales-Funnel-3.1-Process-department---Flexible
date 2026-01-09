@@ -20,9 +20,9 @@ const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [understoodWarning, setUnderstoodWarning] = useState(false);
 
-  const { 
+  const {
     changePassword,
-    getPasswordStrength 
+    getPasswordStrength
   } = usePasswords();
 
   // Reset form when modal opens
@@ -70,7 +70,7 @@ const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
 
     try {
       // Set up the master password for edit mode
-      const success = changePassword('editMode', masterPassphrase);
+      const success = await changePassword('editMode', masterPassphrase);
       if (success) {
         // Clear passphrase from memory
         setMasterPassphrase('');
@@ -87,10 +87,10 @@ const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
   };
 
   const passwordStrength = getPasswordStrength(masterPassphrase);
-  const strengthColor = passwordStrength.score <= 2 ? 'text-red-600' : 
-                       passwordStrength.score <= 3 ? 'text-yellow-600' : 'text-green-600';
-  const strengthText = passwordStrength.score <= 2 ? 'Weak' : 
-                      passwordStrength.score <= 3 ? 'Medium' : 'Strong';
+  const strengthColor = passwordStrength.score <= 2 ? 'text-red-600' :
+    passwordStrength.score <= 3 ? 'text-yellow-600' : 'text-green-600';
+  const strengthText = passwordStrength.score <= 2 ? 'Weak' :
+    passwordStrength.score <= 3 ? 'Medium' : 'Strong';
 
   if (!isOpen) return null;
 
@@ -123,7 +123,7 @@ const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
                 </p>
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <h4 className="font-medium text-gray-700">Security Features:</h4>
               <ul className="text-sm text-gray-600 space-y-1">
@@ -180,10 +180,9 @@ const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
                   </span>
                 </div>
                 <progress
-                  className={`password-strength-progress w-full h-2 rounded-full transition-all duration-300 ${
-                    passwordStrength.score <= 2 ? 'text-red-500' : 
-                    passwordStrength.score <= 3 ? 'text-yellow-500' : 'text-green-500'
-                  }`}
+                  className={`password-strength-progress w-full h-2 rounded-full transition-all duration-300 ${passwordStrength.score <= 2 ? 'text-red-500' :
+                      passwordStrength.score <= 3 ? 'text-yellow-500' : 'text-green-500'
+                    }`}
                   value={passwordStrength.score}
                   max={5}
                   aria-label={`Password strength: ${passwordStrength.score} out of 5`}

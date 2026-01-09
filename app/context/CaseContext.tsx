@@ -7,13 +7,17 @@ import {
     ProcessStatus,
     CasePriority,
     CaseContextType,
+
     UserRole,
-    CaseAssignmentHistory
+    CaseAssignmentHistory,
+    BulkAssignmentResult
 } from '../types/processTypes';
+
 import { Lead } from '../types/shared';
 import { useLeads } from './LeadContext';
 import { useUsers } from './UserContext';
 import { addAuditLog } from '../utils/storage';
+import { getSessionId } from '../utils/session';
 import { SystemAuditLog, AuditActionType } from '../types/shared';
 
 // ============================================================================
@@ -56,13 +60,18 @@ const createCaseAuditLog = (
     caseId: string,
     description: string,
     metadata?: Record<string, any>,
-    currentUser?: { userId: string; name: string } | null
+    currentUser?: { userId: string; name: string } | null,
+    beforeValue?: any,
+    afterValue?: any,
+    changesSummary?: string
 ): void => {
     try {
         const user = currentUser || (() => {
             const userJson = localStorage.getItem('currentUser');
             return userJson ? JSON.parse(userJson) : null;
         })();
+
+        const deviceInfo = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
 
         const auditLog: SystemAuditLog = {
             id: generateUUID(),
@@ -73,7 +82,12 @@ const createCaseAuditLog = (
             performedByName: user?.name || 'System',
             performedAt: new Date().toISOString(),
             description,
-            metadata
+            metadata,
+            deviceInfo,
+            sessionId: getSessionId() || undefined,
+            beforeValue,
+            afterValue,
+            changesSummary
         };
 
         addAuditLog(auditLog);
@@ -81,6 +95,31 @@ const createCaseAuditLog = (
         console.error('Error creating case audit log:', error);
     }
 };
+
+// Helper to generate a diff summary between two objects
+function generateDiffSummary(before: Record<string, any>, after: Record<string, any>): string {
+    const changes: string[] = [];
+    const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+
+    for (const key of allKeys) {
+        const oldVal = before[key];
+        const newVal = after[key];
+
+        // Skip unchanged values and internal fields
+        if (JSON.stringify(oldVal) === JSON.stringify(newVal)) continue;
+        if (key === 'updatedAt') continue;
+
+        if (oldVal === undefined || oldVal === null) {
+            changes.push(`${key}: added "${newVal}"`);
+        } else if (newVal === undefined || newVal === null) {
+            changes.push(`${key}: removed "${oldVal}"`);
+        } else {
+            changes.push(`${key}: "${oldVal}" → "${newVal}"`);
+        }
+    }
+
+    return changes.length > 0 ? changes.join('; ') : 'No visible changes';
+}
 
 // ============================================================================
 // VALID STATUS TRANSITIONS
@@ -250,7 +289,11 @@ export function CaseProvider({ children }: { children: ReactNode }) {
                     schemeType,
                     benefitType: benefitType || 'none',
                     company: newCase.company
-                }
+                },
+                currentUser,
+                null, // no before value for creation
+                newCase, // after value is the new case
+                `Created case ${caseNumber} for ${newCase.company}`
             );
         }
 
@@ -270,30 +313,39 @@ export function CaseProvider({ children }: { children: ReactNode }) {
             : 'Case created successfully';
 
         return { success: true, message, caseIds: createdCaseIds };
-    }, [leads, cases, updateLead]);
+    }, [leads, cases, updateLead, currentUser]);
 
     const updateCase = useCallback((caseId: string, updates: Partial<Case>): { success: boolean; message: string } => {
-        const caseIndex = cases.findIndex(c => c.caseId === caseId);
-        if (caseIndex === -1) {
+        const existingCase = cases.find(c => c.caseId === caseId);
+        if (!existingCase) {
             return { success: false, message: 'Case not found' };
         }
 
+        // Capture before state for audit
+        const beforeValue = { ...existingCase };
+        const afterValue = { ...existingCase, ...updates, updatedAt: new Date().toISOString() };
+        const changesSummary = generateDiffSummary(beforeValue, afterValue);
+
         setCases(prev => prev.map(c =>
             c.caseId === caseId
-                ? { ...c, ...updates, updatedAt: new Date().toISOString() }
+                ? afterValue
                 : c
         ));
 
-        // Create audit log
+        // Create audit log with before/after values
         createCaseAuditLog(
             'CASE_UPDATED',
             caseId,
-            `Case updated`,
-            { updates }
+            `Case ${existingCase.caseNumber} updated`,
+            { updates },
+            currentUser,
+            beforeValue,
+            afterValue,
+            changesSummary
         );
 
         return { success: true, message: 'Case updated successfully' };
-    }, [cases]);
+    }, [cases, currentUser]);
 
     const deleteCase = useCallback((caseId: string): { success: boolean; message: string } => {
         const existingCase = cases.find(c => c.caseId === caseId);
@@ -438,11 +490,133 @@ export function CaseProvider({ children }: { children: ReactNode }) {
                 newRole: roleId,
                 assignedBy: currentUser.userId
             },
-            currentUser
         );
 
         return { success: true, message: 'Case assigned successfully' };
     }, [cases, currentUser]);
+
+    const bulkAssignCases = useCallback((caseIds: string[], userId: string, roleId?: UserRole): BulkAssignmentResult => {
+        if (!currentUser || !['ADMIN', 'PROCESS_MANAGER'].includes(currentUser.role)) {
+            return { success: false, message: 'Unauthorized: You do not have permission to assign cases', count: 0 };
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+
+        // Iterate through all cases and assign them
+        // We reuse the single assign logic but we need to handle the state update in a batch to avoid multiple re-renders if possible,
+        // but for now, reuse existing logic for consistency and audit logging.
+        // However, standard state updates are batched by React 18 automatically.
+        // BUT, since `assignCase` depends on `cases` and calls `setCases`, calling it in a loop
+        // with the OLD `cases` state (closure) will cause race conditions where only the last one sticks.
+
+        // So we must reimplement the logic to handle bulk update in a single setState.
+
+        const now = new Date().toISOString();
+        const historyEntries: CaseAssignmentHistory[] = [];
+        const auditLogs: any[] = []; // Store logs to add them sequentially
+
+        setCases(prevCases => {
+            const newCases = [...prevCases];
+            let updatesMade = false;
+
+            caseIds.forEach(caseId => {
+                const caseIndex = newCases.findIndex(c => c.caseId === caseId);
+                if (caseIndex === -1) {
+                    failCount++;
+                    return;
+                }
+
+                const existingCase = newCases[caseIndex];
+                const previousRole = existingCase.assignedRole;
+                const previousUserId = existingCase.assignedProcessUserId;
+
+                // Create assignment history entry
+                const historyEntry: CaseAssignmentHistory = {
+                    historyId: generateUUID(),
+                    caseId,
+                    previousRole,
+                    previousUserId,
+                    newRole: roleId || null,
+                    newUserId: userId,
+                    assignedBy: currentUser.userId,
+                    assignedByName: currentUser.name,
+                    assignedAt: now
+                };
+                historyEntries.push(historyEntry);
+
+                // Update case
+                newCases[caseIndex] = {
+                    ...existingCase,
+                    assignedProcessUserId: userId,
+                    assignedRole: roleId || null,
+                    updatedAt: now
+                };
+
+                // Prepare audit log data (side effect, can't be done in reducer, but we prepare data here)
+                // Note: We can't call external side effects easily inside setCases, but we can capture data.
+                const actionType = previousUserId ? 'CASE_REASSIGNED' : 'CASE_ASSIGNED';
+                const description = previousUserId
+                    ? `Case reassigned from ${previousUserId} to ${userId}`
+                    : `Case assigned to ${userId}`;
+
+
+
+                successCount++;
+                updatesMade = true;
+            });
+
+            return updatesMade ? newCases : prevCases;
+        });
+
+        // Effect: Save history
+        if (historyEntries.length > 0) {
+            try {
+                const storedHistory = localStorage.getItem(ASSIGNMENT_HISTORY_KEY);
+                const historyList: CaseAssignmentHistory[] = storedHistory ? JSON.parse(storedHistory) : [];
+                historyList.push(...historyEntries);
+                localStorage.setItem(ASSIGNMENT_HISTORY_KEY, JSON.stringify(historyList));
+            } catch (error) {
+                console.error('Error saving assignment history:', error);
+            }
+        }
+
+        // Effect: Add Audit Logs
+        // Single aggregated log for bulk assignment
+        if (successCount > 0) {
+            const targetUser = userId; // ID
+            // We don't have the target user object handy easily without searching users, 
+            // but we can pass the ID and let the UI resolve it or just log the ID.
+            // Ideally we should look up the name but we might not have access to 'users' list here easily without prop drilling 
+            // strictly typed context doesn't expose users list inside CaseProvider directly (it imports currentUser).
+            // But we can just log the ID and role.
+
+            createCaseAuditLog(
+                'CASE_BULK_ASSIGNED',
+                'multiple',
+                `Bulk assigned ${successCount} cases to user ${userId} (${roleId || 'No Role'})`,
+                {
+                    caseCount: successCount,
+                    caseIds: caseIds, // Might be large, but required by spec
+                    targetUserId: userId,
+                    targetRole: roleId,
+                    assignedBy: currentUser.userId
+                },
+                currentUser,
+                null,
+                null,
+                `Assigned ${successCount} cases to ${userId}`
+            );
+        }
+
+        return {
+            success: successCount > 0,
+            message: `Successfully assigned ${successCount} cases${failCount > 0 ? `, ${failCount} failed` : ''}`,
+            count: successCount
+        };
+
+    }, [currentUser]);
+
 
 
 
@@ -608,6 +782,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         getCaseByLeadId,
         updateStatus,
         assignCase,
+        bulkAssignCases,
         getFilteredCases,
         getCasesByStatus,
         getCasesByAssignee,

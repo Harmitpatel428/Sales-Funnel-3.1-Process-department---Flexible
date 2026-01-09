@@ -161,6 +161,29 @@ input, textarea, select {
   font-family: var(--font-sans), 'Noto Sans Gujarati', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+/* Global black placeholder styling for all form elements */
+input::placeholder,
+textarea::placeholder {
+  color: #000000 !important;
+  opacity: 1 !important;
+}
+
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+  color: #000000 !important;
+}
+
+input::-moz-placeholder,
+textarea::-moz-placeholder {
+  color: #000000 !important;
+  opacity: 1 !important;
+}
+
+input:-ms-input-placeholder,
+textarea:-ms-input-placeholder {
+  color: #000000 !important;
+}
+
 .card-hover {
   transition: transform var(--transition-normal), box-shadow var(--transition-normal);
 }

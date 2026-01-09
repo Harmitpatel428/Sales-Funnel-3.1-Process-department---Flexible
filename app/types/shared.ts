@@ -97,18 +97,39 @@ export type AuditActionType =
   | 'CASE_STATUS_CHANGED'
   | 'CASE_ASSIGNED'
   | 'CASE_REASSIGNED'
-  | 'CASE_PRIORITY_CHANGED';
+  | 'CASE_PRIORITY_CHANGED'
+  // User/Security operations
+  | 'USER_PASSWORD_CHANGED'
+  | 'USER_PASSWORD_RESET_BY_ADMIN'
+  | 'ADMIN_IMPERSONATION_STARTED'
+  | 'ADMIN_IMPERSONATION_ENDED'
+  | 'USER_LOGIN'
+  | 'USER_LOGOUT'
+  | 'USER_LOGIN_FAILED'
+  | 'USER_CREATED'
+  | 'USER_UPDATED'
+  | 'USER_DELETED'
+  | 'USER_ACTIVATED'
+  | 'USER_DEACTIVATED'
+  | 'CASE_BULK_ASSIGNED';
 
 // Unified system audit log entry
 export interface SystemAuditLog {
   id: string;
   actionType: AuditActionType;
-  entityType: 'lead' | 'case';
+  entityType: 'lead' | 'case' | 'user';
   entityId: string;
   performedBy: string;
   performedByName: string;
   performedAt: string;
   description: string;
+  // Enhanced audit fields
+  ipAddress?: string;
+  deviceInfo?: string;
+  sessionId?: string;
+  beforeValue?: any;
+  afterValue?: any;
+  changesSummary?: string;
   metadata?: {
     oldValue?: any;
     newValue?: any;

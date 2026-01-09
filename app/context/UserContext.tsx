@@ -7,6 +7,8 @@ import {
     UserRole,
     UserContextType
 } from '../types/processTypes';
+import { addAuditLog } from '../utils/storage';
+import { generateSessionId, getSessionId, setSessionId, clearSession, getSessionDuration } from '../utils/session';
 
 // ============================================================================
 // CONSTANTS
@@ -14,6 +16,7 @@ import {
 
 const USERS_STORAGE_KEY = 'processUsers';
 const CURRENT_USER_STORAGE_KEY = 'currentUserSession';
+const SESSION_ID_KEY = 'userSessionId';
 
 // Simple hash function for password storage (not cryptographically secure, but works offline)
 function hashPassword(password: string): string {
@@ -151,19 +154,70 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
         const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+        const now = new Date().toISOString();
+        const deviceInfo = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
 
         if (!user) {
+            // Log failed login attempt
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_LOGIN_FAILED',
+                    entityType: 'user',
+                    entityId: 'unknown',
+                    performedBy: 'unknown',
+                    performedByName: username,
+                    performedAt: now,
+                    description: `Failed login attempt for username "${username}" - User not found`,
+                    deviceInfo,
+                    metadata: { reason: 'user_not_found', attemptedUsername: username }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
             return { success: false, message: 'User not found' };
         }
 
         if (!user.isActive) {
+            // Log failed login attempt
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_LOGIN_FAILED',
+                    entityType: 'user',
+                    entityId: user.userId,
+                    performedBy: user.userId,
+                    performedByName: user.name,
+                    performedAt: now,
+                    description: `Failed login attempt for "${user.name}" - Account deactivated`,
+                    deviceInfo,
+                    metadata: { reason: 'account_deactivated' }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
             return { success: false, message: 'User account is deactivated' };
         }
 
         const hashedInput = hashPassword(password);
         if (user.password !== hashedInput) {
+            // Log failed login attempt
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_LOGIN_FAILED',
+                    entityType: 'user',
+                    entityId: user.userId,
+                    performedBy: user.userId,
+                    performedByName: user.name,
+                    performedAt: now,
+                    description: `Failed login attempt for "${user.name}" - Invalid password`,
+                    deviceInfo,
+                    metadata: { reason: 'invalid_password' }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
             return { success: false, message: 'Invalid password' };
         }
+
+        // Generate session ID for tracking
+        const sessionId = generateSessionId();
+        setSessionId(sessionId);
 
         // Create session
         const session: UserSession = {
@@ -172,14 +226,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
             name: user.name,
             email: user.email,
             role: user.role,
-            loginAt: new Date().toISOString()
+            loginAt: now
         };
 
         // Update last login and capture plainPassword in-memory for this user
-        // This allows admin to see passwords of users who have logged in during this session
         setUsers(prev => prev.map(u =>
             u.userId === user.userId
-                ? { ...u, lastLoginAt: new Date().toISOString(), plainPassword: password }
+                ? { ...u, lastLoginAt: now, plainPassword: password }
                 : u
         ));
 
@@ -187,13 +240,59 @@ export function UserProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(session));
         setCurrentUser(session);
 
+        // Log successful login
+        try {
+            addAuditLog({
+                id: generateUUID(),
+                actionType: 'USER_LOGIN',
+                entityType: 'user',
+                entityId: user.userId,
+                performedBy: user.userId,
+                performedByName: user.name,
+                performedAt: now,
+                description: `User "${user.name}" logged in successfully`,
+                deviceInfo,
+                sessionId,
+                metadata: { role: user.role, loginMethod: 'password' }
+            });
+        } catch (e) { console.error('Audit log error:', e); }
+
         return { success: true, message: 'Login successful' };
     }, [users]);
 
     const logout = useCallback(() => {
+        const now = new Date().toISOString();
+        const deviceInfo = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
+        const sessionId = sessionStorage.getItem(SESSION_ID_KEY) || undefined;
+
+        // Log logout before clearing session
+        if (currentUser) {
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_LOGOUT',
+                    entityType: 'user',
+                    entityId: currentUser.userId,
+                    performedBy: currentUser.userId,
+                    performedByName: currentUser.name,
+                    performedAt: now,
+                    description: `User "${currentUser.name}" logged out. Session duration: ${getSessionDuration(currentUser.loginAt)} minutes`,
+                    deviceInfo,
+                    sessionId: getSessionId() || undefined,
+                    metadata: {
+                        role: currentUser.role,
+                        durationMinutes: getSessionDuration(currentUser.loginAt)
+                    }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
+        }
+
         localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+        clearSession();
+        // Security: Clear any active impersonation session to prevent privilege carryover
+        sessionStorage.removeItem('impersonationSession');
         setCurrentUser(null);
-    }, []);
+    }, [currentUser]);
 
     // ============================================================================
     // USER CRUD OPERATIONS
@@ -219,6 +318,30 @@ export function UserProvider({ children }: { children: ReactNode }) {
         };
 
         setUsers(prev => [...prev, newUser]);
+
+        // Audit Log: USER_CREATED
+        if (currentUser) {
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_CREATED',
+                    entityType: 'user',
+                    entityId: newUser.userId,
+                    performedBy: currentUser.userId,
+                    performedByName: currentUser.name,
+                    performedAt: new Date().toISOString(),
+                    description: `User "${newUser.name}" (${newUser.role}) created by ${currentUser.name}`,
+                    deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+                    sessionId: getSessionId() || undefined,
+                    afterValue: newUser,
+                    metadata: {
+                        createdUserRole: newUser.role,
+                        createdUserEmail: newUser.email
+                    }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
+        }
+
         return { success: true, message: 'User created successfully' };
     }, [users]);
 
@@ -249,6 +372,60 @@ export function UserProvider({ children }: { children: ReactNode }) {
             u.userId === userId ? { ...u, ...updates } : u
         ));
 
+        // Audit Log: USER_UPDATED (and ACTIVATED/DEACTIVATED)
+        if (currentUser) {
+            const oldUser = users.find(u => u.userId === userId);
+            if (oldUser) {
+                const newUser = { ...oldUser, ...updates };
+                const now = new Date().toISOString();
+
+                // Determine specific action type if status changed
+                let actionType: any = 'USER_UPDATED';
+                let description = `User "${newUser.name}" updated by ${currentUser.name}`;
+
+                if (updates.isActive !== undefined && updates.isActive !== oldUser.isActive) {
+                    actionType = updates.isActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED';
+                    description = `User "${newUser.name}" ${updates.isActive ? 'activated' : 'deactivated'} by ${currentUser.name}`;
+                }
+
+                // Calculate summary of changes
+                const changes: string[] = [];
+                Object.keys(updates).forEach(key => {
+                    if (key === 'updatedAt' || key === 'password' || key === 'plainPassword') return;
+                    // @ts-ignore
+                    if (JSON.stringify(oldUser[key]) !== JSON.stringify(updates[key])) {
+                        // @ts-ignore
+                        changes.push(`${key}: ${oldUser[key]} -> ${updates[key]}`);
+                    }
+                });
+
+                if (updates.password) {
+                    changes.push('Password changed');
+                }
+
+                try {
+                    addAuditLog({
+                        id: generateUUID(),
+                        actionType: actionType,
+                        entityType: 'user',
+                        entityId: userId,
+                        performedBy: currentUser.userId,
+                        performedByName: currentUser.name,
+                        performedAt: now,
+                        description,
+                        deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+                        sessionId: getSessionId() || undefined,
+                        beforeValue: oldUser,
+                        afterValue: newUser,
+                        changesSummary: changes.join(', '),
+                        metadata: {
+                            updates: Object.keys(updates)
+                        }
+                    });
+                } catch (e) { console.error('Audit log error:', e); }
+            }
+        }
+
         return { success: true, message: 'User updated successfully' };
     }, [users]);
 
@@ -263,7 +440,34 @@ export function UserProvider({ children }: { children: ReactNode }) {
             return { success: false, message: 'Cannot delete your own account' };
         }
 
+        // Capture user data before deletion for audit
+        const userToDelete = users.find(u => u.userId === userId);
+
         setUsers(prev => prev.filter(u => u.userId !== userId));
+
+        // Audit Log: USER_DELETED
+        if (currentUser && userToDelete) {
+            try {
+                addAuditLog({
+                    id: generateUUID(),
+                    actionType: 'USER_DELETED',
+                    entityType: 'user',
+                    entityId: userId,
+                    performedBy: currentUser.userId,
+                    performedByName: currentUser.name,
+                    performedAt: new Date().toISOString(),
+                    description: `User "${userToDelete.name}" deleted by ${currentUser.name}`,
+                    deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+                    sessionId: getSessionId() || undefined,
+                    beforeValue: userToDelete,
+                    metadata: {
+                        deletedUserRole: userToDelete.role,
+                        deletedUserEmail: userToDelete.email
+                    }
+                });
+            } catch (e) { console.error('Audit log error:', e); }
+        }
+
         return { success: true, message: 'User deleted successfully' };
     }, [currentUser]);
 
@@ -287,16 +491,156 @@ export function UserProvider({ children }: { children: ReactNode }) {
         const newPassword = generateSecurePassword();
         const hashedPassword = hashPassword(newPassword);
         const now = new Date().toISOString();
+        const deviceInfo = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
 
         // Update user with new password (plainPassword in-memory only)
         setUsers(prev => prev.map(u =>
             u.userId === userId
-                ? { ...u, password: hashedPassword, plainPassword: newPassword, lastResetAt: now }
+                ? {
+                    ...u,
+                    password: hashedPassword,
+                    plainPassword: newPassword,
+                    lastResetAt: now,
+                    passwordHistory: [
+                        ...(u.passwordHistory || []),
+                        {
+                            timestamp: now,
+                            oldPassword: u.plainPassword || 'unknown',
+                            newPassword: newPassword,
+                            changedBy: currentUser.userId,
+                            changedByName: currentUser.name,
+                            type: 'ADMIN_RESET' as const
+                        }
+                    ]
+                }
                 : u
         ));
 
+        // Log password reset to audit
+        try {
+            addAuditLog({
+                id: generateUUID(),
+                actionType: 'USER_PASSWORD_RESET_BY_ADMIN',
+                entityType: 'user',
+                entityId: userId,
+                performedBy: currentUser.userId,
+                performedByName: currentUser.name,
+                performedAt: now,
+                description: `Admin "${currentUser.name}" reset password for user "${user.name}"`,
+                deviceInfo,
+                sessionId: getSessionId() || undefined,
+                changesSummary: `Password reset for ${user.username}`,
+                metadata: {
+                    targetUserId: userId,
+                    targetUserName: user.name,
+                    targetUserRole: user.role
+                }
+            });
+        } catch (e) { console.error('Audit log error:', e); }
+
         return { success: true, newPassword, message: 'Password reset successfully' };
     }, [currentUser, users]);
+
+    // Validate password strength
+    const validatePasswordStrength = useCallback((password: string): { valid: boolean; message: string } => {
+        if (password.length < 8) {
+            return { valid: false, message: 'Password must be at least 8 characters long' };
+        }
+        if (!/[a-z]/.test(password)) {
+            return { valid: false, message: 'Password must contain at least one lowercase letter' };
+        }
+        if (!/[A-Z]/.test(password)) {
+            return { valid: false, message: 'Password must contain at least one uppercase letter' };
+        }
+        if (!/[0-9]/.test(password)) {
+            return { valid: false, message: 'Password must contain at least one number' };
+        }
+        if (!/[!@#$%^&*]/.test(password)) {
+            return { valid: false, message: 'Password must contain at least one special character (!@#$%^&*)' };
+        }
+        return { valid: true, message: 'Password meets requirements' };
+    }, []);
+
+    const changeOwnPassword = useCallback((currentPassword: string, newPassword: string): { success: boolean; message: string } => {
+        // Must be logged in
+        if (!currentUser) {
+            return { success: false, message: 'You must be logged in to change your password' };
+        }
+
+        // Find current user
+        const user = users.find(u => u.userId === currentUser.userId);
+        if (!user) {
+            return { success: false, message: 'User not found' };
+        }
+
+        // Verify current password
+        const hashedCurrentPassword = hashPassword(currentPassword);
+        if (user.password !== hashedCurrentPassword) {
+            return { success: false, message: 'Current password is incorrect' };
+        }
+
+        // Validate new password strength
+        const strengthCheck = validatePasswordStrength(newPassword);
+        if (!strengthCheck.valid) {
+            return { success: false, message: strengthCheck.message };
+        }
+
+        // Hash new password
+        const hashedNewPassword = hashPassword(newPassword);
+        const now = new Date().toISOString();
+
+        // Update user with new password
+        setUsers(prev => prev.map(u =>
+            u.userId === currentUser.userId
+                ? {
+                    ...u,
+                    password: hashedNewPassword,
+                    plainPassword: newPassword,
+                    lastResetAt: now,
+                    passwordHistory: [
+                        ...(u.passwordHistory || []),
+                        {
+                            timestamp: now,
+                            oldPassword: user.plainPassword || 'unknown',
+                            newPassword: newPassword,
+                            changedBy: currentUser.userId,
+                            changedByName: 'Self',
+                            type: 'SELF' as const
+                        }
+                    ]
+                }
+                : u
+        ));
+
+        // Log password change to audit
+        try {
+            // No require needed, already imported
+            addAuditLog({
+                id: generateUUID(),
+                actionType: 'USER_PASSWORD_CHANGED',
+                entityType: 'user',
+                entityId: currentUser.userId,
+                performedBy: currentUser.userId,
+                performedByName: currentUser.name,
+                performedAt: now,
+                description: 'User changed their own password',
+                deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+                sessionId: getSessionId() || undefined,
+                changesSummary: 'User changed own password',
+                beforeValue: { password: '***', plainPassword: currentPassword },
+                afterValue: { password: '***', plainPassword: newPassword },
+                metadata: {
+                    changeType: 'SELF',
+                    timestamp: now,
+                    userRole: currentUser.role
+                }
+            });
+        } catch (error) {
+            console.error('Error logging password change:', error);
+        }
+
+        return { success: true, message: 'Password changed successfully' };
+    }, [currentUser, users, validatePasswordStrength]);
 
     const getUserById = useCallback((userId: string): User | undefined => {
         return users.find(u => u.userId === userId);
@@ -368,6 +712,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }, [hasRole]);
 
     // ============================================================================
+    // IMPERSONATION SUPPORT
+    // ============================================================================
+
+    /**
+     * Override the current user session for impersonation.
+     * This allows ImpersonationProvider to switch the effective user.
+     */
+    const overrideCurrentUser = useCallback((user: UserSession | null) => {
+        setCurrentUser(user);
+        // Note: We don't persist to localStorage here - the session is temporary
+        // The ImpersonationProvider handles sessionStorage for persistence
+    }, []);
+
+    // ============================================================================
     // CONTEXT VALUE
     // ============================================================================
 
@@ -382,8 +740,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
         updateUser,
         deleteUser,
         resetUserPassword,
+        changeOwnPassword,
         getUserById,
         getUsersByRole,
+        overrideCurrentUser,
         hasRole,
         canManageLeads,
         canConvertToCase,

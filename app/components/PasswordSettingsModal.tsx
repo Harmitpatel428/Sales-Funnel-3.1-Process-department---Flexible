@@ -25,11 +25,12 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { 
-    changePassword, 
-    getPasswordStrength, 
+  const {
+    changePassword,
+    getPasswordStrength,
     resetPassword,
-    isPasswordExpired
+    isPasswordExpired,
+    verifyPassword
   } = usePasswords();
 
   const operationLabels = {
@@ -37,7 +38,8 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
     headerEdit: 'Header Edit',
     export: 'Export',
     columnManagement: 'Column Management',
-    rowManagement: 'Row Management'
+    rowManagement: 'Row Management',
+    caseManagement: 'Case Management'
   };
 
   const operationDescriptions = {
@@ -45,7 +47,8 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
     headerEdit: 'Password required to edit table headers',
     export: 'Password required to export data',
     columnManagement: 'Password required to manage columns',
-    rowManagement: 'Password required to manage rows'
+    rowManagement: 'Password required to manage rows',
+    caseManagement: 'Password required to manage cases'
   };
 
   // Reset form when modal opens/closes
@@ -63,14 +66,14 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
   // ESC key handler
   useEffect(() => {
     if (!isOpen) return;
-    
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
       }
     };
-    
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
@@ -92,7 +95,14 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
         return;
       }
 
-      if (changePassword(activeOperation!, newPassword)) {
+      // Verify current password first
+      if (!verifyPassword(activeOperation!, currentPassword)) {
+        setError('Current password is incorrect.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (await changePassword(activeOperation!, newPassword)) {
         setSuccess(`Password for ${operationLabels[activeOperation!]} updated successfully.`);
         setCurrentPassword('');
         setNewPassword('');
@@ -103,9 +113,7 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
         setError('Failed to update password. Please try again.');
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
-    } finally {
-      setIsLoading(false);
+      // ...
     }
   };
 
@@ -115,7 +123,7 @@ const PasswordSettingsModal: React.FC<PasswordSettingsModalProps> = ({
     setSuccess('');
 
     try {
-      if (resetPassword(operation)) {
+      if (await resetPassword(operation)) {
         setSuccess(`Password for ${operationLabels[operation]} reset to default.`);
         onPasswordChanged?.();
       } else {
