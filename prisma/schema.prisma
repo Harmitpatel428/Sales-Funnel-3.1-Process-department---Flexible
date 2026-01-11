@@ -1,0 +1,153 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============================================================================
+// USER & SESSION MODELS
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  name          String
+  email         String    @unique
+  password      String    // bcrypt hashed password
+  role          String    @default("SALES_EXECUTIVE") // ADMIN, SALES_MANAGER, SALES_EXECUTIVE, PROCESS_MANAGER, PROCESS_EXECUTIVE
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Password reset tracking
+  passwordLastChangedAt DateTime?
+  failedLoginAttempts   Int       @default(0)
+  lockedUntil           DateTime?
+  
+  // Relations
+  sessions      Session[]
+  auditLogs     AuditLog[]  @relation("PerformedBy")
+  leads         Lead[]      @relation("AssignedTo")
+  createdLeads  Lead[]      @relation("CreatedBy")
+
+  @@map("users")
+}
+
+model Session {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token         String    @unique // Session token (for cookie validation)
+  userAgent     String?
+  ipAddress     String?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  lastActivityAt DateTime @default(now())
+  isValid       Boolean   @default(true)
+
+  @@map("sessions")
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================================================
+// LEAD MODEL
+// ============================================================================
+
+model Lead {
+  id                  String    @id @default(cuid())
+  
+  // Core Lead Data
+  firstName           String?
+  lastName            String?
+  email               String?
+  phone               String?
+  company             String?
+  source              String?   // e.g., "Web", "Referral", "Cold Call"
+  status              String    @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, WON, LOST
+  notes               String?
+  
+  // Simple JSON field for extended/custom data
+  customFields        String?   @default("{}") // JSON string for flexibility
+  
+  // Assignment and tracking
+  assignedToId        String?
+  assignedTo          User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
+  createdById         String?
+  createdBy           User?     @relation("CreatedBy", fields: [createdById], references: [id])
+  
+  // Timestamps
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  convertedAt         DateTime?
+
+  @@map("leads")
+  @@index([status])
+  @@index([assignedToId])
+}
+
+// ============================================================================
+// AUDIT LOG MODEL (Append-Only)
+// ============================================================================
+
+model AuditLog {
+  id                String    @id @default(cuid())
+  
+  // Action details
+  actionType        String    // USER_LOGIN, USER_LOGOUT, LEAD_CREATED, etc.
+  entityType        String?   // user, lead, session, etc.
+  entityId          String?
+  description       String
+  
+  // Who performed the action
+  performedById     String?
+  performedBy       User?     @relation("PerformedBy", fields: [performedById], references: [id])
+  performedByName   String?
+  
+  // Context
+  ipAddress         String?
+  userAgent         String?
+  sessionId         String?
+  
+  // Data snapshots
+  beforeValue       String?   @default("{}") // JSON snapshot
+  afterValue        String?   @default("{}") // JSON snapshot
+  changesSummary    String?
+  metadata          String?   @default("{}") // JSON
+  
+  // Integrity (for hash chaining)
+  previousHash      String?
+  hash              String?   // SHA-256 of (previousHash + data)
+  
+  // Timestamp (immutable)
+  createdAt         DateTime  @default(now())
+
+  @@map("audit_logs")
+  @@index([actionType])
+  @@index([entityType, entityId])
+  @@index([performedById])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SAVED VIEW MODEL (for column configs etc.)
+// ============================================================================
+
+model SavedView {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  config      String    // JSON string for column config, filters, etc.
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("saved_views")
+}

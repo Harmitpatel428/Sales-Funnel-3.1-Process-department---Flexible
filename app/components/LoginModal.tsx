@@ -14,7 +14,7 @@ interface LoginModalProps {
  * Modal for user authentication. Shows when user is not logged in.
  */
 export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
-    const { login, isAuthenticated, isLoading, users } = useUsers();
+    const { login, isAuthenticated, isLoading } = useUsers();
 
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -171,10 +171,10 @@ export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
                         )}
                     </button>
 
-                    {/* Default Credentials Hint */}
-                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <p className="text-xs text-blue-700 text-center">
-                            <span className="font-medium">Default Admin:</span> username: <code className="bg-blue-100 px-1 rounded">admin</code> / password: <code className="bg-blue-100 px-1 rounded">admin123</code>
+                    {/* Security Notice */}
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                        <p className="text-xs text-gray-500 text-center">
+                            Your session is protected with secure, server-validated authentication.
                         </p>
                     </div>
                 </form>

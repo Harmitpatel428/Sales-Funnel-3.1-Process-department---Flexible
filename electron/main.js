@@ -1,78 +1,88 @@
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const url = require('url');
-const express = require('express');
+const { spawn } = require('child_process');
 
 // Global variables
 let mainWindow;
-let server;
+let serverProcess;
 let port = 3000;
 
-// Express server setup for production
+// Start Next.js server in production mode
 function createServer() {
-  const expressApp = express();
+  return new Promise((resolve, reject) => {
+    // Path to the standalone server
+    const serverPath = path.join(process.resourcesPath, 'app', '.next', 'standalone');
+    const serverScript = path.join(serverPath, 'server.js');
 
-  // BN-007: Add compression for better performance
-  const zlib = require('zlib');
-  expressApp.use((req, res, next) => {
-    // Simple gzip compression for text-based responses
-    const acceptEncoding = req.headers['accept-encoding'] || '';
-    if (acceptEncoding.includes('gzip')) {
-      res.setHeader('Content-Encoding', 'gzip');
+    // Check if standalone build exists, otherwise use next start
+    const fs = require('fs');
+    const useStandalone = fs.existsSync(serverScript);
+
+    console.log(`Starting Next.js server (standalone: ${useStandalone})...`);
+
+    // Environment for the server
+    const env = {
+      ...process.env,
+      PORT: port.toString(),
+      NODE_ENV: 'production',
+      DATABASE_PATH: path.join(app.getPath('userData'), 'database', 'app.db'),
+    };
+
+    // Ensure database directory exists
+    const dbDir = path.join(app.getPath('userData'), 'database');
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
     }
-    next();
-  });
 
-  // SV-010: Add security headers to all responses
-  expressApp.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-    next();
-  });
-
-  // BUG-010: Health check endpoint for startup verification
-  expressApp.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', timestamp: Date.now() });
-  });
-
-  // Serve static files from the packaged app with caching headers
-  const staticPath = path.join(process.resourcesPath, 'app');
-  expressApp.use(express.static(staticPath, {
-    // BN-007: Add cache headers for static files
-    maxAge: '1d', // Cache static files for 1 day
-    etag: true,
-    lastModified: true,
-    setHeaders: (res, filePath) => {
-      // Longer cache for immutable assets (hashed filenames)
-      if (filePath.includes('/_next/static/')) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    }
-  }));
-
-  // Fallback route for client-side routing
-  expressApp.get('*', (req, res) => {
-    res.sendFile(path.join(staticPath, 'index.html'));
-  });
-
-  // Start server
-  server = expressApp.listen(port, () => {
-    console.log(`Express server running on port ${port}`);
-  });
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${port} is in use, trying port ${port + 1}...`);
-      port = port + 1;
-      server = expressApp.listen(port, () => {
-        console.log(`Express server running on port ${port}`);
+    if (useStandalone) {
+      // Use standalone build (more efficient)
+      serverProcess = spawn('node', [serverScript], {
+        cwd: serverPath,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
     } else {
-      console.error('Server error:', err);
+      // Fallback: use npm script (requires node_modules)
+      const appPath = path.join(process.resourcesPath, 'app');
+      serverProcess = spawn('npm', ['run', 'start'], {
+        cwd: appPath,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+      });
     }
+
+    // Handle server stdout
+    serverProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      console.log('[Next.js]', output);
+
+      // Check if server is ready
+      if (output.includes('Ready') || output.includes(`localhost:${port}`) || output.includes('started')) {
+        resolve();
+      }
+    });
+
+    // Handle server stderr
+    serverProcess.stderr.on('data', (data) => {
+      console.error('[Next.js Error]', data.toString());
+    });
+
+    // Handle server exit
+    serverProcess.on('error', (err) => {
+      console.error('Failed to start server:', err);
+      reject(err);
+    });
+
+    serverProcess.on('exit', (code) => {
+      console.log(`Server process exited with code ${code}`);
+    });
+
+    // Timeout fallback - assume server is ready after 8 seconds
+    setTimeout(() => {
+      resolve();
+    }, 8000);
   });
 }
 
@@ -134,15 +144,14 @@ function createWindow() {
 
   // Load the app
   if (app.isPackaged) {
-    // Production: Start Express server first, then load with proper health check
-    createServer();
-    // BUG-010: Use health check instead of fixed timeout for reliable startup
-    waitForServer().then(() => {
+    // Production: Start Next.js server first
+    createServer().then(() => {
+      console.log('Next.js server ready, loading app...');
       mainWindow.loadURL(`http://localhost:${port}`);
       mainWindow.show();
     }).catch((err) => {
-      console.error('Failed to wait for server:', err);
-      // Fallback: try to load anyway after short delay
+      console.error('Failed to start server:', err);
+      // Fallback: try to load anyway
       setTimeout(() => {
         mainWindow.loadURL(`http://localhost:${port}`);
         mainWindow.show();
@@ -261,8 +270,8 @@ app.on('window-all-closed', () => {
 
 // Handle app quit
 app.on('before-quit', () => {
-  if (server) {
-    server.close();
+  if (serverProcess) {
+    serverProcess.kill();
   }
 });
 

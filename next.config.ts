@@ -1,9 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Export configuration for Electron
-  output: 'export',
+  // Standalone output for Electron with embedded Node.js server
+  // This bundles all dependencies into a standalone folder
+  output: 'standalone',
   trailingSlash: true,
+
+  // External packages that need native bindings (not bundled by webpack)
+  serverExternalPackages: ['better-sqlite3', '@prisma/adapter-better-sqlite3'],
 
   // Performance optimizations
   experimental: {

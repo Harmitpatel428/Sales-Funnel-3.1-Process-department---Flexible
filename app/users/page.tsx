@@ -59,14 +59,14 @@ export default function UsersPage() {
         setSuccess('');
     }, []);
 
-    const handleCreate = useCallback((e: React.FormEvent) => {
+    const handleCreate = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingUser.username || !editingUser.password || !editingUser.name || !editingUser.email || !editingUser.role) {
             setError('All fields are required');
             return;
         }
 
-        const result = createUser({
+        const result = await createUser({
             username: editingUser.username,
             password: editingUser.password,
             name: editingUser.name,
@@ -88,9 +88,9 @@ export default function UsersPage() {
         }
     }, [editingUser, createUser]);
 
-    const handleDelete = useCallback((userId: string) => {
+    const handleDelete = useCallback(async (userId: string) => {
         if (confirm('Are you sure you want to delete this user?')) {
-            const result = deleteUser(userId);
+            const result = await deleteUser(userId);
             if (result.success) {
                 setSuccess(result.message);
                 setTimeout(() => setSuccess(''), 3000);
@@ -100,9 +100,9 @@ export default function UsersPage() {
         }
     }, [deleteUser]);
 
-    const handleResetPassword = useCallback((userId: string, userName: string) => {
+    const handleResetPassword = useCallback(async (userId: string, userName: string) => {
         if (confirm(`Are you sure you want to reset the password for ${userName}? This will generate a new random password.`)) {
-            const result = resetUserPassword(userId);
+            const result = await resetUserPassword(userId);
             if (result.success && result.newPassword) {
                 setResetPasswordModal({
                     isOpen: true,
@@ -345,13 +345,7 @@ export default function UsersPage() {
                                                 {user.plainPassword ? (
                                                     <div className="flex items-center gap-2 min-w-0">
                                                         <span className="text-sm text-gray-900 font-mono min-w-0 inline-block max-w-[200px] truncate" title={user.plainPassword}>{user.plainPassword}</span>
-                                                        <button
-                                                            onClick={() => copyToClipboard(user.plainPassword!)}
-                                                            className="text-purple-600 hover:text-purple-800 transition-colors"
-                                                            title="Copy password"
-                                                        >
-                                                            📋
-                                                        </button>
+
                                                     </div>
                                                 ) : (
                                                     <span className="text-sm text-gray-400 font-mono min-w-0 inline-block max-w-[200px] truncate" title="Password not yet available (user created before this feature)">
