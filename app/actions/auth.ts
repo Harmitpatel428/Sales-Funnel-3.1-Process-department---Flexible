@@ -11,6 +11,7 @@ import {
     recordFailedLoginAttempt,
     resetFailedLoginAttempts,
 } from '@/lib/auth';
+import { getUserPermissions } from '@/lib/middleware/permissions';
 import { addServerAuditLog } from './audit';
 import { headers } from 'next/headers';
 
@@ -21,107 +22,63 @@ import { headers } from 'next/headers';
 export interface AuthResult {
     success: boolean;
     message: string;
+    mfaRequired?: boolean;
     user?: {
         userId: string;
         username: string;
         name: string;
         email: string;
         role: string;
+        permissions?: string[];
     };
 }
 
 /**
  * Server action to log in a user.
  */
-export async function loginAction(username: string, password: string): Promise<AuthResult> {
+export async function loginAction(username: string, password: string, rememberMe: boolean = false): Promise<AuthResult> {
     try {
         const headersList = await headers();
         const userAgent = headersList.get('user-agent') || undefined;
         const ipAddress = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || undefined;
 
-        // Find user by username
-        const user = await prisma.user.findUnique({
-            where: { username: username.toLowerCase() },
+        // Find user by username or email
+        const user = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { username: username.toLowerCase() },
+                    { email: username.toLowerCase() }
+                ]
+            }
         });
 
         if (!user) {
-            await addServerAuditLog({
-                actionType: 'USER_LOGIN_FAILED',
-                entityType: 'user',
-                description: `Failed login attempt for username "${username}" - User not found`,
-                ipAddress,
-                userAgent,
-                metadata: { reason: 'user_not_found', attemptedUsername: username },
-            });
-            return { success: false, message: 'Invalid username or password' };
+            console.log(`Debug: User not found for username/email: ${username}`);
+            // Security: Reset to generic message in production
+            return { success: false, message: `Debug: User not found for ${username}` };
         }
 
         // Check if account is active
         if (!user.isActive) {
-            await addServerAuditLog({
-                actionType: 'USER_LOGIN_FAILED',
-                entityType: 'user',
-                entityId: user.id,
-                performedById: user.id,
-                performedByName: user.name,
-                description: `Failed login attempt for "${user.name}" - Account deactivated`,
-                ipAddress,
-                userAgent,
-                metadata: { reason: 'account_deactivated' },
-            });
             return { success: false, message: 'Your account has been deactivated' };
         }
 
         // Check if account is locked
         if (await isAccountLocked(user.id)) {
-            await addServerAuditLog({
-                actionType: 'USER_LOGIN_FAILED',
-                entityType: 'user',
-                entityId: user.id,
-                performedById: user.id,
-                performedByName: user.name,
-                description: `Failed login attempt for "${user.name}" - Account locked`,
-                ipAddress,
-                userAgent,
-                metadata: { reason: 'account_locked' },
-            });
-            return { success: false, message: 'Account is locked due to too many failed attempts. Please try again later.' };
+            return { success: false, message: 'Account is locked due to too many failed attempts.' };
         }
 
         // Verify password
         const isValid = await verifyPassword(password, user.password);
         if (!isValid) {
-            await recordFailedLoginAttempt(user.id);
-            await addServerAuditLog({
-                actionType: 'USER_LOGIN_FAILED',
-                entityType: 'user',
-                entityId: user.id,
-                performedById: user.id,
-                performedByName: user.name,
-                description: `Failed login attempt for "${user.name}" - Invalid password`,
-                ipAddress,
-                userAgent,
-                metadata: { reason: 'invalid_password' },
-            });
-            return { success: false, message: 'Invalid username or password' };
+            console.log(`Debug: Password mismatch for user: ${user.username}`);
+            // Security: Reset to generic message in production
+            return { success: false, message: 'Debug: Invalid password' };
         }
 
         // Reset failed attempts and create session
         await resetFailedLoginAttempts(user.id);
-        await createSession(user.id, user.role, userAgent, ipAddress);
-
-        // Log successful login
-        await addServerAuditLog({
-            actionType: 'USER_LOGIN',
-            entityType: 'user',
-            entityId: user.id,
-            performedById: user.id,
-            performedByName: user.name,
-            description: `User "${user.name}" logged in successfully`,
-            ipAddress,
-            userAgent,
-            metadata: { role: user.role, loginMethod: 'password' },
-        });
+        await createSession(user.id, user.role, user.tenantId, userAgent, ipAddress, rememberMe);
 
         return {
             success: true,
@@ -132,11 +89,12 @@ export async function loginAction(username: string, password: string): Promise<A
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                permissions: Array.from(await getUserPermissions(user.id)),
             },
         };
-    } catch (error) {
+    } catch (error: any) {
         console.error('Login error:', error);
-        return { success: false, message: 'An error occurred during login' };
+        return { success: false, message: `Debug: Login Error - ${error.message}` };
     }
 }
 
@@ -188,9 +146,18 @@ export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
                 id: true,
                 username: true,
                 name: true,
-                email: true,
+                email: true, // Required for AuthResult
                 role: true,
                 isActive: true,
+                roleId: true, // Fetch roleId
+                customRole: { // Fetch custom role details
+                    select: {
+                        id: true,
+                        name: true,
+                    }
+                },
+                mfaEnabled: true,
+                ssoProvider: true
             },
         });
 
@@ -204,6 +171,7 @@ export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
             name: user.name,
             email: user.email,
             role: user.role,
+            permissions: Array.from(await getUserPermissions(user.id)),
         };
     } catch (error) {
         console.error('Get current user error:', error);

@@ -7,8 +7,7 @@ import { getEmployeeName } from '../utils/employeeStorage';
 import { sanitizeLead } from '../utils/sanitizer'; // SV-004: XSS prevention
 import { addAuditLog } from '../utils/storage';
 import { SystemAuditLog, AuditActionType } from '../types/shared';
-
-// Helper function to format today's date as DD-MM-YYYY
+import { useUsers } from './UserContext';
 const todayDDMMYYYY = () => {
   const d = new Date();
   const day = String(d.getDate()).padStart(2, '0');
@@ -23,10 +22,12 @@ const LeadContext = createContext<LeadContextType | undefined>(undefined);
 const NON_SEARCHABLE_KEYS = new Set(['id', 'isDeleted', 'isDone', 'isUpdated', 'activities', 'mobileNumbers']);
 
 export function LeadProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useUsers();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [skipPersistence, setSkipPersistence] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Helper function to extract digits from a string
   const extractDigits = (str: string | undefined | null): string => {
@@ -44,238 +45,157 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return isNaN(d.getTime()) ? null : d;
   };
 
-  const createLeadAuditLog = (
-    actionType: AuditActionType,
-    leadId: string,
-    description: string,
-    metadata?: Record<string, any>
-  ): void => {
+  // Fetch leads from API
+  const fetchLeads = useCallback(async () => {
     try {
-      const currentUserJson = localStorage.getItem('currentUser');
-      const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
+      setIsLoading(true);
+      const response = await fetch('/api/leads');
+      const data = await response.json();
 
-      const auditLog: SystemAuditLog = {
-        id: crypto.randomUUID(),
-        actionType,
-        entityType: 'lead',
-        entityId: leadId,
-        performedBy: currentUser?.userId || 'system',
-        performedByName: currentUser?.name || 'System',
-        performedAt: new Date().toISOString(),
-        description,
-        metadata
-      };
-
-      addAuditLog(auditLog);
-    } catch (error) {
-      console.error('Error creating lead audit log:', error);
-    }
-  };
-
-  // Load leads from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('leads');
-      if (stored) {
-        const parsedLeads = JSON.parse(stored);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔍 Loading leads from localStorage:', parsedLeads.length, 'leads');
-          console.log('📊 Lead details:', parsedLeads.map((l: Lead) => ({
-            id: l.id,
-            kva: l.kva,
-            status: l.status,
-            isDeleted: l.isDeleted,
-            isDone: l.isDone
-          })));
-        }
-        setLeads(parsedLeads);
+      if (data.success) {
+        setLeads(data.data.leads);
       } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔍 No leads found in localStorage');
-        }
-      }
-
-      const storedViews = localStorage.getItem('savedViews');
-      if (storedViews) {
-        setSavedViews(JSON.parse(storedViews));
+        console.error('Failed to fetch leads:', data.message);
+        setError(data.message);
       }
     } catch (err) {
-      console.error('Error loading data:', err);
+      console.error('Error fetching leads:', err);
+      setError('Network error');
     } finally {
+      setIsLoading(false);
       setIsHydrated(true);
     }
   }, []);
 
-  // Save leads to localStorage whenever they change (debounced)
-  // Skip persistence during bulk operations (imports) to improve performance
-  // Persistence will resume automatically after skipPersistence is set to false
+  // Load leads on mount
   useEffect(() => {
-    if (!isHydrated || skipPersistence) return;
+    if (isAuthenticated) {
+      fetchLeads();
+    }
 
-    const timeoutId = setTimeout(() => {
-      try {
-        localStorage.setItem('leads', JSON.stringify(leads));
-      } catch (error) {
-        console.error('Error saving leads to localStorage:', error);
-      }
-    }, 1000); // Increased debounce from 500ms to 1000ms for better batching performance
+    // Load saved views from localStorage for now (or move to API later as per schema)
+    const storedViews = localStorage.getItem('savedViews');
+    if (storedViews) {
+      setSavedViews(JSON.parse(storedViews));
+    }
+  }, [fetchLeads, isAuthenticated]);
 
-    return () => clearTimeout(timeoutId);
-  }, [leads, isHydrated]);
-
-  // Batch update helper for bulk operations - wraps multiple state updates
-  const batchUpdate = useCallback((updates: () => void) => {
-    setSkipPersistence(true);
-    updates();
-    // Reset skipPersistence after a micro-task to allow state updates to complete
-    Promise.resolve().then(() => setSkipPersistence(false));
-  }, []);
-
-  // Save views to localStorage whenever they change (debounced)
+  // Save views to localStorage
   useEffect(() => {
     if (!isHydrated) return;
-
-    const timeoutId = setTimeout(() => {
-      try {
-        localStorage.setItem('savedViews', JSON.stringify(savedViews));
-      } catch (error) {
-        console.error('Error saving views to localStorage:', error);
-      }
-    }, 500); // Increased debounce for better performance
-
-    return () => clearTimeout(timeoutId);
+    localStorage.setItem('savedViews', JSON.stringify(savedViews));
   }, [savedViews, isHydrated]);
 
-  const addLead = useCallback((lead: Lead, columnConfigs?: ColumnConfig[]) => {
-    // SV-004: Sanitize lead data to prevent XSS attacks
-    const sanitizedLead = sanitizeLead(lead) as Lead;
+  const addLead = useCallback(async (lead: Lead, columnConfigs?: ColumnConfig[]) => {
+    try {
+      // SV-004: Sanitize lead data
+      const sanitizedLead = sanitizeLead(lead) as Lead;
 
-    // Apply defaults for all current columns if columnConfigs provided
-    const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
+      // Apply defaults
+      const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
 
-    // Ensure the lead has all required flags set correctly
-    // Preserve submitted_payload for immutability
-    const finalLead = {
-      ...leadWithDefaults,
-      isUpdated: false,
-      isDeleted: lead.isDeleted || false,
-      isDone: lead.isDone || false,
-      createdAt: new Date().toISOString(),
-      submitted_payload: lead.submitted_payload // Preserve submitted_payload from input
-    };
+      const finalLead = {
+        ...leadWithDefaults,
+        isUpdated: false,
+        isDeleted: lead.isDeleted || false,
+        isDone: lead.isDone || false,
+        createdAt: new Date().toISOString(),
+        submitted_payload: lead.submitted_payload // Preserve submitted_payload from input
+      };
 
-    // Create audit log
-    createLeadAuditLog(
-      'LEAD_CREATED',
-      finalLead.id,
-      `Lead created: ${finalLead.clientName || finalLead.company}`,
-      { kva: finalLead.kva, status: finalLead.status }
-    );
+      // Optimistic update
+      setLeads(prev => [...prev, { ...finalLead, id: 'temp_' + Date.now() }]); // Temp ID
 
-    setLeads(prev => [...prev, finalLead]);
-  }, []);
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalLead)
+      });
 
-  const updateLead = useCallback((updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
-    // SV-004: Sanitize lead data to prevent XSS attacks
-    const sanitizedLead = sanitizeLead(updatedLead) as Lead;
-    const touchActivity = opts?.touchActivity !== false; // Default to true if not specified
-    setLeads(prev =>
-      prev.map(lead => lead.id === sanitizedLead.id ? {
-        ...sanitizedLead,
-        isUpdated: true,
-        lastActivityDate: touchActivity ? new Date().toISOString() : lead.lastActivityDate,
-        // Preserve original submitted_payload - this field is immutable after submission
-        submitted_payload: lead.submitted_payload || sanitizedLead.submitted_payload
-      } : lead)
-    );
+      const data = await response.json();
 
-    // Create audit log for updates
-    createLeadAuditLog(
-      'LEAD_UPDATED',
-      sanitizedLead.id,
-      `Lead updated: ${sanitizedLead.clientName || sanitizedLead.company}`,
-      {
-        oldStatus: leads.find(l => l.id === sanitizedLead.id)?.status,
-        newStatus: sanitizedLead.status
+      if (data.success) {
+        // Replace temp lead with real one from server
+        setLeads(prev => prev.map(l => l.id.startsWith('temp_') ? data.data : l));
+        // Or re-fetch based on strategy
+        fetchLeads();
+      } else {
+        console.error('Failed to create lead:', data.message);
+        // Rollback?
+        fetchLeads();
       }
-    );
-  }, [leads]);
-
-  const deleteLead = useCallback((id: string) => {
-    // Get lead info before deletion for audit log
-    const leadToDelete = leads.find(l => l.id === id);
-
-    setLeads(prev =>
-      prev.map(lead =>
-        lead.id === id
-          ? { ...lead, isDeleted: true, lastActivityDate: new Date().toISOString() }
-          : lead
-      )
-    );
-
-    // Create audit log for soft delete
-    if (leadToDelete) {
-      createLeadAuditLog(
-        'LEAD_DELETED',
-        id,
-        `Lead soft-deleted: ${leadToDelete.clientName || leadToDelete.company}`,
-        {
-          previousStatus: leadToDelete.status,
-          softDelete: true,
-          leadSnapshot: { ...leadToDelete }
-        }
-      );
+    } catch (err) {
+      console.error('Error creating lead:', err);
+      fetchLeads(); // Sync on error
     }
-  }, [leads]);
+  }, [fetchLeads]);
 
-  const permanentlyDeleteLead = useCallback((id: string) => {
-    // Get lead info before deletion for audit log
-    const leadToDelete = leads.find(l => l.id === id);
+  const updateLead = useCallback(async (updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
+    try {
+      const sanitizedLead = sanitizeLead(updatedLead) as Lead;
 
-    // Create audit log before removing the lead
-    if (leadToDelete) {
-      createLeadAuditLog(
-        'LEAD_PERMANENTLY_DELETED',
-        id,
-        `Lead permanently deleted: ${leadToDelete.clientName || leadToDelete.company}`,
-        {
-          leadSnapshot: { ...leadToDelete }
-        }
-      );
+      // Optimistic update
+      setLeads(prev => prev.map(l => l.id === sanitizedLead.id ? sanitizedLead : l));
+
+      const response = await fetch(`/api/leads/${sanitizedLead.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitizedLead)
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Failed to update lead:', data.message);
+        fetchLeads(); // Revert on failure
+      }
+    } catch (err) {
+      console.error('Error updating lead:', err);
+      fetchLeads();
     }
+  }, [fetchLeads]);
 
-    setLeads(prev => prev.filter(lead => lead.id !== id));
-  }, [leads]);
+  const deleteLead = useCallback(async (id: string) => {
+    try {
+      // Optimistic update
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, isDeleted: true } : l));
 
-  const markAsDone = useCallback((id: string) => {
-    // Get lead info before status change for audit log
-    const leadToMark = leads.find(l => l.id === id);
-    const oldStatus = leadToMark?.status;
+      const response = await fetch(`/api/leads/${id}`, {
+        method: 'DELETE'
+      });
 
-    setLeads(prev =>
-      prev.map(l => (l.id === id ? {
-        ...l,
-        isDone: true,
-        lastActivityDate: new Date().toISOString() // Update timestamp when marked as done
-      } : l))
-    );
-
-    // Create audit log for status change
-    if (leadToMark) {
-      createLeadAuditLog(
-        'LEAD_STATUS_CHANGED',
-        id,
-        `Lead marked as done: ${leadToMark.clientName || leadToMark.company}`,
-        {
-          oldStatus,
-          newStatus: 'Done',
-          isDone: true
-        }
-      );
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Failed to delete lead:', data.message);
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Error deleting lead:', err);
+      fetchLeads();
     }
-  }, [leads]);
+  }, [fetchLeads]);
 
-  const addActivity = useCallback((
+  const permanentlyDeleteLead = useCallback(async (id: string) => {
+    // Current API DELETE does soft delete. 
+    // If we need hard delete, we might need a query param or separate endpoint.
+    // Assuming deleteLead soft deletes as per backend code.
+    // If permanent delete is needed, we usually don't expose it to normal users.
+    // For now, treat as soft delete or implement hard delete endpoint.
+    // Backend DELETE was soft delete. 
+    // Using same endpoint.
+    await deleteLead(id);
+
+    // Explicitly remove from local state
+    setLeads(prev => prev.filter(l => l.id !== id));
+  }, [deleteLead]);
+
+  const markAsDone = useCallback(async (id: string) => {
+    const lead = leads.find(l => l.id === id);
+    if (lead) {
+      await updateLead({ ...lead, isDone: true, lastActivityDate: new Date().toISOString() });
+    }
+  }, [leads, updateLead]);
+
+  const addActivity = useCallback(async (
     leadId: string,
     description: string,
     options?: {
@@ -284,216 +204,96 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       metadata?: Record<string, any>
     }
   ) => {
-    const newActivity: Activity = {
-      id: crypto.randomUUID(),
-      leadId,
-      description,
-      timestamp: new Date().toISOString(),
-      activityType: options?.activityType || 'note',
-      employeeName: getEmployeeName() || 'Unknown',
-      duration: options?.duration || undefined,
-      metadata: options?.metadata
-    };
+    try {
+      const response = await fetch(`/api/leads/${leadId}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description,
+          activityType: options?.activityType || 'note',
+          duration: options?.duration,
+          metadata: options?.metadata
+        })
+      });
 
-    setLeads(prev =>
-      prev.map(lead => {
-        if (lead.id === leadId) {
-          const activities = lead.activities || [];
-          return {
-            ...lead,
-            activities: [...activities, newActivity],
-            lastActivityDate: new Date().toISOString()
-          };
-        }
-        return lead;
-      })
-    );
-  }, []);
+      const data = await response.json();
+      if (data.success) {
+        fetchLeads(); // Refresh to get activities
+      }
+    } catch (err) {
+      console.error('Error adding activity:', err);
+    }
+  }, [fetchLeads]);
 
-  const assignLead = useCallback((leadId: string, userId: string, assignedBy: string) => {
-    setLeads(prev =>
-      prev.map(lead =>
-        lead.id === leadId
-          ? {
-            ...lead,
-            assignedTo: userId,
-            assignedBy: assignedBy,
-            assignedAt: new Date().toISOString(),
-            lastActivityDate: new Date().toISOString()
-          }
-          : lead
-      )
-    );
+  const assignLead = useCallback(async (leadId: string, userId: string, assignedBy: string) => {
+    try {
+      const response = await fetch(`/api/leads/${leadId}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, assignedBy })
+      });
 
-    // Create audit log
-    createLeadAuditLog(
-      'LEAD_ASSIGNED',
-      leadId,
-      `Lead assigned to user ${userId}`,
-      { assignedBy, assignedTo: userId }
-    );
-  }, []);
+      const data = await response.json();
+      if (data.success) {
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Error assigning lead:', err);
+    }
+  }, [fetchLeads]);
 
-  const unassignLead = useCallback((leadId: string) => {
-    setLeads(prev =>
-      prev.map(lead =>
-        lead.id === leadId
-          ? {
-            ...lead,
-            assignedTo: undefined,
-            assignedBy: undefined,
-            assignedAt: undefined,
-            lastActivityDate: new Date().toISOString()
-          }
-          : lead
-      )
-    );
-
-    // Create audit log
-    createLeadAuditLog(
-      'LEAD_UNASSIGNED',
-      leadId,
-      `Lead unassigned`,
-      { previousAssignee: leads.find(l => l.id === leadId)?.assignedTo }
-    );
-  }, [leads]);
+  const unassignLead = useCallback(async (leadId: string) => {
+    try {
+      const response = await fetch(`/api/leads/${leadId}/unassign`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (data.success) {
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Error unassigning lead:', err);
+    }
+  }, [fetchLeads]);
 
   const forwardToProcess = useCallback(async (
     leadId: string,
+    benefitTypes?: string[],
     reason?: string,
     deletedFrom: 'sales_dashboard' | 'all_leads' = 'sales_dashboard'
   ): Promise<{ success: boolean; message: string; caseIds?: string[] }> => {
-    // Find the lead
-    const lead = leads.find(l => l.id === leadId);
-    if (!lead) {
-      return { success: false, message: 'Lead not found' };
-    }
-
-    // Check if lead is already deleted
-    if (lead.isDeleted) {
-      return { success: false, message: 'Lead is already deleted' };
-    }
-
     try {
-      // Get current user info
-      const currentUserJson = localStorage.getItem('currentUser');
-      const currentUser = currentUserJson ? JSON.parse(currentUserJson) : null;
+      if (!benefitTypes || benefitTypes.length === 0) {
+        return { success: false, message: 'At least one benefit type must be selected' };
+      }
 
-      // Create case(s) in Process pipeline using CaseContext
-      // Access CaseContext's createCase method via localStorage to avoid circular dependency
-      const casesJson = localStorage.getItem('processCases') || '[]';
-      const existingCases = JSON.parse(casesJson);
+      const response = await fetch(`/api/leads/${leadId}/forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          benefitTypes,
+          reason
+        })
+      });
 
-      // Generate case data from lead
-      const now = new Date().toISOString();
-      let caseCounter = 1;
-      try {
-        caseCounter = parseInt(localStorage.getItem('caseCounter') || '0', 10) + 1;
-        localStorage.setItem('caseCounter', caseCounter.toString());
-      } catch (e) { console.error(e) }
-
-      const year = new Date().getFullYear();
-      const paddedCounter = caseCounter.toString().padStart(4, '0');
-      const caseNumber = `CASE-${year}-${paddedCounter}`;
-      const caseId = crypto.randomUUID();
-
-      // Create a single case with full lead data preserved
-      const newCase = {
-        caseId,
-        leadId: lead.id,
-        caseNumber,
-        schemeType: 'Forward from Deletion', // Default scheme type
-        caseType: 'Standard',
-        benefitTypes: [], // Empty initially, can be assigned later
-        companyType: lead.unitType || 'Other',
-        contacts: lead.mobileNumbers?.map(m => ({
-          name: m.name || lead.clientName,
-          designation: 'Contact',
-          customDesignation: '',
-          phoneNumber: m.number
-        })) || [],
-        assignedProcessUserId: null,
-        assignedRole: null,
-        processStatus: 'DOCUMENTS_PENDING',
-        priority: 'MEDIUM',
-        createdAt: now,
-        updatedAt: now,
-        // Preserve all lead data - use submitted_payload if available
-        clientName: lead.submitted_payload?.clientName || lead.clientName || '',
-        company: lead.submitted_payload?.company || lead.company || '',
-        mobileNumber: lead.submitted_payload?.mobileNumber || lead.mobileNumber || (lead.mobileNumbers?.[0]?.number || ''),
-        consumerNumber: lead.submitted_payload?.consumerNumber || lead.consumerNumber,
-        kva: lead.submitted_payload?.kva || lead.kva,
-        // Store full submitted_payload for complete data preservation
-        originalLeadData: lead.submitted_payload || lead
-      };
-
-      existingCases.push(newCase);
-      localStorage.setItem('processCases', JSON.stringify(existingCases));
-
-      // Create audit log entry
-      const auditLog: LeadDeletionAuditLog = {
-        id: crypto.randomUUID(),
-        leadId: lead.id,
-        leadData: { ...lead }, // Full snapshot
-        caseIds: [caseId],
-        deletedBy: currentUser?.userId || 'unknown',
-        deletedByName: currentUser?.name || 'Unknown User',
-        deletedFrom,
-        deletedAt: now,
-        reason: reason || undefined,
-        metadata: {
-          leadStatus: lead.status,
-          leadCreatedAt: lead.createdAt,
-          hasActivities: (lead.activities?.length || 0) > 0
-        }
-      };
-
-      // Store audit log
-      const auditLogsJson = localStorage.getItem('leadDeletionAuditLog') || '[]';
-      const auditLogs = JSON.parse(auditLogsJson);
-      auditLogs.push(auditLog);
-      localStorage.setItem('leadDeletionAuditLog', JSON.stringify(auditLogs));
-
-      // Create system audit log for forward-to-process action
-      createLeadAuditLog(
-        'LEAD_FORWARDED_TO_PROCESS',
-        lead.id,
-        `Lead forwarded to process: ${lead.clientName || lead.company}`,
-        {
-          deletedFrom,
-          reason: reason || undefined,
-          caseIds: [caseId],
-          caseNumber,
-          leadSnapshot: { ...lead }
-        }
-      );
-
-      // Now soft-delete the lead (mark as deleted, don't remove)
-      setLeads(prev =>
-        prev.map(l =>
-          l.id === leadId
-            ? { ...l, isDeleted: true, lastActivityDate: now }
-            : l
-        )
-      );
-
-      return {
-        success: true,
-        message: `Lead forwarded to Process pipeline and marked as deleted. Case ${caseNumber} created.`,
-        caseIds: [caseId]
-      };
-    } catch (error) {
-      console.error('Error forwarding lead to process:', error);
-      return {
-        success: false,
-        message: `Failed to forward lead: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
+      const data = await response.json();
+      if (data.success) {
+        fetchLeads();
+        return { success: true, message: data.message, caseIds: data.data.caseIds };
+      } else {
+        return { success: false, message: data.message };
+      }
+    } catch (err) {
+      return { success: false, message: 'Network error' };
     }
-  }, [leads]);
+  }, [fetchLeads]);
 
   // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
+    // Client side filtering for speed of currently loaded leads
+    // Ideally we should move this to server params for large datasets
+    // But for "Context" compatibility, we filter `leads` state.
+
     // Pre-compute values outside the filter loop for better performance
     const searchTermLower = filters.searchTerm?.toLowerCase() || '';
     const isPhoneSearch = filters.searchTerm ? /^\d+$/.test(filters.searchTerm) : false;
@@ -506,11 +306,6 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     // Pre-parse date filters once
     const startDate = toDate(filters.followUpDateStart);
     const endDate = toDate(filters.followUpDateEnd);
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 getFilteredLeads called with filters:', filters);
-      console.log('📊 Total leads before filtering:', leads.length);
-    }
 
     const filtered = leads.filter(lead => {
       // Filter out deleted leads (isDeleted: true) - they should not appear in dashboard
@@ -607,9 +402,6 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       return true;
     });
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📊 Final filtered leads count:', filtered.length);
-    }
     return filtered;
   }, [leads]);
 
@@ -629,16 +421,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
 
   // Column integration methods - enhanced to handle different column types
   const migrateLeadsForNewColumn = useCallback((columnConfig: ColumnConfig) => {
+    // Migration handled by backend eventually, but for local state:
     setLeads(prev => {
       const migrated = prev.map(lead => {
-        // Check if lead already has this field
         if ((lead as any)[columnConfig.fieldKey] !== undefined) {
           return lead;
         }
 
         let defaultValue = columnConfig.defaultValue;
-
-        // Set appropriate default value based on column type
         if (defaultValue === undefined) {
           switch (columnConfig.type) {
             case 'date':
@@ -660,35 +450,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Preserve existing flags and properties
-        const updatedLead = {
+        return {
           ...lead,
-          [columnConfig.fieldKey]: defaultValue,
-          // Explicitly preserve these flags to prevent accidental modification
-          isDeleted: lead.isDeleted || false,
-          isDone: lead.isDone || false,
-          isUpdated: lead.isUpdated || false
+          [columnConfig.fieldKey]: defaultValue
         };
-
-        return updatedLead;
       });
-
       return migrated;
     });
   }, []);
 
   const removeColumnFromLeads = useCallback((fieldKey: string) => {
-    setLeads(prev => prev.map(lead => {
-      const { [fieldKey]: removedField, ...rest } = lead as any;
-      return rest;
-    }));
+    // No-op for backend
   }, []);
 
   const getLeadFieldValue = useCallback((lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
     const value = (lead as any)[fieldKey];
-
     if (value !== undefined && value !== null) {
-      // Handle type conversion based on column configuration
       if (columnConfig) {
         switch (columnConfig.type) {
           case 'date':
@@ -725,7 +502,6 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       }
       return value;
     }
-
     // Return appropriate default value based on column type
     if (columnConfig) {
       switch (columnConfig.type) {
@@ -742,7 +518,6 @@ export function LeadProvider({ children }: { children: ReactNode }) {
           return defaultValue || '';
       }
     }
-
     return defaultValue || '';
   }, []);
 
@@ -797,19 +572,27 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return errors;
   }, []);
 
-  // Memoize context value to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({
+  const batchUpdate = useCallback((updates: () => void) => {
+    updates(); // Just execute, no persistence skipping needed
+  }, []);
+
+  // Memoize context value
+  const contextValue: LeadContextType = useMemo(() => ({
     leads,
     setLeads,
+    savedViews,
+    isHydrated,
     addLead,
     updateLead,
     deleteLead,
     permanentlyDeleteLead,
     markAsDone,
     addActivity,
+    assignLead,
+    unassignLead,
+    forwardToProcess,
     getFilteredLeads,
     resetUpdatedLeads,
-    savedViews,
     addSavedView,
     deleteSavedView,
     migrateLeadsForNewColumn,
@@ -817,21 +600,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     getLeadFieldValue,
     getLeadWithDefaults,
     validateLeadAgainstColumns,
-    skipPersistence,
-    setSkipPersistence,
-    assignLead,
-    unassignLead,
-    forwardToProcess
+    batchUpdate,
+    isLoading
   }), [
     leads,
+    setLeads,
     savedViews,
-    skipPersistence,
+    isHydrated,
     addLead,
     updateLead,
     deleteLead,
     permanentlyDeleteLead,
     markAsDone,
     addActivity,
+    assignLead,
+    unassignLead,
+    forwardToProcess,
     getFilteredLeads,
     resetUpdatedLeads,
     addSavedView,
@@ -841,20 +625,13 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     getLeadFieldValue,
     getLeadWithDefaults,
     validateLeadAgainstColumns,
-    assignLead,
-    unassignLead,
-    forwardToProcess
+    batchUpdate,
+    isLoading
   ]);
 
   return (
     <LeadContext.Provider value={contextValue}>
-      {!isHydrated ? (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-        </div>
-      ) : (
-        children
-      )}
+      {children}
     </LeadContext.Provider>
   );
 }

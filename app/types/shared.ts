@@ -241,6 +241,7 @@ export interface ColumnConfig {
 export interface LeadContextType {
   leads: Lead[];
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
+  isLoading?: boolean; // Added for API loading state
   addLead: (lead: Lead, columnConfigs?: ColumnConfig[]) => void;
   updateLead: (updatedLead: Lead, opts?: { touchActivity?: boolean }) => void;
   deleteLead: (id: string) => void;
@@ -265,7 +266,7 @@ export interface LeadContextType {
   setSkipPersistence?: (skip: boolean) => void;
   assignLead: (leadId: string, userId: string, assignedBy: string) => void;
   unassignLead: (leadId: string) => void;
-  forwardToProcess: (leadId: string, reason?: string, deletedFrom?: 'sales_dashboard' | 'all_leads') => Promise<{ success: boolean; message: string; caseIds?: string[] }>;
+  forwardToProcess: (leadId: string, benefitTypes?: string[], reason?: string, deletedFrom?: 'sales_dashboard' | 'all_leads') => Promise<{ success: boolean; message: string; caseIds?: string[] }>;
 }
 
 /**

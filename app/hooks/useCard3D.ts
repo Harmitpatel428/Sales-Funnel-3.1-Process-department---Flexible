@@ -55,6 +55,8 @@ export const useCard3D = () => {
     import('gsap').then((gsapModule) => {
       gsapInstance = gsapModule.gsap;
       initAnimations();
+    }).catch(err => {
+      console.warn('Failed to load GSAP for 3D animations:', err);
     });
 
     let mouseX = 0;

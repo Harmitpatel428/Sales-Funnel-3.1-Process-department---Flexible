@@ -1,8 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
   output   = "../node_modules/.prisma/client"
 }
 
@@ -10,144 +8,1263 @@ datasource db {
   provider = "sqlite"
 }
 
-// ============================================================================
-// USER & SESSION MODELS
-// ============================================================================
+model Tenant {
+  id                 String          @id @default(cuid())
+  name               String
+  subdomain          String?         @unique
+  slug               String          @unique
+  subscriptionTier   String          @default("FREE")
+  subscriptionStatus String          @default("ACTIVE")
+  trialEndsAt        DateTime?
+  subscriptionEndsAt DateTime?
+  brandingConfig     String          @default("{}")
+  features           String          @default("{}")
+  customFields       String          @default("{}")
+  workflowSettings   String          @default("{}")
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  auditLogs          AuditLog[]
+  cases              Case[]
+  leads              Lead[]
+  saved_views        SavedView[]
+  sessions           Session[]
+  sso_providers      sso_providers[]
+  users              User[]
+  roles              Role[]
+  documents          Document[]
+  retentionPolicies  RetentionPolicy[]
+  savedReports       SavedReport[]
+  reportTemplates    ReportTemplate[]
+  scheduledReports   ScheduledReport[]
+  // Email Integration
+  emailProviders    EmailProvider[]
+  emails            Email[]
+  emailTemplates    EmailTemplate[]
+  emailCampaigns    EmailCampaign[]
+  calendarEvents    CalendarEvent[]
+  activityLogs      ActivityLog[]
+  // Workflow Automation
+  workflows         Workflow[]
+  workflowExecutions WorkflowExecution[]
+  leadScores        LeadScore[]
+  slaPolicies       SLAPolicy[]
+  slaTrackers       SLATracker[]
+  approvalRequests  ApprovalRequest[]
+  // API Platform
+  apiKeys                   ApiKey[]
+  oauthClients              OAuthClient[]
+  webhookSubscriptions      WebhookSubscription[]
+  integrationInstallations  IntegrationInstallation[]
+
+  @@index([slug])
+  @@index([subdomain])
+  @@map("tenants")
+}
+
+model RetentionPolicy {
+  id              String   @id @default(cuid())
+  tenantId        String
+  documentType    String   // e.g., "Tax Bill", "ID Proof"
+  retentionPeriod Int      // Number of units
+  retentionUnit   String   // "DAYS", "MONTHS", "YEARS", "PERMANENT"
+  autoDelete      Boolean  @default(false)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy       User?    @relation("RetentionPolicyCreator", fields: [createdById], references: [id])
+
+  @@unique([tenantId, documentType])
+  @@index([tenantId])
+  @@map("retention_policies")
+}
 
 model User {
-  id            String    @id @default(cuid())
-  username      String    @unique
-  name          String
-  email         String    @unique
-  password      String    // bcrypt hashed password
-  role          String    @default("SALES_EXECUTIVE") // ADMIN, SALES_MANAGER, SALES_EXECUTIVE, PROCESS_MANAGER, PROCESS_EXECUTIVE
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
-  
-  // Password reset tracking
+  id                    String                  @id @default(cuid())
+  username              String                  @unique
+  name                  String
+  email                 String                  @unique
+  password              String
+  role                  String                  @default("SALES_EXECUTIVE")
+  isActive              Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  lastLoginAt           DateTime?
   passwordLastChangedAt DateTime?
-  failedLoginAttempts   Int       @default(0)
+  failedLoginAttempts   Int                     @default(0)
   lockedUntil           DateTime?
+  ssoProvider           String?
+  ssoProviderId         String?
+  mfaEnabled            Boolean                 @default(false)
+  passwordExpiresAt     DateTime?
+  mustChangePassword    Boolean                 @default(false)
+  tenantId              String
+  auditLogs             AuditLog[]              @relation("PerformedBy")
+  cases                 Case[]
+  createdLeads          Lead[]                  @relation("CreatedBy")
+  leads                 Lead[]                  @relation("AssignedTo")
+  mfa_secrets           mfa_secrets[]
+  password_history      password_history[]
+  password_reset_tokens password_reset_tokens[]
+  sessions              Session[]
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  verification_codes    verification_codes[]
   
-  // Relations
-  sessions      Session[]
-  auditLogs     AuditLog[]  @relation("PerformedBy")
-  leads         Lead[]      @relation("AssignedTo")
-  createdLeads  Lead[]      @relation("CreatedBy")
+  // RBAC
+  roleId                String?
+  customRole            Role?                   @relation(fields: [roleId], references: [id])
 
+  // Document Management
+  documentsUploaded     Document[]              @relation("DocumentUploadedBy")
+  documentsVerified     Document[]              @relation("DocumentVerifiedBy")
+  documentVersions      DocumentVersion[]       @relation("DocumentVersionUploadedBy")
+
+  documentAccessLogs    DocumentAccessLog[]     @relation("DocumentAccessLog")
+  createdPolicies       RetentionPolicy[]       @relation("RetentionPolicyCreator")
+  createdReports        SavedReport[]           @relation("ReportCreator")
+  createdTemplates      ReportTemplate[]        @relation("TemplateCreator")
+  createdScheduledReports ScheduledReport[]     @relation("ScheduledReportCreator")
+
+  // Email Integration
+  emailProviders        EmailProvider[]
+  sentEmails            Email[]                 @relation("EmailSentBy")
+  emailTemplates        EmailTemplate[]         @relation("EmailTemplateCreator")
+  emailCampaigns        EmailCampaign[]         @relation("EmailCampaignCreator")
+  organizedEvents       CalendarEvent[]         @relation("EventOrganizer")
+  // Workflow Automation
+  createdWorkflows      Workflow[]              @relation("WorkflowCreatedBy")
+  createdSLAPolicies    SLAPolicy[]             @relation("SLAPolicyCreatedBy")
+  approvalRequestsMade  ApprovalRequest[]       @relation("ApprovalRequestedBy")
+  // API Platform
+  apiKeys                   ApiKey[]
+  oauthTokens               OAuthToken[]
+  integrationInstallations  IntegrationInstallation[]
+
+  @@index([tenantId])
   @@map("users")
 }
 
 model Session {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token         String    @unique // Session token (for cookie validation)
-  userAgent     String?
-  ipAddress     String?
-  createdAt     DateTime  @default(now())
-  expiresAt     DateTime
-  lastActivityAt DateTime @default(now())
-  isValid       Boolean   @default(true)
+  id              String   @id @default(cuid())
+  userId          String
+  token           String   @unique
+  userAgent       String?
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+  lastActivityAt  DateTime @default(now())
+  isValid         Boolean  @default(true)
+  mfaVerified     Boolean  @default(false)
+  rememberMe      Boolean  @default(false)
+  rememberMeToken String?
+  tenantId        String
+  tenants         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("sessions")
   @@index([userId])
   @@index([token])
+  @@index([tenantId])
+  @@map("sessions")
 }
-
-// ============================================================================
-// LEAD MODEL
-// ============================================================================
 
 model Lead {
-  id                  String    @id @default(cuid())
-  
-  // Core Lead Data
-  firstName           String?
-  lastName            String?
-  email               String?
-  phone               String?
-  company             String?
-  source              String?   // e.g., "Web", "Referral", "Cold Call"
-  status              String    @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, WON, LOST
-  notes               String?
-  
-  // Simple JSON field for extended/custom data
-  customFields        String?   @default("{}") // JSON string for flexibility
-  
-  // Assignment and tracking
-  assignedToId        String?
-  assignedTo          User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
-  createdById         String?
-  createdBy           User?     @relation("CreatedBy", fields: [createdById], references: [id])
-  
-  // Timestamps
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  convertedAt         DateTime?
+  id                 String    @id @default(cuid())
+  clientName         String?
+  mobileNumber       String?
+  email              String?
+  company            String?
+  source             String?
+  status             String    @default("NEW")
+  notes              String?
+  kva                String?
+  connectionDate     DateTime?
+  consumerNumber     String?
+  discom             String?
+  gidc               String?
+  gstNumber          String?
+  companyLocation    String?
+  unitType           String?
+  marketingObjective String?
+  budget             String?
+  termLoan           String?
+  timeline           String?
+  contactOwner       String?
+  lastActivityDate   DateTime?
+  followUpDate       DateTime?
+  finalConclusion    String?
+  isDone             Boolean   @default(false)
+  isDeleted          Boolean   @default(false)
+  isUpdated          Boolean   @default(false)
+  mandateStatus      String?
+  documentStatus     String?
+  convertedToCaseId  String?
+  convertedAt        DateTime?
+  assignedBy         String?
+  assignedAt         DateTime?
+  mobileNumbers      String?   @default("[]")
+  activities         String?   @default("[]")
+  submitted_payload  String?   @default("{}")
+  customFields       String?   @default("{}")
+  assignedToId       String?
+  createdById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tenantId           String
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy          User?     @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedTo         User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
 
-  @@map("leads")
+  activityLogs       ActivityLog[]
+  leadScore          LeadScore?
+  
   @@index([status])
   @@index([assignedToId])
+  @@index([tenantId])
+  @@index([convertedToCaseId])
+  @@index([isDeleted])
+  @@index([isDone])
+  @@index([lastActivityDate])
+  @@index([followUpDate])
+  @@map("leads")
 }
 
-// ============================================================================
-// AUDIT LOG MODEL (Append-Only)
-// ============================================================================
-
 model AuditLog {
-  id                String    @id @default(cuid())
+  id              String   @id @default(cuid())
+  actionType      String
+  entityType      String?
+  entityId        String?
+  description     String
+  performedById   String?
+  performedByName String?
+  ipAddress       String?
+  userAgent       String?
+  sessionId       String?
+  beforeValue     String?  @default("{}")
+  afterValue      String?  @default("{}")
+  changesSummary  String?
+  metadata        String?  @default("{}")
+  previousHash    String?
+  hash            String?
+  createdAt       DateTime @default(now())
+  tenantId        String?
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  performedBy     User?    @relation("PerformedBy", fields: [performedById], references: [id])
   
-  // Action details
-  actionType        String    // USER_LOGIN, USER_LOGOUT, LEAD_CREATED, etc.
-  entityType        String?   // user, lead, session, etc.
-  entityId          String?
-  description       String
-  
-  // Who performed the action
-  performedById     String?
-  performedBy       User?     @relation("PerformedBy", fields: [performedById], references: [id])
-  performedByName   String?
-  
-  // Context
-  ipAddress         String?
-  userAgent         String?
-  sessionId         String?
-  
-  // Data snapshots
-  beforeValue       String?   @default("{}") // JSON snapshot
-  afterValue        String?   @default("{}") // JSON snapshot
-  changesSummary    String?
-  metadata          String?   @default("{}") // JSON
-  
-  // Integrity (for hash chaining)
-  previousHash      String?
-  hash              String?   // SHA-256 of (previousHash + data)
-  
-  // Timestamp (immutable)
-  createdAt         DateTime  @default(now())
+  permissionId    String?
+  roleId          String?
 
-  @@map("audit_logs")
   @@index([actionType])
   @@index([entityType, entityId])
   @@index([performedById])
   @@index([createdAt])
+  @@index([tenantId])
+  @@map("audit_logs")
+}
+
+model SavedView {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  config      String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenantId    String
+  tenants     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("saved_views")
+}
+
+model Case {
+  caseId                String    @id
+  leadId                String
+  caseNumber            String
+  schemeType            String?
+  caseType              String?
+  benefitTypes          String?   @default("[]")
+  assignedProcessUserId String?
+  assignedRole          String?
+  processStatus         String    @default("PENDING")
+  priority              String    @default("MEDIUM")
+  closedAt              DateTime?
+  closureReason         String?
+  clientName            String?
+  company               String?
+  mobileNumber          String?
+  consumerNumber        String?
+  kva                   String?
+  contacts              String?   @default("[]")
+  talukaCategory        String?
+  termLoanAmount        String?
+  plantMachineryValue   String?
+  electricityLoad       String?
+  electricityLoadType   String?
+  originalLeadData      String?   @default("{}")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime
+  tenantId              String
+  tenants               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users                 User?     @relation(fields: [assignedProcessUserId], references: [id])
+
+  activityLogs          ActivityLog[]
+  @@index([createdAt])
+  @@index([tenantId])
+  @@index([assignedProcessUserId])
+  @@index([processStatus])
+  @@index([leadId])
+  @@map("cases")
+}
+
+model email_queue {
+  id        String   @id
+  to        String
+  subject   String
+  html      String
+  status    String   @default("PENDING")
+  attempts  Int      @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@index([status])
+}
+
+model mfa_secrets {
+  id          String    @id
+  userId      String
+  method      String
+  secret      String
+  backupCodes String    @default("[]")
+  isEnabled   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  verifiedAt  DateTime?
+  users       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model password_history {
+  id           String   @id
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  users        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model password_reset_tokens {
+  id        String    @id
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  users     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model sso_providers {
+  id           String   @id
+  tenantId     String
+  provider     String
+  clientId     String?
+  clientSecret String?
+  issuer       String?
+  metadataUrl  String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+  tenants      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model verification_codes {
+  id        String   @id
+  userId    String
+  code      String
+  method    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  users     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ============================================================================
-// SAVED VIEW MODEL (for column configs etc.)
+// RBAC MODELS
 // ============================================================================
 
-model SavedView {
-  id          String    @id @default(cuid())
-  name        String
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g., "leads.create", "leads.edit.own"
+  resource    String   // e.g., "leads", "cases", "users"
+  action      String   // e.g., "create", "read", "update", "delete"
+  scope       String?  // e.g., "own", "assigned", "all", null for global
   description String?
-  config      String    // JSON string for column config, filters, etc.
-  isDefault   Boolean   @default(false)
+  category    String   // e.g., "LEADS", "CASES", "USERS", "REPORTS"
+  createdAt   DateTime @default(now())
+  
+  roles       RolePermission[]
+  
+  @@map("permissions")
+  @@index([resource, action])
+  @@index([category])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Custom Sales Manager", "Regional Manager"
+  description String?
+  isSystem    Boolean  @default(false) // true for built-in roles
+  isActive    Boolean  @default(true)
+  tenantId    String?  // null for system roles, tenant-specific otherwise
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  permissions RolePermission[]
+  users       User[]
+  fieldPermissions FieldPermission[]
+  
+  @@map("roles")
+  @@index([tenantId])
+  @@index([isSystem])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model FieldPermission {
+  id          String   @id @default(cuid())
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  resource    String   // e.g., "leads", "cases"
+  fieldName   String   // e.g., "salary", "budget", "commission"
+  canView     Boolean  @default(false)
+  canEdit     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  @@unique([roleId, resource, fieldName])
+  @@map("field_permissions")
+  @@index([roleId])
+  @@index([resource])
+}
+
+
+
+// ============================================================================
+// DOCUMENT MANAGEMENT MODELS
+// ============================================================================
+
+model Document {
+  id                String              @id @default(cuid())
+  tenantId          String
+  caseId            String
+  documentType      String              // e.g., "ID Proof", "GST Certificate"
+  fileName          String
+  fileSize          Int                 // Size in bytes
+  mimeType          String
+  storageProvider   String              @default("s3") // "s3", "azure", "local"
+  storagePath       String              // S3 key or Azure blob path
+  storageUrl        String?             // Pre-signed URL (temporary)
+  encryptionKey     String?             // Encrypted with master key
+  encryptionIV      String?
+  checksum          String              // SHA-256 hash for integrity
+  status            String              @default("PENDING") // PENDING, RECEIVED, VERIFIED, REJECTED
+  virusScanStatus   String              @default("PENDING") // PENDING, CLEAN, INFECTED, FAILED
+  virusScanResult   String?             // Scan details
+  ocrStatus         String              @default("PENDING") // PENDING, COMPLETED, FAILED, NOT_APPLICABLE
+  ocrText           String?             // Extracted text for search
+  uploadedById      String
+  uploadedBy        User                @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  verifiedById      String?
+  verifiedBy        User?               @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt        DateTime?
+  rejectionReason   String?
+  notes             String?
+  currentVersionId  String?             // Points to latest version
+  retentionPolicy   String?             // JSON: {retainUntil: date, reason: string}
+  expiresAt         DateTime?           // For automated cleanup
+  isDeleted         Boolean             @default(false)
+  deletedAt         DateTime?
+  deletedById       String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions          DocumentVersion[]
+  accessLogs        DocumentAccessLog[]
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([uploadedById])
+  @@index([status])
+  @@index([virusScanStatus])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id              String    @id @default(cuid())
+  documentId      String
+  versionNumber   Int       // 1, 2, 3, etc.
+  fileName        String
+  fileSize        Int
+  mimeType        String
+  storagePath     String
+  checksum        String
+  uploadedById    String
+  uploadedBy      User      @relation("DocumentVersionUploadedBy", fields: [uploadedById], references: [id])
+  changeNotes     String?   // Why was this version uploaded
+  createdAt       DateTime  @default(now())
+  
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+model DocumentAccessLog {
+  id          String    @id @default(cuid())
+  documentId  String
+  userId      String
+  action      String    // VIEW, DOWNLOAD, PREVIEW, DELETE
+  ipAddress   String?
+  userAgent   String?
+  accessedAt  DateTime  @default(now())
+  
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user        User      @relation("DocumentAccessLog", fields: [userId], references: [id])
+  
+  @@index([documentId])
+  @@index([userId])
+  @@index([accessedAt])
+  @@map("document_access_logs")
+}
+
+// ============================================================================
+// EMAIL & CALENDAR INTEGRATION MODELS
+// ============================================================================
+
+model EmailProvider {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider      String   // "gmail", "outlook", "exchange"
+  email         String   // Provider email address
+  accessToken   String   // Encrypted
+  refreshToken  String?  // Encrypted
+  tokenExpiry   DateTime?
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime?
+  syncEnabled   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([userId, provider, email])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("email_providers")
+}
+
+model Email {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messageId       String    @unique // Provider's message ID
+  threadId        String?   // For conversation threading
+  subject         String
+  from            String
+  to              String    // JSON array of recipients
+  cc              String?   // JSON array
+  bcc             String?   // JSON array
+  replyTo         String?
+  htmlBody        String?
+  textBody        String?
+  direction       String    // "INBOUND", "OUTBOUND"
+  status          String    @default("SENT") // "DRAFT", "SENT", "FAILED", "BOUNCED"
+  sentAt          DateTime?
+  receivedAt      DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  bouncedAt       DateTime?
+  bounceReason    String?
+  
+  // CRM Relations
+  leadId          String?
+  caseId          String? // optional relation to Case model via ID only or need relation? 
+  // Note: Case model has composite key or non-standard ID? "caseId String @id". 
+  // Adding relations if needed, but user plan just said leadId/caseId string fields.
+  // Ideally we should add relations if we want referential integrity, but user plan didn't explicitly ask for relations to Lead/Case models in the Email model definition in the plan text, just "CRM Relations: leadId String?, caseId String?".
+  // However, later it says "Update existing models to add relations..." and didn't mention Lead/Case.
+  // Wait, Lead and Case models EXIST. It is better to have relations.
+  // But the user's plan for Email model explicitly defined:
+  // leadId String?
+  // caseId String?
+  // And did NOT define @relation for them in the Email model snippet.
+  // AND did not ask to update Lead/Case models to have "emails Email[]".
+  // Adding relations usually requires updating both sides or carefully defining one side.
+  // I will follow the plan VERBATIM as requested and just use the fields as specificed: `leadId String?`.
+  
+  // Tracking
+  trackingPixelId String?   @unique
+  trackedLinks    String?   // JSON array of link tracking data
+  openCount       Int       @default(0)
+  clickCount      Int       @default(0)
+  
+  // Metadata
+  providerId      String?   // EmailProvider ID
+  providerMessageId String? // Original provider message ID
+  inReplyTo       String?   // Message ID this is replying to
+  references      String?   // JSON array of message IDs in thread
+  
+  // User relations
+  sentById        String?
+  sentBy          User?     @relation("EmailSentBy", fields: [sentById], references: [id])
+  
+  attachments     EmailAttachment[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([sentAt])
+  @@map("emails")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leadId      String?
+  lead        Lead?    @relation(fields: [leadId], references: [id])
+  caseId      String?
+  case        Case?    @relation(fields: [caseId], references: [caseId]) // Case uses caseId as ID manually
+  type        String   // "email_inbound", "email_outbound", "call", "meeting", "note"
+  description String
+  metadata    String?  @default("{}") // JSON
+  createdAt   DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([leadId])
+  @@index([caseId])
+  @@index([type])
+  @@map("activity_logs")
+}
+
+model EmailAttachment {
+  id          String   @id @default(cuid())
+  emailId     String
+  email       Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileSize    Int
+  mimeType    String
+  storagePath String   // S3/Azure path
+  contentId   String?  // For inline images
+  createdAt   DateTime @default(now())
+  
+  @@index([emailId])
+  @@map("email_attachments")
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  subject     String
+  htmlBody    String
+  textBody    String?
+  variables   String   // JSON array of variable names like {{clientName}}
+  category    String?  // "FOLLOW_UP", "WELCOME", "PROPOSAL", etc.
+  isActive    Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation("EmailTemplateCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([category])
+  @@map("email_templates")
+}
+
+model EmailCampaign {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  subject       String
+  htmlBody      String
+  textBody      String?
+  status        String   @default("DRAFT") // "DRAFT", "SCHEDULED", "SENDING", "SENT", "PAUSED"
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  
+  // Targeting
+  targetLeadIds String   // JSON array of lead IDs
+  totalRecipients Int    @default(0)
+  sentCount     Int      @default(0)
+  openedCount   Int      @default(0)
+  clickedCount  Int      @default(0)
+  bouncedCount  Int      @default(0)
+  
+  createdById   String
+  createdBy     User     @relation("EmailCampaignCreator", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([status])
+  @@map("email_campaigns")
+}
+
+model CalendarEvent {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  location    String?
+  startTime   DateTime
+  endTime     DateTime
+  allDay      Boolean   @default(false)
+  
+  // CRM Relations
+  leadId      String?
+  caseId      String?
+  
+  // Attendees
+  organizerId String
+  organizer   User      @relation("EventOrganizer", fields: [organizerId], references: [id])
+  attendees   String    // JSON array of {email, name, status}
+  
+  // Meeting link
+  meetingUrl  String?
+  
+  // Provider sync
+  providerId      String?
+  providerEventId String?
+  
+  // Reminders
+  reminderMinutes Int?
+  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  
+  @@index([tenantId])
+  @@index([leadId])
+  @@index([caseId])
+  @@index([organizerId])
+  @@index([startTime])
+  @@map("calendar_events")
+}
 
-  @@map("saved_views")
+// ============================================================================
+// REPORTING & ANALYTICS MODELS
+// ============================================================================
+
+model SavedReport {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  config      String   // JSON config: fields, filters, charts, etc.
+  chartType   String   @default("TABLE")
+  filters     String   @default("[]") // JSON
+  groupBy     String?  // Field to group by
+  sortBy      String?  // Field to sort by
+  isPublic    Boolean  @default(false)
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User     @relation("ReportCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  scheduledReports ScheduledReport[]
+
+  @@index([tenantId])
+  @@index([createdById])
+  @@map("saved_reports")
+}
+
+model ReportTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  config      String   // JSON config
+  category    String   // Sales, Operations, etc.
+  isPublic    Boolean  @default(false)
+  sharedWith  String   @default("[]") // JSON array of user IDs or Role IDs
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User     @relation("TemplateCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([category])
+  @@map("report_templates")
+}
+
+model ScheduledReport {
+  id          String   @id @default(cuid())
+  reportId    String?
+  report      SavedReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  schedule    String   // Cron expression
+  recipients  String   // JSON array of emails
+  format      String   @default("EXCEL") // EXCEL, PDF, CSV
+  enabled     Boolean  @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  
+  createdById String
+  createdBy   User     @relation("ScheduledReportCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([nextRunAt])
+  @@map("scheduled_reports")
+}
+
+// ============================================================================
+// WORKFLOW AUTOMATION MODELS
+// ============================================================================
+
+model Workflow {
+  id              String   @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  triggerType     String   // ON_CREATE, ON_UPDATE, ON_STATUS_CHANGE, SCHEDULED, MANUAL
+  triggerConfig   String   @default("{}") // JSON configuration for trigger
+  entityType      String   // LEAD, CASE
+  isActive        Boolean  @default(false)
+  priority        Int      @default(0)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy       User     @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
+  steps           WorkflowStep[]
+  executions      WorkflowExecution[]
+  slaEscalations  SLAPolicy[] @relation("EscalationWorkflow")
+
+  @@index([tenantId])
+  @@index([entityType])
+  @@index([triggerType])
+  @@index([isActive])
+  @@map("workflows")
+}
+
+model WorkflowStep {
+  id              String   @id @default(cuid())
+  workflowId      String
+  stepType        String   // CONDITION, ACTION
+  stepOrder       Int
+  actionType      String?  // SEND_EMAIL, ASSIGN_USER, UPDATE_FIELD, CREATE_TASK, WEBHOOK, WAIT, APPROVAL
+  actionConfig    String   @default("{}") // JSON with parameters
+  conditionType   String?  // IF, ELSE_IF, ELSE, AND, OR
+  conditionConfig String   @default("{}") // JSON with field, operator, value
+  parentStepId    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workflow        Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  parentStep      WorkflowStep? @relation("ChildSteps", fields: [parentStepId], references: [id])
+  childSteps      WorkflowStep[] @relation("ChildSteps")
+
+  @@index([workflowId])
+  @@index([stepOrder])
+  @@map("workflow_steps")
+}
+
+model WorkflowExecution {
+  id              String   @id @default(cuid())
+  workflowId      String
+  tenantId        String
+  entityType      String   // LEAD, CASE
+  entityId        String
+  status          String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, PAUSED
+  startedAt       DateTime?
+  completedAt     DateTime?
+  executionLog    String   @default("[]") // JSON array of step results
+  errorMessage    String?
+  triggeredBy     String?  // User ID or "SYSTEM" for automated triggers
+  triggerData     String   @default("{}") // JSON with trigger context
+  currentStepId   String?  // For paused executions
+  createdAt       DateTime @default(now())
+
+  workflow        Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approvalRequests ApprovalRequest[]
+
+  @@index([workflowId])
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("workflow_executions")
+}
+
+model LeadScore {
+  id                String   @id @default(cuid())
+  tenantId          String
+  leadId            String   @unique
+  score             Int      @default(0)
+  scoreBreakdown    String   @default("{}") // JSON with scoring factors
+  lastCalculatedAt  DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead              Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([leadId])
+  @@index([score])
+  @@map("lead_scores")
+}
+
+model SLAPolicy {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  name                  String
+  entityType            String   // LEAD, CASE
+  statusTrigger         String   // Status that starts SLA tracking
+  targetMinutes         Int      // Target time in minutes
+  escalationWorkflowId  String?  // Optional workflow to trigger on breach
+  isActive              Boolean  @default(true)
+  createdById           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy             User     @relation("SLAPolicyCreatedBy", fields: [createdById], references: [id])
+  escalationWorkflow    Workflow? @relation("EscalationWorkflow", fields: [escalationWorkflowId], references: [id])
+  trackers              SLATracker[]
+
+  @@index([tenantId])
+  @@index([entityType])
+  @@index([isActive])
+  @@map("sla_policies")
+}
+
+model SLATracker {
+  id                      String    @id @default(cuid())
+  slaId                   String
+  tenantId                String
+  entityType              String    // LEAD, CASE
+  entityId                String
+  startedAt               DateTime  @default(now())
+  dueAt                   DateTime
+  completedAt             DateTime?
+  status                  String    @default("ON_TRACK") // ON_TRACK, AT_RISK, BREACHED, COMPLETED
+  breachNotificationSent  Boolean   @default(false)
+  escalationTriggered     Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  sla                     SLAPolicy @relation(fields: [slaId], references: [id], onDelete: Cascade)
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([slaId])
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([dueAt])
+  @@map("sla_trackers")
+}
+
+model ApprovalRequest {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  workflowExecutionId String
+  entityType          String    // LEAD, CASE
+  entityId            String
+  requestedById       String
+  approverIds         String    @default("[]") // JSON array of user IDs
+  status              String    @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED
+  approvalType        String    @default("ANY") // ANY, ALL, MAJORITY
+  approvedBy          String    @default("[]") // JSON array of {userId, timestamp}
+  rejectedBy          String?   // User ID who rejected
+  rejectionReason     String?
+  requestedAt         DateTime  @default(now())
+  respondedAt         DateTime?
+  expiresAt           DateTime?
+  metadata            String    @default("{}") // JSON for additional context
+
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedBy         User      @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  workflowExecution   WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("approval_requests")
+}
+
+// ============================================================================
+// API PLATFORM MODELS
+// ============================================================================
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique // Hashed API key
+  keyPrefix   String   // First 8 chars for identification (e.g., "sk_live_")
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String?  // Optional: key owned by specific user
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Permissions & Scopes
+  scopes      String   // JSON array of permission scopes (e.g., ["leads:read", "leads:write"])
+  
+  // Rate Limiting
+  rateLimit   Int      @default(1000) // Requests per hour
+  
+  // Status
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  
+  // Metadata
+  description String?
+  environment String   @default("production") // "production" or "sandbox"
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  usageLogs   ApiUsageLog[]
+  
+  @@index([tenantId])
+  @@index([keyPrefix])
+  @@map("api_keys")
+}
+
+model ApiUsageLog {
+  id          String   @id @default(cuid())
+  apiKeyId    String
+  apiKey      ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  
+  endpoint    String
+  method      String
+  statusCode  Int
+  responseTime Int     // milliseconds
+  
+  ipAddress   String?
+  userAgent   String?
+  
+  requestSize  Int?    // bytes
+  responseSize Int?    // bytes
+  
+  timestamp   DateTime @default(now())
+  
+  @@index([apiKeyId, timestamp])
+  @@index([timestamp])
+  @@map("api_usage_logs")
+}
+
+model OAuthClient {
+  id            String   @id @default(cuid())
+  clientId      String   @unique
+  clientSecret  String   // Hashed
+  name          String
+  description   String?
+  
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // OAuth Configuration
+  redirectUris  String   // JSON array of allowed redirect URIs
+  scopes        String   // JSON array of allowed scopes
+  grantTypes    String   // JSON array: ["authorization_code", "refresh_token"]
+  
+  // App Details
+  logoUrl       String?
+  websiteUrl    String?
+  privacyUrl    String?
+  termsUrl      String?
+  
+  // Status
+  isActive      Boolean  @default(true)
+  isPublic      Boolean  @default(false) // Public apps shown in marketplace
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  tokens        OAuthToken[]
+  
+  @@index([tenantId])
+  @@map("oauth_clients")
+}
+
+model OAuthToken {
+  id            String   @id @default(cuid())
+  clientId      String
+  client        OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  accessToken   String   @unique
+  refreshToken  String?  @unique
+  
+  scopes        String   // JSON array
+  expiresAt     DateTime
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([accessToken])
+  @@index([refreshToken])
+  @@index([userId])
+  @@map("oauth_tokens")
+}
+
+model WebhookSubscription {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  url         String
+  events      String   // JSON array of event types (e.g., ["lead.created", "case.updated"])
+  
+  // Authentication
+  authType    String   @default("API_KEY") // API_KEY, BEARER, HMAC
+  authConfig  String?  // JSON with auth details
+  
+  // Status
+  isActive    Boolean  @default(true)
+  
+  // Retry Configuration
+  maxRetries  Int      @default(3)
+  retryDelay  Int      @default(1000) // milliseconds
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  deliveries  WebhookDelivery[]
+  
+  @@index([tenantId])
+  @@map("webhook_subscriptions")
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  subscriptionId  String
+  subscription    WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  event           String
+  payload         String   // JSON
+  
+  status          String   // PENDING, SUCCESS, FAILED
+  statusCode      Int?
+  response        String?  // Response body
+  error           String?
+  
+  attempts        Int      @default(0)
+  nextRetryAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  deliveredAt     DateTime?
+  
+  @@index([subscriptionId, status])
+  @@index([nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+model Integration {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  category    String   // CRM, EMAIL, ACCOUNTING, COMMUNICATION, etc.
+  
+  // Details
+  description String
+  logoUrl     String?
+  websiteUrl  String?
+  
+  // Configuration
+  configSchema String  // JSON schema for configuration
+  authType     String  // OAUTH2, API_KEY, BASIC, NONE
+  
+  // Status
+  isActive     Boolean @default(true)
+  isOfficial   Boolean @default(false) // Official integrations by platform
+  
+  // Metadata
+  version      String  @default("1.0.0")
+  author       String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  installations IntegrationInstallation[]
+  
+  @@index([slug])
+  @@index([category])
+  @@map("integrations")
+}
+
+model IntegrationInstallation {
+  id            String   @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Configuration
+  config        String   // JSON with integration-specific config
+  credentials   String?  // Encrypted credentials
+  
+  // Status
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime?
+  syncStatus    String?  // SUCCESS, FAILED, IN_PROGRESS
+  syncError     String?
+  
+  installedAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([integrationId, tenantId])
+  @@index([tenantId])
+  @@map("integration_installations")
 }

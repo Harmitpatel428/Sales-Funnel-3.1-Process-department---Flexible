@@ -4,7 +4,7 @@ import { useUsers } from '../context/UserContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import AuditLogViewer from '../components/AuditLogViewer';
-import RoleGuard from '../components/RoleGuard';
+import { RoleGuard } from '../components/RoleGuard';
 
 export default function AuditLogsPage() {
     const { canManageUsers } = useUsers();

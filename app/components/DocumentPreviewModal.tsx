@@ -32,15 +32,22 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             setLoading(true);
             setError(null);
 
-            // Check if we have base64 data
-            if (document.fileData) {
+            // 1. If we have a direct URL (pre-signed or public)
+            if (document.filePath?.startsWith('http') || document.filePath?.startsWith('/')) {
+                setFileUrl(document.filePath);
+                setLoading(false);
+            }
+            // 2. If we have base64 data (legacy or optimistically added)
+            else if (document.fileData) {
                 setFileUrl(document.fileData);
                 setLoading(false);
-            } else if (document.filePath && typeof window !== 'undefined' && window.electron) {
-                // Try to load from file system via Electron
-                loadFromElectron();
-            } else {
-                setError('Document data not available. The file may have been uploaded in a different environment.');
+            }
+            // 3. Try to fetch a fresh download URL from API if we have an ID
+            else if ((document as any).documentId) {
+                fetchPreviewUrl((document as any).documentId);
+            }
+            else {
+                setError('Preview not available');
                 setLoading(false);
             }
         }
@@ -52,20 +59,19 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         };
     }, [isOpen, document]);
 
-    const loadFromElectron = async () => {
-        if (!document?.filePath || !window.electron) return;
-
+    const fetchPreviewUrl = async (id: string) => {
         try {
-            const result = await window.electron.readFile(document.filePath);
-            if (result.success && result.data) {
-                setFileUrl(result.data);
-                setLoading(false);
-            } else {
-                setError('Failed to load file: ' + (result.error || 'Unknown error'));
-                setLoading(false);
-            }
+            // Fetch directly from the download endpoint which now decrypts and streams the file
+            const res = await fetch(`/api/documents/${id}/download`);
+            if (!res.ok) throw new Error('Failed to fetch');
+
+            const blob = await res.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            setFileUrl(objectUrl);
         } catch (err) {
-            setError('Error loading file from disk');
+            console.error(err);
+            setError('Failed to load preview');
+        } finally {
             setLoading(false);
         }
     };
@@ -181,10 +187,10 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                                 <div className="flex items-center gap-2">
                                     {/* Status Badge */}
                                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${document.status === 'VERIFIED'
-                                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                            : document.status === 'REJECTED'
-                                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                        : document.status === 'REJECTED'
+                                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                                         }`}>
                                         {document.status}
                                     </span>

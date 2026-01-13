@@ -14,13 +14,14 @@
 
 /**
  * User roles for role-based access control
- * - ADMIN: Full access, user management, system configuration
+ * - SUPER_ADMIN: Full system access, can switch between tenants, manage all tenants
+ * - ADMIN: Full access within tenant, user management, system configuration
  * - SALES_EXECUTIVE: Can create/manage assigned leads only, convert to cases, view case status (read-only)
  * - SALES_MANAGER: Can view/manage all leads, reassign leads, approve case conversions, access full sales analytics
  * - PROCESS_EXECUTIVE: Can manage assigned cases, upload/verify docs, update status
  * - PROCESS_MANAGER: Can view/manage all cases, view reports, reassign cases
  */
-export type UserRole = 'ADMIN' | 'SALES_EXECUTIVE' | 'SALES_MANAGER' | 'PROCESS_EXECUTIVE' | 'PROCESS_MANAGER';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALES_EXECUTIVE' | 'SALES_MANAGER' | 'PROCESS_EXECUTIVE' | 'PROCESS_MANAGER';
 
 /**
  * User interface for authentication and authorization
@@ -38,6 +39,14 @@ export interface User {
     lastLoginAt?: string;
     lastResetAt?: string; // Timestamp of last password reset
     passwordHistory?: PasswordHistoryEntry[]; // History of password changes
+    permissions?: string[]; // RBAC permissions
+    roleId?: string | null; // Custom Role ID
+    customRole?: {
+        id: string;
+        name: string;
+    } | null;
+    mfaEnabled?: boolean;
+    ssoProvider?: 'google' | 'microsoft' | 'saml' | null;
 }
 
 /**
@@ -62,6 +71,14 @@ export interface UserSession {
     email: string;
     role: UserRole;
     loginAt: string;
+    permissions?: string[];
+    roleId?: string | null;
+    customRole?: {
+        id: string;
+        name: string;
+    } | null;
+    mfaEnabled?: boolean;
+    ssoProvider?: 'google' | 'microsoft' | 'saml' | null;
 }
 
 // ============================================================================
@@ -401,19 +418,18 @@ export interface CaseContextType {
         plantMachineryValue?: string;
         electricityLoad?: string;
         electricityLoadType?: 'HT' | 'LT' | '';
-    }) => { success: boolean; message: string; caseIds?: string[] };
-    updateCase: (caseId: string, updates: Partial<Case>) => { success: boolean; message: string };
-    deleteCase: (caseId: string) => { success: boolean; message: string };
+    }) => Promise<{ success: boolean; message: string; caseIds?: string[] }>;
+    updateCase: (caseId: string, updates: Partial<Case>) => Promise<{ success: boolean; message: string }>;
+    deleteCase: (caseId: string) => Promise<{ success: boolean; message: string }>;
     getCaseById: (caseId: string) => Case | undefined;
     getCaseByLeadId: (leadId: string) => Case | undefined;
 
     // Status operations
-    updateStatus: (caseId: string, newStatus: ProcessStatus) => { success: boolean; message: string };
+    updateStatus: (caseId: string, newStatus: ProcessStatus) => Promise<{ success: boolean; message: string }>;
 
     // Assignment operations
-    // Assignment operations
-    assignCase: (caseId: string, userId: string, roleId?: UserRole) => { success: boolean; message: string };
-    bulkAssignCases: (caseIds: string[], userId: string, roleId?: UserRole) => BulkAssignmentResult;
+    assignCase: (caseId: string, userId: string, roleId?: UserRole) => Promise<{ success: boolean; message: string }>;
+    bulkAssignCases: (caseIds: string[], userId: string, roleId?: UserRole) => Promise<BulkAssignmentResult>;
 
 
     // Filtering

@@ -19,15 +19,36 @@ const PasswordHistoryModal = dynamic(() => import('../components/PasswordHistory
     ssr: false
 });
 
+const SSOConfigModal = dynamic(() => import('../components/SSOConfigModal'), {
+    loading: () => null,
+    ssr: false
+});
+
+const RolesPage = dynamic(() => import('./roles/page'), {
+    loading: () => <div className="p-8 text-center text-gray-500">Loading Role Management...</div>,
+    ssr: false
+});
+
+import { getAvailableRolesAction } from '../actions/roles';
+
 export default function UsersPage() {
     const { users, createUser, updateUser, deleteUser, resetUserPassword, currentUser } = useUsers();
     const { startImpersonation, canImpersonate } = useImpersonation();
 
-    const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'audit'>('users');
     const [isEditing, setIsEditing] = useState(false);
-    const [editingUser, setEditingUser] = useState<Partial<User>>({});
+    const [editingUser, setEditingUser] = useState<Partial<User> & { roleId?: string }>({});
+    const [availableRoles, setAvailableRoles] = useState<{ id: string; name: string; isSystem: boolean }[]>([]);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+
+    useEffect(() => {
+        getAvailableRolesAction().then(res => {
+            if (res.success) {
+                setAvailableRoles(res.roles);
+            }
+        });
+    }, []);
 
     const [resetPasswordModal, setResetPasswordModal] = useState<{ isOpen: boolean; userId: string; userName: string; newPassword: string | null }>(
         { isOpen: false, userId: '', userName: '', newPassword: null }
@@ -37,6 +58,8 @@ export default function UsersPage() {
     const [historyModal, setHistoryModal] = useState<{ isOpen: boolean; userId: string; userName: string; history: PasswordHistoryEntry[] }>({
         isOpen: false, userId: '', userName: '', history: []
     });
+
+    const [ssoModalOpen, setSsoModalOpen] = useState(false);
 
     // Handle impersonation start using context
     const handleStartImpersonation = useCallback(async (user: User) => {
@@ -72,6 +95,7 @@ export default function UsersPage() {
             name: editingUser.name,
             email: editingUser.email,
             role: editingUser.role as UserRole,
+            roleId: editingUser.roleId,
             isActive: true
         });
 
@@ -171,15 +195,23 @@ export default function UsersPage() {
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
                     {activeTab === 'users' && (
-                        <button
-                            onClick={() => {
-                                resetForm();
-                                setIsEditing(true);
-                            }}
-                            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                        >
-                            Add New User
-                        </button>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setSsoModalOpen(true)}
+                                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Manage SSO
+                            </button>
+                            <button
+                                onClick={() => {
+                                    resetForm();
+                                    setIsEditing(true);
+                                }}
+                                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                            >
+                                Add New User
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -195,6 +227,15 @@ export default function UsersPage() {
                         Users
                     </button>
                     <button
+                        onClick={() => setActiveTab('roles')}
+                        className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'roles'
+                            ? 'border-purple-600 text-purple-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                            }`}
+                    >
+                        Roles
+                    </button>
+                    <button
                         onClick={() => setActiveTab('audit')}
                         className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'audit'
                             ? 'border-purple-600 text-purple-600'
@@ -207,6 +248,8 @@ export default function UsersPage() {
 
                 {activeTab === 'audit' ? (
                     <AuditLogViewer />
+                ) : activeTab === 'roles' ? (
+                    <RolesPage />
                 ) : (
                     <>
 
@@ -260,16 +303,33 @@ export default function UsersPage() {
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                                         <select
-                                            value={editingUser.role || ''}
-                                            onChange={e => setEditingUser({ ...editingUser, role: e.target.value as UserRole })}
+                                            value={editingUser.roleId || editingUser.role || ''}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                const roleObj = availableRoles.find(r => r.id === val);
+                                                if (!roleObj) return;
+
+                                                if (roleObj.isSystem) {
+                                                    setEditingUser({ ...editingUser, role: val as UserRole, roleId: null });
+                                                } else {
+                                                    // For custom roles, we need a valid base role for the enum. 
+                                                    // Using SALES_EXECUTIVE as default base if not specified.
+                                                    setEditingUser({ ...editingUser, role: 'SALES_EXECUTIVE', roleId: val });
+                                                }
+                                            }}
                                             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 bg-white text-black"
                                         >
                                             <option value="">Select Role</option>
-                                            <option value="SALES_EXECUTIVE">Sales Executive</option>
-                                            <option value="SALES_MANAGER">Sales Manager</option>
-                                            <option value="PROCESS_EXECUTIVE">Process Executive</option>
-                                            <option value="PROCESS_MANAGER">Process Manager</option>
-                                            <option value="ADMIN">Admin</option>
+                                            <optgroup label="System Roles">
+                                                {availableRoles.filter(r => r.isSystem).map(role => (
+                                                    <option key={role.id} value={role.id}>{role.name}</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="Custom Roles">
+                                                {availableRoles.filter(r => !r.isSystem).map(role => (
+                                                    <option key={role.id} value={role.id}>{role.name}</option>
+                                                ))}
+                                            </optgroup>
                                         </select>
                                     </div>
                                     <div>
@@ -500,9 +560,15 @@ export default function UsersPage() {
                             userName={historyModal.userName}
                             history={historyModal.history}
                         />
+
+                        <SSOConfigModal
+                            isOpen={ssoModalOpen}
+                            onClose={() => setSsoModalOpen(false)}
+                        />
                     </>
-                )}
-            </div>
-        </RoleGuard>
+                )
+                }
+            </div >
+        </RoleGuard >
     );
 }

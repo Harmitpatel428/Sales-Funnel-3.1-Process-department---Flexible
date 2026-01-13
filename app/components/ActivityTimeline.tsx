@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { Activity } from '../types/shared';
 import ActivityLogger from './ActivityLogger';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import EmailThreadView from './EmailThreadView';
 
 interface ActivityTimelineProps {
   activities: Activity[];
@@ -11,6 +13,9 @@ interface ActivityTimelineProps {
 }
 
 const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [], onAddActivity, leadId }: ActivityTimelineProps) {
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<Activity | null>(null);
+
   // Format date for display
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -26,7 +31,7 @@ const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [],
 
   // Get activity type icon
   const getActivityIcon = (type?: Activity['activityType']) => {
-    const icons = {
+    const icons: any = {
       call: '📞',
       email: '📧',
       meeting: '📅',
@@ -37,12 +42,12 @@ const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [],
       note: '📝',
       other: '📊'
     };
-    return icons[type || 'note'];
+    return icons[type || 'note'] || icons['other'];
   };
 
   // Get activity type background color
   const getActivityBgColor = (type?: Activity['activityType']) => {
-    const colors = {
+    const colors: any = {
       call: 'bg-blue-50',
       email: 'bg-green-50',
       meeting: 'bg-purple-50',
@@ -53,7 +58,15 @@ const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [],
       note: 'bg-gray-50',
       other: 'bg-gray-50'
     };
-    return colors[type || 'note'];
+    return colors[type || 'note'] || colors['other'];
+  };
+
+  const handleActivityClick = (activity: Activity) => {
+    if (activity.activityType === 'email' && activity.metadata?.emailId) {
+      setSelectedEmailId(activity.metadata.emailId);
+    } else if (activity.activityType === 'meeting') {
+      setSelectedEvent(activity);
+    }
   };
 
   return (
@@ -80,7 +93,10 @@ const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [],
               )}
             </div>
             <div className="flex-grow pb-4">
-              <div className={`rounded-lg p-3 ${getActivityBgColor(activity.activityType)}`}>
+              <div
+                className={`rounded-lg p-3 ${getActivityBgColor(activity.activityType)} cursor-pointer hover:opacity-90`}
+                onClick={() => handleActivityClick(activity)}
+              >
                 {/* Header Row */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -108,6 +124,31 @@ const ActivityTimeline = React.memo(function ActivityTimeline({ activities = [],
       ) : (
         <p className="text-gray-500">No activities recorded yet.</p>
       )}
+
+      {/* Modals */}
+      <Dialog open={!!selectedEmailId} onOpenChange={(open) => !open && setSelectedEmailId(null)}>
+        <DialogContent className="max-w-4xl h-[80vh]">
+          {selectedEmailId && <EmailThreadView threadId={selectedEmailId} onClose={() => setSelectedEmailId(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedEvent} onOpenChange={(open) => !open && setSelectedEvent(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Meeting Details</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <h3 className="font-bold">{selectedEvent?.description}</h3>
+            <p className="text-sm text-gray-500">{formatDate(selectedEvent?.timestamp || '')}</p>
+            {/* Additional event details if stored in metadata */}
+            {selectedEvent?.metadata && (
+              <div className="mt-4 text-sm">
+                {JSON.stringify(selectedEvent.metadata, null, 2)}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });

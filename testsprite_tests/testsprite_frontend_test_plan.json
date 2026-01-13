@@ -1,0 +1,757 @@
+[
+  {
+    "id": "TC001",
+    "title": "Installation Completes Successfully",
+    "description": "Verify that the installer runs on Windows 10+ and completes setup, creating desktop and start menu shortcuts as expected.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Run the provided installer on a clean Windows 10 or later machine."
+      },
+      {
+        "type": "action",
+        "description": "Follow the installer steps with default options."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify installation completes without errors."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm that desktop shortcut is created and points to the installed application."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm that start menu shortcut is created and launches the application."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "User Login With Valid Credentials",
+    "description": "Check that users with valid credentials can log in and are directed to the appropriate UI based on their role (ADMIN, MANAGER, SALES_EXECUTIVE).",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page."
+      },
+      {
+        "type": "action",
+        "description": "Enter valid username/email and password for an ADMIN user."
+      },
+      {
+        "type": "action",
+        "description": "Click the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login is successful and ADMIN dashboard is displayed."
+      },
+      {
+        "type": "action",
+        "description": "Log out and repeat login for MANAGER role."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify MANAGER-specific UI and access rights."
+      },
+      {
+        "type": "action",
+        "description": "Log out and repeat login for SALES_EXECUTIVE role."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify SALES_EXECUTIVE-specific UI and access rights."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "User Login With Invalid Credentials",
+    "description": "Verify that login attempts with invalid credentials fail with appropriate error message and no access granted.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to login page."
+      },
+      {
+        "type": "action",
+        "description": "Enter invalid username/email and/or password."
+      },
+      {
+        "type": "action",
+        "description": "Click the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login is rejected with an error message indicating invalid credentials."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no sensitive UI or data is displayed."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Lead Creation and Retrieval",
+    "description": "Verify that users can create new sales leads with all required fields and retrieve lead details correctly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a user with lead creation permissions."
+      },
+      {
+        "type": "action",
+        "description": "Navigate to lead management page."
+      },
+      {
+        "type": "action",
+        "description": "Create a new lead with valid data for all mandatory fields."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify lead is saved successfully and appears in the lead list."
+      },
+      {
+        "type": "action",
+        "description": "Open the lead detail modal or page."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all lead data is displayed accurately."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Lead Update and Status Transition",
+    "description": "Test updating lead information, including changing status across pipeline stages and verifying data persistence.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Select an existing lead."
+      },
+      {
+        "type": "action",
+        "description": "Modify details such as contact information and update lead status to a new pipeline stage."
+      },
+      {
+        "type": "action",
+        "description": "Save changes."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that updates are persisted and reflected correctly on lead listing and detail view."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Lead Deletion and Bulk Operations",
+    "description": "Verify single and bulk deletion of leads operate correctly, including confirmation dialogs and removal from UI.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Select a single lead and initiate delete action."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify confirmation prompt is shown."
+      },
+      {
+        "type": "action",
+        "description": "Confirm deletion."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify lead is removed from list and database."
+      },
+      {
+        "type": "action",
+        "description": "Select multiple leads using checkboxes."
+      },
+      {
+        "type": "action",
+        "description": "Initiate bulk delete action."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify confirmation prompt includes count of selected leads."
+      },
+      {
+        "type": "action",
+        "description": "Confirm deletion."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all selected leads are removed from UI and backend."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Lead Search With Debounced Input",
+    "description": "Verify that lead search input responds with debouncing under 300ms and returns accurate filtered results.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to lead listing page with large dataset (1000+ leads)."
+      },
+      {
+        "type": "action",
+        "description": "Type a partial search keyword continuously in the lead search field."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify search input debounces and triggers query only after user stops typing."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify results correctly match the search term without duplicates or omissions."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Virtual Scrolling Performance on Lead List",
+    "description": "Verify smooth virtual scrolling performance at 60fps for lead lists with over 1000 records.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open lead management page with a dataset exceeding 1000 leads."
+      },
+      {
+        "type": "action",
+        "description": "Scroll quickly through the lead list vertically."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm the UI remains responsive and no lag or stuttering occurs."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate visible leads update correctly without rendering glitches."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Convert Lead to Case Workflow",
+    "description": "Test the conversion of a qualified lead to a case, with correct copying of relevant data and workflow initialization.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Select a lead marked as qualified."
+      },
+      {
+        "type": "action",
+        "description": "Trigger the 'Convert to Case' operation."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a case is created with appropriate data mapped from the lead."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm the newly created case correctly appears in the case management workflow with initial stage."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Case Management Workflow Stage Update",
+    "description": "Ensure users can update case workflow stages and that the status changes persist correctly across the system.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open an existing case detail."
+      },
+      {
+        "type": "action",
+        "description": "Change the workflow stage to the next valid stage."
+      },
+      {
+        "type": "action",
+        "description": "Save the case details."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that case stage update is saved and reflected in all views listing this case."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Document Upload, Versioning and Encryption",
+    "description": "Verify document uploads attach to cases with file versioning and are stored encrypted per retention policy.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "On a case detail page, upload a document for the first time."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the document appears in the attached documents list."
+      },
+      {
+        "type": "action",
+        "description": "Upload an updated version of the same document."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify version increment and previous version is retained."
+      },
+      {
+        "type": "assertion",
+        "description": "Check backend storage confirms encryption of the stored documents."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Lead Bulk Import from JSON, CSV, Excel",
+    "description": "Test bulk importing leads using JSON, CSV, and Excel formats with valid data and password protection where applicable.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access bulk import UI."
+      },
+      {
+        "type": "action",
+        "description": "Upload a valid JSON file containing multiple leads."
+      },
+      {
+        "type": "action",
+        "description": "Confirm import prompts for password if the file is encrypted."
+      },
+      {
+        "type": "action",
+        "description": "Provide correct password and submit."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all leads are imported and visible in the list."
+      },
+      {
+        "type": "action",
+        "description": "Repeat import process for CSV file with correct format."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify proper import with no data loss."
+      },
+      {
+        "type": "action",
+        "description": "Repeat with Excel file ensuring static import functionality."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Excel leads are imported correctly and all data fields map accurately."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Lead Bulk Export with Password Protection",
+    "description": "Verify bulk export of lead data in JSON, CSV, and Excel formats with password protection enforced for exported files.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to bulk export UI."
+      },
+      {
+        "type": "action",
+        "description": "Select format JSON and initiate export."
+      },
+      {
+        "type": "action",
+        "description": "Set password protection for export file."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exported file is generated with encryption/password applied."
+      },
+      {
+        "type": "action",
+        "description": "Repeat export in CSV and Excel formats."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate all exported files are password protected and data integrity is maintained."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Email Campaign Creation and Management",
+    "description": "Test creation, editing, and deletion of email campaigns and templates with proper data validation and save persistence.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access email campaign management interface."
+      },
+      {
+        "type": "action",
+        "description": "Create a new email campaign with valid inputs: subject, recipients, schedule."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify campaign is saved and listed."
+      },
+      {
+        "type": "action",
+        "description": "Edit the campaign changing subject and content."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify changes are saved."
+      },
+      {
+        "type": "action",
+        "description": "Delete the created campaign."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm campaign is removed from the list."
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Email Inbox Sync and Email-to-Lead Conversion",
+    "description": "Verify that incoming emails synchronize correctly into inboxes and emails can be converted into lead records automatically.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ensure inbox sync is enabled."
+      },
+      {
+        "type": "action",
+        "description": "Send an email to the system email address."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the email appears in the user's synchronized inbox."
+      },
+      {
+        "type": "action",
+        "description": "Use the email-to-lead conversion feature on the synced email."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a new lead is created with email data correctly populated."
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Outgoing Webhook Subscription and Retry Logic",
+    "description": "Test subscribing to outgoing webhooks, event delivery, handling failed deliveries with retries, and delivery tracking.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Subscribe a webhook URL to outgoing event notifications."
+      },
+      {
+        "type": "action",
+        "description": "Trigger an event that should cause webhook delivery."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify webhook receives the payload successfully."
+      },
+      {
+        "type": "action",
+        "description": "Temporarily disable the webhook endpoint to simulate failure."
+      },
+      {
+        "type": "action",
+        "description": "Trigger another event."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm retry logic attempts redelivery several times."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify delivery status and retry counts are tracked and visible."
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Calendar Event Scheduling and Sync",
+    "description": "Ensure users can schedule calendar events linked to leads, receive follow-up reminders, and that calendar synchronization functions correctly.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create a calendar event linked to a specific lead."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify event appears in calendar view."
+      },
+      {
+        "type": "action",
+        "description": "Set a reminder for the event."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm reminder notification appears at the scheduled time."
+      },
+      {
+        "type": "action",
+        "description": "Perform calendar synchronization with external calendar."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify events sync correctly in both directions without data loss."
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Role-Based Access Control Enforcement",
+    "description": "Verify that users with different roles (ADMIN, MANAGER, SALES_EXECUTIVE) have permissions restricted to their role scope and cannot access unauthorized features or data.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as SALES_EXECUTIVE."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access admin-only features such as system settings or role management."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied and appropriate error or message is shown."
+      },
+      {
+        "type": "action",
+        "description": "Login as MANAGER."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access ADMIN-only controls."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied."
+      },
+      {
+        "type": "action",
+        "description": "Verify each role can only perform the allowed CRUD operations on leads and cases."
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Data Encryption at Rest Validation",
+    "description": "Confirm that sensitive data including documents and lead information is encrypted at rest as per security requirements.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload confidential document to a case."
+      },
+      {
+        "type": "assertion",
+        "description": "Access the backend storage or database to verify the file is encrypted."
+      },
+      {
+        "type": "action",
+        "description": "Locate lead and case records in database storage."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify sensitive fields are encrypted or hashed as required."
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "API Authentication and Rate Limiting Enforcement",
+    "description": "Validate the REST API platform supports OAuth 2.0 and API key authentication with rate limiting and returns proper error codes on violation.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Make API request using valid OAuth token."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify successful authentication and authorized response."
+      },
+      {
+        "type": "action",
+        "description": "Make API request using invalid or expired OAuth token."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify 401 Unauthorized error is returned."
+      },
+      {
+        "type": "action",
+        "description": "Make API request with valid API key."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access granted."
+      },
+      {
+        "type": "action",
+        "description": "Send rapid API requests exceeding rate limit."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify 429 Too Many Requests response and rate limiting enforced."
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Multi-Tenant Data Isolation",
+    "description": "Test that multi-tenancy is enforced by ensuring data segregation and no leakage or visibility across different tenant scopes.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as user belonging to Tenant A."
+      },
+      {
+        "type": "action",
+        "description": "Access leads, cases, and documents belonging to Tenant A."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify only Tenant A data is accessible."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access data belonging to Tenant B via direct URL/API."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access denied or data not found response."
+      },
+      {
+        "type": "action",
+        "description": "Login as user belonging to Tenant B."
+      },
+      {
+        "type": "assertion",
+        "description": "Repeat data access verification for Tenant B."
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Dashboard Analytics and Usage Metrics Display",
+    "description": "Verify that administrators and managers can view dashboards with accurate analytics charts, activity timelines, and system usage metrics.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as ADMIN and navigate to dashboard."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify activity timeline shows recent actions and events."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm usage metrics such as API calls, lead counts, and case stats display with correct values."
+      },
+      {
+        "type": "action",
+        "description": "Login as MANAGER and verify access to the dashboard."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm dashboard contents are consistent with role privileges."
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Navigation and UI Responsiveness",
+    "description": "Check that responsive navigation, tabs, modals, and UI components work correctly and are optimized for performance on Windows desktop environments.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate through different pages using navigation menu."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify navigation occurs without delay or UI glitches."
+      },
+      {
+        "type": "action",
+        "description": "Open modals such as lead detail, document preview, and email templates."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify modals render correctly and can be closed."
+      },
+      {
+        "type": "action",
+        "description": "Switch between tabs in UI components."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm tab content updates correctly without reloading entire page."
+      },
+      {
+        "type": "action",
+        "description": "Interact with input controls including dropdowns, text inputs, and checkboxes."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify inputs behave as expected and validate input where applicable."
+      }
+    ]
+  }
+]

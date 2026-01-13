@@ -1,0 +1,22 @@
+[
+  {
+    "id": "TC001",
+    "title": "authentication session management",
+    "description": "Verify user authentication and session management including login, logout, and password update functionalities to ensure session integrity and security."
+  },
+  {
+    "id": "TC002",
+    "title": "email synchronization trigger",
+    "description": "Test the email synchronization API endpoint to ensure it correctly triggers the email sync process and handles success and failure scenarios."
+  },
+  {
+    "id": "TC003",
+    "title": "email parsing functionality",
+    "description": "Validate the email parsing API endpoint to confirm it accurately parses incoming emails and extracts relevant data without errors."
+  },
+  {
+    "id": "TC004",
+    "title": "leads management crud operations",
+    "description": "Test the leads management API endpoints for full CRUD operations including creating, reading, updating, and deleting sales leads with data persistence in PostgreSQL."
+  }
+]

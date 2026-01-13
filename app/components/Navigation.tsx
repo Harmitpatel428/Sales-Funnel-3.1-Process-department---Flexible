@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState, useEffect, memo } from 'react';
 import { useUsers } from '../context/UserContext';
 import LoginModal from './LoginModal';
+import TenantSwitcher from './TenantSwitcher';
 
 interface NavigationProps {
   onExportClick?: () => void;
@@ -79,6 +80,24 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                     Add Lead
                   </Link>
 
+                  <Link
+                    href="/email"
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname.startsWith('/email')
+                      ? 'bg-purple-100 text-purple-700 shadow-sm'
+                      : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                  >
+                    Inbox
+                  </Link>
+
+                  <Link
+                    href="/campaigns"
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname.startsWith('/campaigns')
+                      ? 'bg-purple-100 text-purple-700 shadow-sm'
+                      : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                  >
+                    Campaigns
+                  </Link>
+
                   {showCasesLink && (
                     <Link
                       href="/cases"
@@ -101,7 +120,7 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                     </Link>
                   )}
 
-                  {currentUser?.role === 'ADMIN' && (
+                  {(currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN') && (
                     <Link
                       href="/users"
                       className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname.startsWith('/users')
@@ -112,6 +131,16 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                     </Link>
                   )}
 
+                  {currentUser?.role === 'SUPER_ADMIN' && (
+                    <Link
+                      href="/tenants"
+                      className={`px-3 py-1.5 rounded-md font-medium transition-all duration-300 text-sm ${pathname.startsWith('/tenants')
+                        ? 'bg-purple-100 text-purple-700 shadow-sm'
+                        : 'text-gray-600 hover:text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      Tenants
+                    </Link>
+                  )}
 
                 </div>
               )}
@@ -119,6 +148,9 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
 
             {/* Controls and Clock */}
             <div className="flex items-center space-x-4">
+              {/* Tenant Switcher (for Super Admin) */}
+              <TenantSwitcher />
+
               {/* User Profile / Login */}
               {isAuthenticated ? (
                 <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
@@ -132,6 +164,17 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                     </Link>
                     <span className="text-xs text-purple-600 font-medium bg-purple-50 px-1.5 rounded">{currentUser?.role.replace(/_/g, ' ')}</span>
                   </div>
+                  <Link
+                    href="/email/settings"
+                    className={`p-1.5 rounded-full transition-colors ${pathname === '/email/settings'
+                      ? 'text-purple-600 bg-purple-100'
+                      : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'
+                      }`}
+                    title="Email Settings"
+                  >
+                    {/* Settings Icon */}
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  </Link>
                   <Link
                     href="/profile"
                     className={`p-1.5 rounded-full transition-colors ${pathname === '/profile'

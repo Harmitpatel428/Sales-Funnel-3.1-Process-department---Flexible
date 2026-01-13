@@ -1,0 +1,92 @@
+{
+  "meta": {
+    "project": "Enterprise Lead Management System v2.0",
+    "date": "2026-01-13",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "Enterprise Lead Management System v2.0 is a professional-grade CRM solution designed for managing the complete sales lead lifecycle in enterprise environments. It offers robust lead management, offline desktop installation for Windows, advanced security features, and optimized performance for large datasets.",
+  "core_goals": [
+    "Provide a comprehensive and intuitive tool for managing sales leads and pipelines within an enterprise.",
+    "Ensure enterprise-grade security including password protection, data encryption, and audit trails.",
+    "Enable offline desktop use with professional Windows installer for easy deployment without internet dependency.",
+    "Optimize performance to handle large datasets efficiently, ensuring responsive search, smooth scrolling, and minimal UI latency.",
+    "Offer seamless import/export functionality for lead data using Excel and CSV files with password protection.",
+    "Deliver a professional, modern user interface with cross-platform desktop support via Electron."
+  ],
+  "key_features": [
+    "Complete lead lifecycle management with multi-status pipeline and bulk operations.",
+    "Secure user authentication and session management.",
+    "Advanced search and filtering with debounced inputs and filter memoization for performance.",
+    "Virtual scrolling for lead lists to ensure smooth scrolling with thousands of leads.",
+    "Excel import and export with password protection and support for .xlsx, .xls, and .csv formats.",
+    "Professional Windows installer with one-click installation, desktop shortcuts, and uninstaller.",
+    "Offline operation without internet after installation, with local data encryption and audit trails.",
+    "Detailed troubleshooting guide and performance optimization documentation for enterprise IT support.",
+    "Centralized type definitions to reduce technical debt and maintain code quality.",
+    "Modularized API endpoints for authentication, email synchronization, parsing, and leads CRUD operations."
+  ],
+  "user_flow_summary": [
+    "User launches the application via desktop shortcut or Start Menu after installation.",
+    "User authenticates with default or updated credentials.",
+    "User accesses the dashboard for an overview of leads and sales pipeline status.",
+    "User creates, edits, searches, filters, and deletes leads using the intuitive interface.",
+    "User imports lead data via Excel or CSV files and exports data securely with password protection.",
+    "User reviews activity logs and performs bulk operations on selected leads.",
+    "System provides smooth scrolling and responsive search through virtual scrolling and search debouncing.",
+    "User updates password and manages user session securely in settings.",
+    "User performs regular backups and manages data offline, no internet connection required."
+  ],
+  "validation_criteria": [
+    "Successful installation using the provided Windows installer with all dependencies set up automatically.",
+    "User authentication works correctly, maintaining session integrity and allowing password updates.",
+    "Lead management API supports full CRUD operations with data persisted correctly in PostgreSQL backend.",
+    "Import and export of Excel and CSV files function without errors, including password protection and large datasets handling.",
+    "UI responsiveness is stable with 500+ leads, enabling smooth 60fps scrolling and effective search debouncing.",
+    "Security features including data encryption, password protection for exports, and audit trails verified through penetration testing.",
+    "Installer creates Desktop and Start Menu shortcuts and supports clean uninstallation without data loss.",
+    "Build and deployment pipelines produce reproducible and verified packages with comprehensive validation reports.",
+    "Codebase adheres to architectural principles with centralized type definitions and no circular dependencies.",
+    "Performance optimizations like tree shaking, code splitting, and bundle size reduction verified through bundle analysis reports."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "TypeScript",
+      "Next.js",
+      "Prisma",
+      "PostgreSQL",
+      "TailwindCSS"
+    ],
+    "features": [
+      {
+        "name": "Authentication",
+        "description": "User authentication and session management",
+        "files": [
+          "lib/auth.ts",
+          "app/api/auth/[...nextauth]/route.ts"
+        ]
+      },
+      {
+        "name": "Start Email Sync",
+        "description": "Trigger email synchronization",
+        "files": [
+          "app/api/email/sync/route.ts"
+        ]
+      },
+      {
+        "name": "Parse Email",
+        "description": "Parse incoming emails",
+        "files": [
+          "app/api/email/parse/route.ts"
+        ]
+      },
+      {
+        "name": "Leads Management",
+        "description": "CRUD operations for sales leads",
+        "files": [
+          "app/api/leads/route.ts",
+          "app/api/leads/[id]/route.ts"
+        ]
+      }
+    ]
+  }
+}

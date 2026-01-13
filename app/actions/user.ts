@@ -18,6 +18,8 @@ export interface UserData {
     isActive: boolean;
     createdAt: Date;
     lastLoginAt: Date | null;
+    roleId: string | null;
+    customRole: { id: string; name: string } | null;
 }
 
 /**
@@ -36,11 +38,37 @@ export async function getUsers(): Promise<UserData[]> {
             isActive: true,
             createdAt: true,
             lastLoginAt: true,
+            roleId: true,
+            customRole: {
+                select: {
+                    id: true,
+                    name: true,
+                    permissions: {
+                        select: {
+                            permission: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         },
         orderBy: { createdAt: 'desc' },
     });
 
-    return users;
+    const mappedUsers = users.map(user => ({
+        ...user,
+        roleId: user.roleId,
+        customRole: user.customRole ? {
+            id: user.customRole.id,
+            name: user.customRole.name,
+            permissions: user.customRole.permissions.map(p => p.permission.name)
+        } : null
+    }));
+
+    return mappedUsers;
 }
 
 /**
@@ -52,6 +80,7 @@ export async function createUserAction(data: {
     email: string;
     password: string;
     role: string;
+    roleId?: string;
 }): Promise<{ success: boolean; message: string; userId?: string }> {
     try {
         const session = await requireRole(['ADMIN']);
@@ -82,6 +111,7 @@ export async function createUserAction(data: {
                 password: hashedPassword,
                 role: data.role,
                 isActive: true,
+                roleId: data.roleId || null,
             },
         });
 
@@ -106,7 +136,7 @@ export async function createUserAction(data: {
  */
 export async function updateUserAction(
     userId: string,
-    updates: { name?: string; email?: string; role?: string; isActive?: boolean; password?: string }
+    updates: { name?: string; email?: string; role?: string; isActive?: boolean; password?: string; roleId?: string }
 ): Promise<{ success: boolean; message: string }> {
     try {
         const session = await requireRole(['ADMIN']);
@@ -120,6 +150,7 @@ export async function updateUserAction(
         if (updates.name) updateData.name = updates.name;
         if (updates.email) updateData.email = updates.email.toLowerCase();
         if (updates.role) updateData.role = updates.role;
+        if (updates.roleId !== undefined) updateData.roleId = updates.roleId;
         if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
         if (updates.password) updateData.password = await hashPassword(updates.password);
 

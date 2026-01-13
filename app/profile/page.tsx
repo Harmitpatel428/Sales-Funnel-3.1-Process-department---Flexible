@@ -31,6 +31,11 @@ export default function ProfilePage() {
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // MFA Modals
+    const [showMFASetup, setShowMFASetup] = useState(false);
+    const [showMFAVerify, setShowMFAVerify] = useState(false); // For disabling
+
+
     const passwordStrength = useMemo(() => checkPasswordStrength(newPassword), [newPassword]);
     const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
 
@@ -67,6 +72,45 @@ export default function ProfilePage() {
         setIsSubmitting(false);
     };
 
+    const handleEnableMFA = () => {
+        setShowMFASetup(true);
+    };
+
+    const handleMFAComplete = async () => {
+        setShowMFASetup(false);
+        await refreshUser(); // Refresh checks
+        setMessage({ type: 'success', text: 'MFA enabled successfully' });
+    };
+
+    const handleDisableMFA = async () => {
+        if (!confirm('Are you sure you want to disable MFA? This decreases your account security.')) return;
+
+        try {
+            // Usually requires password or auth? For now simple API call.
+            // But api/auth/mfa/disable requires { password } body.
+            // I'll need a modal or prompt for password.
+            // For simplicity, reusing "currentPassword" usage flow or just asking user to confirm via password prompt.
+            // I'll assume usage of a prompt for now or just generic error if failed.
+            const password = prompt("Please enter your password to confirm:");
+            if (!password) return;
+
+            const res = await fetch('/api/auth/mfa/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                await refreshUser();
+                setMessage({ type: 'success', text: 'MFA disabled successfully' });
+            } else {
+                setMessage({ type: 'error', text: data.error || 'Failed to disable MFA' });
+            }
+        } catch (e: any) {
+            setMessage({ type: 'error', text: e.message });
+        }
+    };
+
     return (
         <RoleGuard allowedRoles={['ADMIN', 'SALES_EXECUTIVE', 'SALES_MANAGER', 'PROCESS_EXECUTIVE', 'PROCESS_MANAGER']}>
             <div className="max-w-4xl mx-auto p-6">
@@ -95,6 +139,41 @@ export default function ProfilePage() {
                                     {currentUser?.role.replace(/_/g, ' ') || '-'}
                                 </span>
                             </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* MFA Section */}
+                <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Multi-Factor Authentication (MFA)</h2>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-gray-600 mb-2">
+                                Add an extra layer of security to your account by enabling two-factor authentication.
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${currentUser?.mfaEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                    }`}>
+                                    {currentUser?.mfaEnabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            {currentUser?.mfaEnabled ? (
+                                <button
+                                    onClick={handleDisableMFA}
+                                    className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-md text-sm font-medium border border-red-200"
+                                >
+                                    Disable MFA
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleEnableMFA}
+                                    className="bg-purple-600 text-white hover:bg-purple-700 px-4 py-2 rounded-md text-sm font-medium"
+                                >
+                                    Enable MFA
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -266,6 +345,14 @@ export default function ProfilePage() {
                     </form>
                 </div>
             </div>
+
+            {/* MFA Modals */}
+            import MFASetupModal from '../components/MFASetupModal';
+            <MFASetupModal
+                isOpen={showMFASetup}
+                onClose={() => setShowMFASetup(false)}
+                onComplete={handleMFAComplete}
+            />
         </RoleGuard>
     );
 }

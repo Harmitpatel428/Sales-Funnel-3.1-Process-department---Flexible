@@ -7,6 +7,7 @@ import { ColumnProvider } from "./context/ColumnContext";
 import { HeaderProvider } from "./context/HeaderContext";
 import { NavigationProvider } from "./context/NavigationContext";
 import { UserProvider } from "./context/UserContext";
+import { TenantProvider } from "./context/TenantContext";
 import { ImpersonationProvider } from "./context/ImpersonationContext";
 import { CaseProvider } from "./context/CaseContext";
 import { DocumentProvider } from "./context/DocumentContext";
@@ -47,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="gu">
+    <html lang="gu" suppressHydrationWarning>
       <head>
         <style dangerouslySetInnerHTML={{
           __html: `
@@ -127,34 +128,36 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansGujarati.variable} antialiased bg-gray-50`}
       >
-        <LeadProvider>
-          <UserProvider>
-            <ImpersonationProvider>
-              <CaseProvider>
-                <DocumentProvider>
-                  <TimelineProvider>
-                    <PasswordProvider>
-                      <ColumnProvider>
-                        <HeaderProvider>
-                          <NavigationProvider>
-                            <EmployeeSetupWrapper>
-                              <div className="flex flex-col h-screen">
-                                <NavigationWrapper />
-                                <main className="flex-1 overflow-y-auto p-0">
-                                  {children}
-                                </main>
-                              </div>
-                            </EmployeeSetupWrapper>
-                          </NavigationProvider>
-                        </HeaderProvider>
-                      </ColumnProvider>
-                    </PasswordProvider>
-                  </TimelineProvider>
-                </DocumentProvider>
-              </CaseProvider>
-            </ImpersonationProvider>
-          </UserProvider>
-        </LeadProvider>
+        <UserProvider>
+          <LeadProvider>
+            <TenantProvider>
+              <ImpersonationProvider>
+                <CaseProvider>
+                  <DocumentProvider>
+                    <TimelineProvider>
+                      <PasswordProvider>
+                        <ColumnProvider>
+                          <HeaderProvider>
+                            <NavigationProvider>
+                              <EmployeeSetupWrapper>
+                                <div className="flex flex-col h-screen">
+                                  <NavigationWrapper />
+                                  <main className="flex-1 overflow-y-auto p-0">
+                                    {children}
+                                  </main>
+                                </div>
+                              </EmployeeSetupWrapper>
+                            </NavigationProvider>
+                          </HeaderProvider>
+                        </ColumnProvider>
+                      </PasswordProvider>
+                    </TimelineProvider>
+                  </DocumentProvider>
+                </CaseProvider>
+              </ImpersonationProvider>
+            </TenantProvider>
+          </LeadProvider>
+        </UserProvider>
       </body>
     </html>
   );

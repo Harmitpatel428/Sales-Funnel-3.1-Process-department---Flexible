@@ -1,0 +1,129 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]: V4UBizSolutions
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - heading "Welcome! Let's set up your work tracker" [level=2] [ref=e15]
+      - paragraph [ref=e16]: Enter your name to start tracking your work. This will be used to identify your activities and work sessions.
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: Your Name
+        - textbox "Employee name" [active] [ref=e20]:
+          - /placeholder: Enter your full name
+      - button "Start Tracking" [disabled] [ref=e21]
+  - generic [ref=e22]:
+    - navigation [ref=e23]:
+      - generic [ref=e25]:
+        - generic [ref=e27]: CRM
+        - generic [ref=e28]:
+          - button "Sign In" [ref=e29]
+          - generic [ref=e31]:
+            - generic [ref=e32]: 03:17 PM
+            - generic [ref=e33]: Mon, Jan 12
+    - generic [ref=e35]:
+      - generic [ref=e36]:
+        - img [ref=e38]
+        - heading "Welcome Back" [level=2] [ref=e40]
+        - paragraph [ref=e41]: Sign in to continue to CRM
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: Username
+          - generic [ref=e45]:
+            - generic:
+              - img
+            - textbox "Username" [ref=e46]:
+              - /placeholder: Enter username
+        - generic [ref=e47]:
+          - generic [ref=e48]: Password
+          - generic [ref=e49]:
+            - generic:
+              - img
+            - textbox "Password" [ref=e50]:
+              - /placeholder: Enter password
+            - button [ref=e51]:
+              - img [ref=e52]
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - checkbox "Remember me" [ref=e57]
+            - generic [ref=e58]: Remember me
+          - link "Forgot password?" [ref=e60] [cursor=pointer]:
+            - /url: /forgot-password
+        - button "Sign In" [ref=e61]
+        - paragraph [ref=e63]: Your session is protected with secure, server-validated authentication.
+    - main [ref=e64]:
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - heading "V4U Biz Solutions" [level=1] [ref=e70]:
+            - generic [ref=e71]: V4U
+            - generic [ref=e72]: Biz
+            - generic [ref=e73]: Solutions
+          - paragraph [ref=e75]: Professional CRM Solution By HPX Eigen
+          - generic [ref=e76]:
+            - button "Add New Lead" [ref=e77]
+            - button "View Dashboard" [ref=e78]
+        - generic [ref=e79]:
+          - button "Lead Management Easily add, track, and manage all your leads in one centralized location with comprehensive contact information." [ref=e80]:
+            - generic [ref=e81]:
+              - img [ref=e83]
+              - heading "Lead Management" [level=3] [ref=e85]
+              - paragraph [ref=e86]: Easily add, track, and manage all your leads in one centralized location with comprehensive contact information.
+          - button "Work Tracker Track your activities, monitor time spent on leads, and generate work reports to share with management." [ref=e87]:
+            - generic [ref=e88]:
+              - img [ref=e90]
+              - heading "Work Tracker" [level=3] [ref=e92]
+              - paragraph [ref=e93]: Track your activities, monitor time spent on leads, and generate work reports to share with management.
+          - button "Mandate & Documentation Track mandate status and document submission progress for all your leads with organized workflow management." [ref=e94]:
+            - generic [ref=e95]:
+              - img [ref=e97]
+              - heading "Mandate & Documentation" [level=3] [ref=e99]
+              - paragraph [ref=e100]: Track mandate status and document submission progress for all your leads with organized workflow management.
+          - button "Quick Actions Access all your CRM functions quickly with intuitive navigation and streamlined workflows." [ref=e101]:
+            - generic [ref=e102]:
+              - img [ref=e104]
+              - heading "Quick Actions" [level=3] [ref=e106]
+              - paragraph [ref=e107]: Access all your CRM functions quickly with intuitive navigation and streamlined workflows.
+          - button "Team Collaboration Work together with your team to manage leads, share insights, and coordinate follow-up activities." [ref=e108]:
+            - generic [ref=e109]:
+              - img [ref=e111]
+              - heading "Team Collaboration" [level=3] [ref=e113]
+              - paragraph [ref=e114]: Work together with your team to manage leads, share insights, and coordinate follow-up activities.
+          - button "My Work Today Activities 0 Leads 0 Time 0m Active 0 View Full Report →" [ref=e115]:
+            - generic [ref=e116]:
+              - img [ref=e118]
+              - heading "My Work Today" [level=3] [ref=e120]
+              - generic [ref=e121]:
+                - generic [ref=e122]:
+                  - generic [ref=e123]: Activities
+                  - generic [ref=e124]: "0"
+                - generic [ref=e125]:
+                  - generic [ref=e126]: Leads
+                  - generic [ref=e127]: "0"
+                - generic [ref=e128]:
+                  - generic [ref=e129]: Time
+                  - generic [ref=e130]: 0m
+                - generic [ref=e131]:
+                  - generic [ref=e132]: Active
+                  - generic [ref=e133]: "0"
+              - generic [ref=e134]: View Full Report →
+          - button "Follow-up Management Never miss a follow-up with automated reminders and scheduled tasks for all your leads." [ref=e135]:
+            - generic [ref=e136]:
+              - img [ref=e138]
+              - heading "Follow-up Management" [level=3] [ref=e140]
+              - paragraph [ref=e141]: Never miss a follow-up with automated reminders and scheduled tasks for all your leads.
+        - generic [ref=e142]:
+          - heading "Quick Actions" [level=2] [ref=e143]
+          - generic [ref=e144]:
+            - button "Add Lead Create new lead entry" [ref=e145]:
+              - generic [ref=e146]: Add Lead
+              - generic [ref=e147]: Create new lead entry
+            - button "Dashboard View all leads" [ref=e148]:
+              - generic [ref=e149]: Dashboard
+              - generic [ref=e150]: View all leads
+            - button "Due Today Check urgent tasks" [ref=e151]:
+              - generic [ref=e152]: Due Today
+              - generic [ref=e153]: Check urgent tasks
+```

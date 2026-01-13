@@ -13,14 +13,22 @@ interface LoginModalProps {
  * 
  * Modal for user authentication. Shows when user is not logged in.
  */
-export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
-    const { login, isAuthenticated, isLoading } = useUsers();
+import { LoginModalProps } from './LoginModalTypes'; // Assuming type definition or keep inline
+import MFAVerificationModal from './MFAVerificationModal';
+
+export function LoginModal({ isOpen = true, onLoginSuccess }: any) {
+    const { login, refreshUser, isAuthenticated, isLoading } = useUsers(); // Add refreshUser to update context after MFA
 
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [rememberMe, setRememberMe] = useState(false);
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+
+    // MFA State
+    const [showMfa, setShowMfa] = useState(false);
+    const [mfaUserId, setMfaUserId] = useState<string | null>(null);
 
     // Clear error when inputs change
     useEffect(() => {
@@ -49,19 +57,90 @@ export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
         setError('');
 
         try {
-            const result = await login(username.trim(), password);
+            const result = await login(username.trim(), password, rememberMe);
 
             if (result.success) {
                 onLoginSuccess?.();
+            } else if (result.mfaRequired && result.userId) {
+                setMfaUserId(result.userId);
+                setShowMfa(true);
             } else {
-                setError(result.message);
+                // More specific error handling
+                const message = result.message || 'Login failed';
+                if (message.includes('locked')) {
+                    setError('Account is locked due to too many failed attempts. Please try again later or contact support.');
+                } else if (message.includes('deactivated') || message.includes('inactive')) {
+                    setError('Your account has been deactivated. Please contact your administrator.');
+                } else if (message.includes('expired')) {
+                    setError('Your password has expired. Please reset your password.');
+                } else {
+                    setError(message);
+                }
             }
-        } catch (err) {
-            setError('Login failed. Please try again.');
+        } catch (err: any) {
+            // Network or transient error handling
+            console.error('Login error:', err);
+            if (err.name === 'TypeError' && err.message.includes('fetch')) {
+                setError('Network error. Please check your connection and try again.');
+            } else {
+                setError('Login failed. Please try again.');
+            }
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    const handleMfaVerify = async (code: string, isBackup: boolean) => {
+        if (!mfaUserId) return false;
+
+        setIsSubmitting(true); // Add loading state during MFA verification
+
+        try {
+            const res = await fetch('/api/auth/mfa/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: mfaUserId, code, useBackupCode: isBackup }),
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                // Refresh user context to get session data
+                await refreshUser();
+                onLoginSuccess?.();
+                setShowMfa(false);
+                return true;
+            } else {
+                // Show specific MFA error messages
+                const errorMessage = data.message || data.error;
+                if (isBackup && errorMessage?.includes('already used')) {
+                    setError('This backup code has already been used. Please try a different code.');
+                } else if (errorMessage?.includes('expired')) {
+                    setError('Verification code has expired. Please request a new one.');
+                } else if (errorMessage?.includes('invalid')) {
+                    setError('Invalid verification code. Please try again.');
+                } else {
+                    setError(errorMessage || 'MFA verification failed.');
+                }
+                return false;
+            }
+        } catch (err) {
+            console.error('MFA verification error:', err);
+            setError('MFA verification failed. Please try again.');
+            return false;
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    if (showMfa) {
+        return (
+            <MFAVerificationModal
+                isOpen={true}
+                onVerify={handleMfaVerify}
+                onCancel={() => { setShowMfa(false); setMfaUserId(null); }}
+            />
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -149,6 +228,28 @@ export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
                                     </svg>
                                 )}
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Remember Me */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                            <input
+                                id="remember-me"
+                                name="remember-me"
+                                type="checkbox"
+                                checked={rememberMe}
+                                onChange={(e) => setRememberMe(e.target.checked)}
+                                className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                            />
+                            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                                Remember me
+                            </label>
+                        </div>
+                        <div className="text-sm">
+                            <a href="/forgot-password" className="font-medium text-purple-600 hover:text-purple-500">
+                                Forgot password?
+                            </a>
                         </div>
                     </div>
 

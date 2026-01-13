@@ -56,15 +56,24 @@ export default function DocumentUploader({ caseId, schemeType }: DocumentUploade
     const handleUpload = async (file: File) => {
         if (!currentUser) return;
 
-        // Limits: Max 10MB
-        if (file.size > 10 * 1024 * 1024) {
-            setError('File size exceeds 10MB limit');
+        // Limits: Max 50MB (matching API limit)
+        if (file.size > 50 * 1024 * 1024) {
+            setError('File size exceeds 50MB limit');
             return;
         }
 
-        // Check validation: Only PDF and Images
-        if (!['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'].includes(file.type)) {
-            setError('Only PDF and Image files (JPG, PNG) are allowed');
+        // Check validation
+        const validTypes = [
+            'application/pdf',
+            'image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ];
+
+        if (!validTypes.includes(file.type)) {
+            setError('Unsupported file type');
             return;
         }
 
@@ -72,95 +81,20 @@ export default function DocumentUploader({ caseId, schemeType }: DocumentUploade
         setError('');
 
         try {
-            let filePath = '';
-
-            if (isElectron) {
-                // 1. Get base path
-                const userDataPath = await window.electron.getDocumentsPath();
-
-                // 2. Construct directory path: data/cases/{caseId}/documents/
-                const relativeDir = `data/cases/${caseId}/documents`;
-                const dirPath = await window.electron.joinPath(userDataPath, relativeDir);
-
-                // 3. Create directory
-                await window.electron.createDirectory(dirPath);
-
-                // 4. Construct file path
-                const timestamp = Date.now();
-                const safeName = file.name.replace(/[^a-z0-9.]/gi, '_');
-                const fileName = `${timestamp}_${safeName}`;
-                filePath = await window.electron.joinPath(dirPath, fileName);
-
-                // 5. Read file as base64
-                const reader = new FileReader();
-                const base64Promise = new Promise<string>((resolve, reject) => {
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                });
-                reader.readAsDataURL(file);
-                const base64Content = await base64Promise;
-
-                // 6. Save file
-                const result = await window.electron.saveFile(filePath, base64Content);
-                if (!result.success) {
-                    throw new Error(result.error);
-                }
-            } else {
-                // Browser mode: Read file as base64 and store it for preview
-                const reader = new FileReader();
-                const base64Promise = new Promise<string>((resolve, reject) => {
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                });
-                reader.readAsDataURL(file);
-                const base64Content = await base64Promise;
-
-                filePath = `browser/uploads/${Date.now()}_${file.name}`;
-
-                // Store the base64 data in the document
-                const result = addDocument({
-                    caseId,
-                    documentType: selectedType,
-                    fileName: file.name,
-                    filePath,
-                    fileData: base64Content, // Store base64 for preview
-                    fileSize: file.size,
-                    mimeType: file.type,
-                    status: 'RECEIVED',
-                    uploadedBy: currentUser.userId
-                });
-
-                if (result.success) {
-                    logDocumentAction(
-                        caseId,
-                        'DOCUMENT_UPLOADED',
-                        selectedType,
-                        currentUser.userId,
-                        currentUser.name
-                    );
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                } else {
-                    setError(result.message);
-                }
-
-                setIsUploading(false);
-                return; // Early return for browser mode
-            }
-
-            // 7. Add to context (Electron mode)
-            const result = addDocument({
+            // Use context action which calls API
+            const result = await addDocument({
                 caseId,
                 documentType: selectedType,
                 fileName: file.name,
-                filePath,
                 fileSize: file.size,
                 mimeType: file.type,
                 status: 'RECEIVED',
-                uploadedBy: currentUser.userId
+                uploadedBy: currentUser.userId,
+                file: file // Pass raw file for upload
             });
 
             if (result.success) {
-                // 8. Log action
+                // Log action
                 logDocumentAction(
                     caseId,
                     'DOCUMENT_UPLOADED',

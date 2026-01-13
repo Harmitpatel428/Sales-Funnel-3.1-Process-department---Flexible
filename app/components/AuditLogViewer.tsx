@@ -11,7 +11,8 @@ const ACTION_CATEGORIES = {
     LEAD: ['LEAD_CREATED', 'LEAD_UPDATED', 'LEAD_DELETED', 'LEAD_ASSIGNED', 'LEAD_STATUS_CHANGED', 'LEAD_FORWARDED_TO_PROCESS'],
     CASE: ['CASE_CREATED', 'CASE_UPDATED', 'CASE_DELETED', 'CASE_ASSIGNED', 'CASE_REASSIGNED', 'CASE_STATUS_CHANGED', 'CASE_PRIORITY_CHANGED', 'CASE_BULK_ASSIGNED'],
     USER: ['USER_PASSWORD_CHANGED', 'USER_PASSWORD_RESET_BY_ADMIN', 'USER_LOGIN', 'USER_LOGOUT', 'USER_LOGIN_FAILED', 'USER_CREATED', 'USER_UPDATED', 'USER_DELETED', 'USER_ACTIVATED', 'USER_DEACTIVATED'],
-    SECURITY: ['ADMIN_IMPERSONATION_STARTED', 'ADMIN_IMPERSONATION_ENDED', 'USER_PASSWORD_CHANGED', 'USER_PASSWORD_RESET_BY_ADMIN', 'USER_LOGIN_FAILED']
+    SECURITY: ['ADMIN_IMPERSONATION_STARTED', 'ADMIN_IMPERSONATION_ENDED', 'USER_PASSWORD_CHANGED', 'USER_PASSWORD_RESET_BY_ADMIN', 'USER_LOGIN_FAILED', 'PERMISSION_DENIED'],
+    PERMISSION: ['ROLE_CREATED', 'ROLE_UPDATED', 'ROLE_DELETED', 'PERMISSION_TEST_STARTED']
 };
 
 // Page size options for pagination
@@ -21,8 +22,8 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
     const [systemLogs, setSystemLogs] = useState<SystemAuditLog[]>([]);
     const [deletionLogs, setDeletionLogs] = useState<LeadDeletionAuditLog[]>([]);
     const [filterAction, setFilterAction] = useState<AuditActionType | 'ALL' | 'DELETIONS'>('ALL');
-    const [filterCategory, setFilterCategory] = useState<'ALL' | 'LEAD' | 'CASE' | 'USER' | 'SECURITY'>('ALL');
-    const [filterEntity, setFilterEntity] = useState<'all' | 'lead' | 'case' | 'user'>('all');
+    const [filterCategory, setFilterCategory] = useState<'ALL' | 'LEAD' | 'CASE' | 'USER' | 'SECURITY' | 'PERMISSION'>('ALL');
+    const [filterEntity, setFilterEntity] = useState<'all' | 'lead' | 'case' | 'user' | 'role' | 'permission'>('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -80,7 +81,9 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
             if (ACTION_CATEGORIES.LEAD.includes(log.actionType)) index.get('LEAD')!.push(log);
             if (ACTION_CATEGORIES.CASE.includes(log.actionType)) index.get('CASE')!.push(log);
             if (ACTION_CATEGORIES.USER.includes(log.actionType)) index.get('USER')!.push(log);
+            if (ACTION_CATEGORIES.USER.includes(log.actionType)) index.get('USER')!.push(log);
             if (ACTION_CATEGORIES.SECURITY.includes(log.actionType)) index.get('SECURITY')!.push(log);
+            if (ACTION_CATEGORIES.PERMISSION.includes(log.actionType)) index.get('PERMISSION')!.push(log);
         });
 
         return index;
@@ -187,12 +190,13 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
 
     // Statistics by category
     const categoryStats = useMemo(() => {
-        const stats: Record<string, number> = { LEAD: 0, CASE: 0, USER: 0, SECURITY: 0 };
+        const stats: Record<string, number> = { LEAD: 0, CASE: 0, USER: 0, SECURITY: 0, PERMISSION: 0 };
         // Use pre-built indexes for faster stats
         stats.LEAD = logsByCategory.get('LEAD')?.length || 0;
         stats.CASE = logsByCategory.get('CASE')?.length || 0;
         stats.USER = logsByCategory.get('USER')?.length || 0;
         stats.SECURITY = logsByCategory.get('SECURITY')?.length || 0;
+        stats.PERMISSION = logsByCategory.get('PERMISSION')?.length || 0;
         return stats;
     }, [logsByCategory]);
 
@@ -278,7 +282,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
             </div>
 
             {/* Category Stats */}
-            <div className="grid grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div className="text-sm text-gray-600">Total Logs</div>
                     <div className="text-2xl font-bold text-gray-900">{systemLogs.length}</div>
@@ -289,6 +293,13 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                 >
                     <div className="text-sm text-blue-600">Lead Events</div>
                     <div className="text-2xl font-bold text-blue-700">{categoryStats.LEAD}</div>
+                </div>
+                <div
+                    className={`bg-white p-4 rounded-lg shadow-sm border cursor-pointer transition-colors ${filterCategory === 'CASE' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'}`}
+                    onClick={() => setFilterCategory(filterCategory === 'CASE' ? 'ALL' : 'CASE')}
+                >
+                    <div className="text-sm text-purple-600">Case Events</div>
+                    <div className="text-2xl font-bold text-purple-700">{categoryStats.CASE}</div>
                 </div>
                 <div
                     className={`bg-white p-4 rounded-lg shadow-sm border cursor-pointer transition-colors ${filterCategory === 'CASE' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'}`}
@@ -310,6 +321,13 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                 >
                     <div className="text-sm text-red-600">Security Events</div>
                     <div className="text-2xl font-bold text-red-700">{categoryStats.SECURITY}</div>
+                </div>
+                <div
+                    className={`bg-white p-4 rounded-lg shadow-sm border cursor-pointer transition-colors ${filterCategory === 'PERMISSION' ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-teal-300'}`}
+                    onClick={() => setFilterCategory(filterCategory === 'PERMISSION' ? 'ALL' : 'PERMISSION')}
+                >
+                    <div className="text-sm text-teal-600">Permissions</div>
+                    <div className="text-2xl font-bold text-teal-700">{categoryStats.PERMISSION}</div>
                 </div>
             </div>
 
@@ -356,6 +374,12 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                                 <option value="ADMIN_IMPERSONATION_STARTED">Impersonation Started</option>
                                 <option value="ADMIN_IMPERSONATION_ENDED">Impersonation Ended</option>
                             </optgroup>
+                            <optgroup label="Roles & Permissions">
+                                <option value="ROLE_CREATED">Role Created</option>
+                                <option value="ROLE_UPDATED">Role Updated</option>
+                                <option value="ROLE_DELETED">Role Deleted</option>
+                                <option value="PERMISSION_DENIED">Permission Denied</option>
+                            </optgroup>
                         </select>
                     </div>
 
@@ -370,6 +394,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                             <option value="lead">Leads</option>
                             <option value="case">Cases</option>
                             <option value="user">Users</option>
+                            <option value="role">Roles</option>
                         </select>
                     </div>
 
@@ -572,42 +597,44 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
             </div>
 
             {/* Pagination Navigation */}
-            {filterAction !== 'DELETIONS' && totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-6 pb-4">
-                    <button
-                        onClick={() => handlePageChange(1)}
-                        disabled={currentPage === 1}
-                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        First
-                    </button>
-                    <button
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Previous
-                    </button>
-                    <span className="px-4 py-1 text-sm text-gray-700">
-                        Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Next
-                    </button>
-                    <button
-                        onClick={() => handlePageChange(totalPages)}
-                        disabled={currentPage === totalPages}
-                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Last
-                    </button>
-                </div>
-            )}
-        </div>
+            {
+                filterAction !== 'DELETIONS' && totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-6 pb-4">
+                        <button
+                            onClick={() => handlePageChange(1)}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            First
+                        </button>
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+                        <span className="px-4 py-1 text-sm text-gray-700">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                        <button
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Next
+                        </button>
+                        <button
+                            onClick={() => handlePageChange(totalPages)}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Last
+                        </button>
+                    </div>
+                )
+            }
+        </div >
     );
 });
 

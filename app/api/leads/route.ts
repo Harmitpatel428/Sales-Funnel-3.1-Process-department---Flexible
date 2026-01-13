@@ -1,0 +1,205 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { getSession } from '@/lib/auth';
+import { withTenant } from '@/lib/tenant';
+import { LeadSchema, LeadFiltersSchema, validateRequest } from '@/lib/validation/schemas';
+import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
+import { handleApiError } from '@/lib/middleware/error-handler';
+import { successResponse, unauthorizedResponse, validationErrorResponse } from '@/lib/api/response-helpers';
+import { logRequest } from '@/lib/middleware/request-logger';
+import { Prisma } from '@prisma/client';
+import { requirePermissions, getRecordLevelFilter } from '@/lib/middleware/permissions';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
+
+export async function GET(req: NextRequest) {
+    try {
+
+        // 1. Rate Limiting
+        const rateLimitError = await rateLimitMiddleware(req, 100);
+        if (rateLimitError) return rateLimitError;
+
+
+        // 2. Authentication
+        const session = await getSession();
+
+
+        logRequest(req, session);
+
+        if (!session) return unauthorizedResponse();
+
+        // Permission check
+        const permissionError = await requirePermissions(
+            [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
+            false // require any
+        )(req);
+
+        if (permissionError) return permissionError;
+
+        // Get record-level filter
+        const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'view');
+
+
+        // 3. Validation & Parsing
+        const { searchParams } = new URL(req.url);
+        const queryParams: Record<string, any> = {};
+        searchParams.forEach((value, key) => {
+            // Handle array params like status=NEW&status=CONTACTED
+            if (key === 'status') {
+                if (queryParams[key]) {
+                    if (Array.isArray(queryParams[key])) queryParams[key].push(value);
+                    else queryParams[key] = [queryParams[key], value];
+                } else {
+                    queryParams[key] = value;
+                }
+            } else {
+                queryParams[key] = value;
+            }
+        });
+
+        const validation = validateRequest(LeadFiltersSchema, queryParams);
+        if (!validation.success) return validationErrorResponse(validation.errors!);
+
+        const filters = validation.data!;
+
+        // 4. Execution
+        return await withTenant(session.tenantId, async () => {
+            const where: Prisma.LeadWhereInput = {
+                tenantId: session.tenantId,
+                isDeleted: false,
+                ...recordFilter, // Apply record-level permissions
+                // Default to active leads unless specified
+                isDone: filters.isDone !== undefined ? filters.isDone : false,
+            };
+
+            if (filters.status) {
+                where.status = Array.isArray(filters.status)
+                    ? { in: filters.status }
+                    : filters.status;
+            }
+
+            if (filters.assignedTo) {
+                where.assignedToId = filters.assignedTo;
+            }
+
+            if (filters.startDate || filters.endDate) {
+                where.createdAt = {};
+                if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+                if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
+            }
+
+            // Search Logic
+            if (filters.search) {
+                where.OR = [
+                    { company: { contains: filters.search } },
+                    { clientName: { contains: filters.search } },
+                    { mobileNumber: { contains: filters.search } },
+                    { email: { contains: filters.search } },
+                    { consumerNumber: { contains: filters.search } }
+                ];
+            }
+
+            const page = filters.page || 1;
+            const limit = filters.limit || 50;
+            const skip = (page - 1) * limit;
+
+            const [leads, total] = await Promise.all([
+                prisma.lead.findMany({
+                    where,
+                    orderBy: { createdAt: 'desc' },
+                    skip,
+                    take: limit,
+                    include: { assignedTo: { select: { id: true, name: true, email: true } } }
+                }),
+                prisma.lead.count({ where })
+            ]);
+
+            return successResponse({ leads, total, page, totalPages: Math.ceil(total / limit) });
+        });
+
+    } catch (error) {
+        return handleApiError(error);
+    }
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        // 1. Rate Limiting
+        const rateLimitError = await rateLimitMiddleware(req, 30);
+        if (rateLimitError) return rateLimitError;
+
+        // 2. Auth
+        const session = await getSession();
+        logRequest(req, session);
+
+        if (!session) return unauthorizedResponse();
+
+        // Permission check
+        const permissionError = await requirePermissions([PERMISSIONS.LEADS_CREATE])(req);
+        if (permissionError) return permissionError;
+
+        // 3. Validation
+        const body = await req.json();
+        const validation = validateRequest(LeadSchema, body);
+        if (!validation.success) return validationErrorResponse(validation.errors!);
+
+        const data = validation.data!;
+
+        // 4. Execution
+        return await withTenant(session.tenantId, async () => {
+            // Stringify JSON fields
+            const leadData: any = { ...data };
+            if (data.mobileNumbers) leadData.mobileNumbers = JSON.stringify(data.mobileNumbers);
+            if (data.activities) leadData.activities = JSON.stringify(data.activities);
+            if (data.customFields) leadData.customFields = JSON.stringify(data.customFields);
+            if (data.submitted_payload) leadData.submitted_payload = JSON.stringify(data.submitted_payload);
+
+            const lead = await prisma.lead.create({
+                data: {
+                    ...leadData,
+                    tenantId: session.tenantId,
+                    createdById: session.userId,
+                    // Default valid enum if missing (zod handles default usually)
+                    status: leadData.status || 'NEW',
+                }
+            });
+
+            // Audit Log
+            await prisma.auditLog.create({
+                data: {
+                    actionType: 'LEAD_CREATED',
+                    entityType: 'lead',
+                    entityId: lead.id,
+                    description: `Lead created: ${lead.company}`,
+                    performedById: session.userId,
+                    tenantId: session.tenantId,
+                    afterValue: JSON.stringify(lead)
+                }
+            });
+
+            // Trigger workflows for lead creation
+            try {
+                await TriggerManager.triggerWorkflows(
+                    EntityType.LEAD,
+                    lead.id,
+                    'CREATE',
+                    null,
+                    lead as unknown as Record<string, unknown>,
+                    session.tenantId,
+                    session.userId
+                );
+            } catch (workflowError) {
+                console.error('Failed to trigger workflows for lead creation:', workflowError);
+            }
+
+            return NextResponse.json({
+                success: true,
+                message: "Lead created successfully",
+                data: lead
+            }, { status: 201 });
+        });
+
+    } catch (error) {
+        return handleApiError(error);
+    }
+}

@@ -1,0 +1,41 @@
+{
+    "tech_stack": [
+        "TypeScript",
+        "Next.js",
+        "Prisma",
+        "PostgreSQL",
+        "TailwindCSS"
+    ],
+    "features": [
+        {
+            "name": "Authentication",
+            "description": "User authentication and session management",
+            "files": [
+                "lib/auth.ts",
+                "app/api/auth/[...nextauth]/route.ts"
+            ]
+        },
+        {
+            "name": "Start Email Sync",
+            "description": "Trigger email synchronization",
+            "files": [
+                "app/api/email/sync/route.ts"
+            ]
+        },
+        {
+            "name": "Parse Email",
+            "description": "Parse incoming emails",
+            "files": [
+                "app/api/email/parse/route.ts"
+            ]
+        },
+        {
+            "name": "Leads Management",
+            "description": "CRUD operations for sales leads",
+            "files": [
+                "app/api/leads/route.ts",
+                "app/api/leads/[id]/route.ts"
+            ]
+        }
+    ]
+}

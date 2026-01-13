@@ -6,6 +6,7 @@ import type { Lead, MobileNumber } from '../types/shared';
 import { useColumns } from '../context/ColumnContext';
 import { useRouter } from 'next/navigation';
 import { useValidation } from '../hooks/useValidation';
+import { FieldPermissionGuard } from '../components/FieldPermissionGuard';
 
 export default function AddLeadPage() {
   const router = useRouter();
@@ -1534,120 +1535,122 @@ export default function AddLeadPage() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {customColumns.map((column) => (
-                    <div key={column.fieldKey} className="space-y-1">
-                      <label htmlFor={column.fieldKey} className="block text-[11px] font-medium text-black">
-                        {column.label}
-                        {column.required && <span className="text-red-500">*</span>}
-                      </label>
+                    <FieldPermissionGuard key={column.fieldKey} resource="leads" fieldName={column.fieldKey} mode="edit">
+                      <div className="space-y-1">
+                        <label htmlFor={column.fieldKey} className="block text-[11px] font-medium text-black">
+                          {column.label}
+                          {column.required && <span className="text-red-500">*</span>}
+                        </label>
 
-                      {column.type === 'text' && (
-                        <input
-                          type="text"
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] || ''}
-                          onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
-                          className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${errors[`custom_${column.fieldKey}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                            }`}
-                          placeholder={`Enter ${column.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      )}
+                        {column.type === 'text' && (
+                          <input
+                            type="text"
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] || ''}
+                            onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
+                            className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black ${errors[`custom_${column.fieldKey}` as keyof typeof formData] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                              }`}
+                            placeholder={`Enter ${column.label.toLowerCase()}`}
+                            disabled={isSubmitting}
+                          />
+                        )}
 
-                      {column.type === 'date' && (
-                        <input
-                          type="date"
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] ? (() => {
-                            // Convert DD-MM-YYYY to YYYY-MM-DD for date input
-                            const dateStr = customFields[column.fieldKey];
-                            if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
-                              const [day, month, year] = dateStr.split('-');
-                              return `${year}-${month}-${day}`;
-                            }
-                            return dateStr;
-                          })() : ''}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              // Convert YYYY-MM-DD to DD-MM-YYYY
-                              const [year, month, day] = e.target.value.split('-');
-                              const formattedDate = `${day}-${month}-${year}`;
-                              handleCustomFieldChange(column.fieldKey, formattedDate);
-                            } else {
-                              handleCustomFieldChange(column.fieldKey, '');
-                            }
-                          }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
-                          disabled={isSubmitting}
-                        />
-                      )}
+                        {column.type === 'date' && (
+                          <input
+                            type="date"
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] ? (() => {
+                              // Convert DD-MM-YYYY to YYYY-MM-DD for date input
+                              const dateStr = customFields[column.fieldKey];
+                              if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+                                const [day, month, year] = dateStr.split('-');
+                                return `${year}-${month}-${day}`;
+                              }
+                              return dateStr;
+                            })() : ''}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                // Convert YYYY-MM-DD to DD-MM-YYYY
+                                const [year, month, day] = e.target.value.split('-');
+                                const formattedDate = `${day}-${month}-${year}`;
+                                handleCustomFieldChange(column.fieldKey, formattedDate);
+                              } else {
+                                handleCustomFieldChange(column.fieldKey, '');
+                              }
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
+                            disabled={isSubmitting}
+                          />
+                        )}
 
-                      {column.type === 'select' && (
-                        <select
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] || ''}
-                          onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
-                          disabled={isSubmitting}
-                        >
-                          <option value="">Select {column.label}</option>
-                          {column.options?.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                        {column.type === 'select' && (
+                          <select
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] || ''}
+                            onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
+                            disabled={isSubmitting}
+                          >
+                            <option value="">Select {column.label}</option>
+                            {column.options?.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        )}
 
-                      {column.type === 'number' && (
-                        <input
-                          type="number"
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] || ''}
-                          onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
-                          placeholder={`Enter ${column.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      )}
+                        {column.type === 'number' && (
+                          <input
+                            type="number"
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] || ''}
+                            onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
+                            placeholder={`Enter ${column.label.toLowerCase()}`}
+                            disabled={isSubmitting}
+                          />
+                        )}
 
-                      {column.type === 'email' && (
-                        <input
-                          type="email"
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] || ''}
-                          onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
-                          placeholder={`Enter ${column.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      )}
+                        {column.type === 'email' && (
+                          <input
+                            type="email"
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] || ''}
+                            onChange={(e) => handleCustomFieldChange(column.fieldKey, e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
+                            placeholder={`Enter ${column.label.toLowerCase()}`}
+                            disabled={isSubmitting}
+                          />
+                        )}
 
-                      {column.type === 'phone' && (
-                        <input
-                          type="tel"
-                          id={column.fieldKey}
-                          value={customFields[column.fieldKey] || ''}
-                          onChange={(e) => {
-                            // Only allow numeric input for phone
-                            const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
-                            handleCustomFieldChange(column.fieldKey, numericValue);
-                          }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
-                          placeholder={`Enter ${column.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      )}
+                        {column.type === 'phone' && (
+                          <input
+                            type="tel"
+                            id={column.fieldKey}
+                            value={customFields[column.fieldKey] || ''}
+                            onChange={(e) => {
+                              // Only allow numeric input for phone
+                              const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                              handleCustomFieldChange(column.fieldKey, numericValue);
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200 text-black text-xs placeholder:text-black"
+                            placeholder={`Enter ${column.label.toLowerCase()}`}
+                            disabled={isSubmitting}
+                          />
+                        )}
 
-                      {/* Error display for custom fields */}
-                      {errors[`custom_${column.fieldKey}` as keyof typeof formData] && (
-                        <p className="text-xs text-red-600 flex items-center">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                          {errors[`custom_${column.fieldKey}` as keyof typeof formData]}
-                        </p>
-                      )}
-                    </div>
+                        {/* Error display for custom fields */}
+                        {errors[`custom_${column.fieldKey}` as keyof typeof formData] && (
+                          <p className="text-xs text-red-600 flex items-center">
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            {errors[`custom_${column.fieldKey}` as keyof typeof formData]}
+                          </p>
+                        )}
+                      </div>
+                    </FieldPermissionGuard>
                   ))}
                 </div>
               </div>
