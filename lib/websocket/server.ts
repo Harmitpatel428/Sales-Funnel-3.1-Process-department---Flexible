@@ -1,139 +1,176 @@
-/**
- * WebSocket Server Utilities
- * Provides real-time update capabilities for dashboards
- */
-
-// Event types for real-time updates
-export type WebSocketEventType =
-    | 'lead_created'
-    | 'lead_updated'
-    | 'lead_deleted'
-    | 'case_created'
-    | 'case_updated'
-    | 'case_deleted'
-    | 'report_generated'
-    | 'notification';
-
-export interface WebSocketMessage {
-    type: WebSocketEventType;
-    tenantId: string;
-    payload: any;
-    timestamp: string;
-}
+import { getNextSequenceNumber, storeEvent, WebSocketEvent } from './eventLog';
 
 // Connected clients by tenant
-const clients: Map<string, Set<WebSocket>> = new Map();
+const clients: Map<string, Set<any>> = new Map();
 
 /**
  * Register a client connection
  */
-export function registerClient(tenantId: string, ws: WebSocket): void {
+export function registerClient(tenantId: string, userId: string, socket: any): void {
     if (!clients.has(tenantId)) {
         clients.set(tenantId, new Set());
     }
-    clients.get(tenantId)!.add(ws);
+
+    // We attach userId to the socket for presence tracking
+    socket.userId = userId;
+    clients.get(tenantId)!.add(socket);
 }
 
 /**
  * Unregister a client connection
  */
-export function unregisterClient(tenantId: string, ws: WebSocket): void {
-    const tenantClients = clients.get(tenantId);
-    if (tenantClients) {
-        tenantClients.delete(ws);
-        if (tenantClients.size === 0) {
-            clients.delete(tenantId);
-        }
-    }
+export function unregisterClient(tenantId: string, socket: any): void {
+    clients.get(tenantId)?.delete(socket);
 }
 
 /**
  * Broadcast message to all clients in a tenant
  */
-export function broadcastToTenant(tenantId: string, message: WebSocketMessage): void {
+export function broadcastToTenant(tenantId: string, message: any): void {
     const tenantClients = clients.get(tenantId);
     if (!tenantClients) return;
 
-    const messageStr = JSON.stringify(message);
-    tenantClients.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(messageStr);
+    const data = JSON.stringify(message);
+    tenantClients.forEach(socket => {
+        if (socket.readyState === 1) { // WebSocket.OPEN
+            socket.send(data);
         }
     });
 }
 
-/**
- * Send message to specific client
- */
-export function sendToClient(ws: WebSocket, message: WebSocketMessage): void {
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message));
-    }
-}
+// Entity Emitters
 
-/**
- * Get connected client count for a tenant
- */
-export function getClientCount(tenantId: string): number {
-    return clients.get(tenantId)?.size || 0;
-}
-
-/**
- * Emit lead created event
- */
-export function emitLeadCreated(tenantId: string, lead: any): void {
-    broadcastToTenant(tenantId, {
-        type: 'lead_created',
+export async function emitLeadCreated(tenantId: string, lead: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'lead_created',
         tenantId,
         payload: lead,
-        timestamp: new Date().toISOString()
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
 }
 
-/**
- * Emit lead updated event
- */
-export function emitLeadUpdated(tenantId: string, lead: any): void {
-    broadcastToTenant(tenantId, {
-        type: 'lead_updated',
+export async function emitLeadUpdated(tenantId: string, lead: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'lead_updated',
         tenantId,
         payload: lead,
-        timestamp: new Date().toISOString()
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
 }
 
-/**
- * Emit case created event
- */
-export function emitCaseCreated(tenantId: string, caseData: any): void {
-    broadcastToTenant(tenantId, {
-        type: 'case_created',
+export async function emitLeadDeleted(tenantId: string, leadId: string): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'lead_deleted',
+        tenantId,
+        payload: { leadId },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
+}
+
+export async function emitCaseCreated(tenantId: string, caseData: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'case_created',
         tenantId,
         payload: caseData,
-        timestamp: new Date().toISOString()
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
 }
 
-/**
- * Emit case updated event
- */
-export function emitCaseUpdated(tenantId: string, caseData: any): void {
-    broadcastToTenant(tenantId, {
-        type: 'case_updated',
+export async function emitCaseUpdated(tenantId: string, caseData: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'case_updated',
         tenantId,
         payload: caseData,
-        timestamp: new Date().toISOString()
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
 }
 
-/**
- * Emit report generated event
- */
-export function emitReportGenerated(tenantId: string, reportInfo: any): void {
-    broadcastToTenant(tenantId, {
-        type: 'report_generated',
+export async function emitCaseDeleted(tenantId: string, caseId: string): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'case_deleted',
         tenantId,
-        payload: reportInfo,
-        timestamp: new Date().toISOString()
-    });
+        payload: { caseId },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
+}
+
+export async function emitDocumentCreated(tenantId: string, document: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'document_created',
+        tenantId,
+        payload: document,
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
+}
+
+export async function emitDocumentUpdated(tenantId: string, document: any): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'document_updated',
+        tenantId,
+        payload: document,
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
+}
+
+export async function emitDocumentDeleted(tenantId: string, documentId: string): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'document_deleted',
+        tenantId,
+        payload: { documentId },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
 }

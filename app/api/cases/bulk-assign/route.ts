@@ -7,6 +7,8 @@ import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { z } from 'zod';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
+import { emitCaseUpdated } from '@/lib/websocket/server';
 
 const BulkAssignSchema = z.object({
     caseIds: z.array(z.string()),
@@ -27,9 +29,13 @@ export async function POST(req: NextRequest) {
             return forbiddenResponse();
         }
 
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+        if (idempotencyError) return idempotencyError;
+
         const body = await req.json();
         const validation = BulkAssignSchema.safeParse(body);
-        if (!validation.success) return validationErrorResponse(validation.error.errors.map(e => e.message));
+        if (!validation.success) return validationErrorResponse(validation.error.issues.map(e => e.message));
 
         const { caseIds, userId, roleId } = validation.data;
 
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
 
             // Transaction for bulk update
             await prisma.$transaction(async (tx) => {
-                // Update cases
+                // Update cases with version increment
                 const updateResult = await tx.case.updateMany({
                     where: {
                         caseId: { in: caseIds },
@@ -51,7 +57,8 @@ export async function POST(req: NextRequest) {
                     data: {
                         assignedProcessUserId: userId,
                         assignedRole: roleId || 'PROCESS_EXECUTIVE',
-                        updatedAt: new Date()
+                        updatedAt: new Date(),
+                        version: { increment: 1 }
                     }
                 });
 
@@ -68,7 +75,21 @@ export async function POST(req: NextRequest) {
                 });
             });
 
-            return successResponse({ count: caseIds.length }, "Cases assigned successfully");
+            // WebSocket Broadcast
+            try {
+                const updatedCases = await prisma.case.findMany({
+                    where: { caseId: { in: caseIds }, tenantId: session.tenantId }
+                });
+                for (const c of updatedCases) {
+                    emitCaseUpdated(session.tenantId, c, session.userId);
+                }
+            } catch (wsError) {
+                console.error('[WebSocket] Bulk assign broadcast failed:', wsError);
+            }
+
+            const response = successResponse({ count: caseIds.length }, "Cases assigned successfully");
+            await storeIdempotencyResult(req, response);
+            return response;
         });
 
     } catch (error) {

@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
@@ -7,10 +7,13 @@ import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { z } from 'zod';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 
 const AssignCaseSchema = z.object({
   userId: z.string(),
-  roleId: z.string().optional()
+  roleId: z.string().optional(),
+  version: z.number().int().min(1, 'Version is required for updates')
 });
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
@@ -31,11 +34,15 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       return forbiddenResponse();
     }
 
+    // Check idempotency
+    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    if (idempotencyError) return idempotencyError;
+
     const body = await req.json();
     const validation = AssignCaseSchema.safeParse(body);
     if (!validation.success) return validationErrorResponse(validation.error.errors.map(e => e.message));
 
-    const { userId, roleId } = validation.data;
+    const { userId, roleId, version } = validation.data;
 
     return await withTenant(session.tenantId, async () => {
       const caseItem = await prisma.case.findFirst({
@@ -50,27 +57,42 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
       if (!targetUser) return notFoundResponse('User');
 
-      const updatedCase = await prisma.case.update({
-        where: { caseId: id },
-        data: {
-          assignedProcessUserId: userId,
-          assignedRole: roleId || 'PROCESS_EXECUTIVE',
-          updatedAt: new Date()
-        }
-      });
+      try {
+        const updatedCase = await updateWithOptimisticLock(
+          prisma.case,
+          { caseId: id, tenantId: session.tenantId },
+          {
+            currentVersion: version,
+            data: {
+              assignedProcessUserId: userId,
+              assignedRole: roleId || 'PROCESS_EXECUTIVE',
+            }
+          },
+          'Case'
+        );
 
-      await prisma.auditLog.create({
-        data: {
-          actionType: 'CASE_ASSIGNED',
-          entityType: 'case',
-          entityId: id,
-          description: `Case assigned to ${targetUser.name}`,
-          performedById: session.userId,
-          tenantId: session.tenantId
-        }
-      });
+        await prisma.auditLog.create({
+          data: {
+            actionType: 'CASE_ASSIGNED',
+            entityType: 'case',
+            entityId: id,
+            description: `Case assigned to ${targetUser.name}`,
+            performedById: session.userId,
+            tenantId: session.tenantId
+          }
+        });
 
-      return successResponse(updatedCase, "Case assigned successfully");
+        const response = successResponse(updatedCase, "Case assigned successfully");
+        await storeIdempotencyResult(req, response);
+        return response;
+
+      } catch (error) {
+        const lockError = handleOptimisticLockError(error);
+        if (lockError) {
+          return NextResponse.json(lockError, { status: 409 });
+        }
+        throw error;
+      }
     });
 
   } catch (error) {

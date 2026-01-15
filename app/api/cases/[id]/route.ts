@@ -8,6 +8,9 @@ import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
+import { emitCaseUpdated, emitCaseDeleted } from '@/lib/websocket/server';
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
@@ -22,7 +25,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         return await withTenant(session.tenantId, async () => {
             const caseItem = await prisma.case.findFirst({
                 where: { caseId: id, tenantId: session.tenantId },
-                include: { assignedProcessUser: { select: { id: true, name: true } } }
+                include: { users: { select: { id: true, name: true } } }
             });
 
             if (!caseItem) return notFoundResponse('Case');
@@ -58,8 +61,19 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+        if (idempotencyError) return idempotencyError;
+
         const body = await req.json();
-        const validation = validateRequest(CaseUpdateSchema, body);
+        const { version, ...updateData } = body;
+
+        // Version is required for updates
+        if (typeof version !== 'number') {
+            return validationErrorResponse(['Version field is required for updates']);
+        }
+
+        const validation = validateRequest(CaseUpdateSchema, updateData);
         if (!validation.success) return validationErrorResponse(validation.errors!);
 
         const updates = validation.data!;
@@ -86,43 +100,60 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
             if (updates.contacts) data.contacts = JSON.stringify(updates.contacts);
             if (updates.originalLeadData) data.originalLeadData = JSON.stringify(updates.originalLeadData);
 
-            const updatedCase = await prisma.case.update({
-                where: { caseId: id },
-                data: {
-                    ...data,
-                    updatedAt: new Date()
-                }
-            });
-
-            await prisma.auditLog.create({
-                data: {
-                    actionType: 'CASE_UPDATED',
-                    entityType: 'case',
-                    entityId: id,
-                    description: `Case updated: ${updatedCase.caseNumber}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
-                    beforeValue: JSON.stringify(existingCase),
-                    afterValue: JSON.stringify(updatedCase)
-                }
-            });
-
-            // Trigger workflows for case update
             try {
-                await TriggerManager.triggerWorkflows(
-                    EntityType.CASE,
-                    updatedCase.caseId,
-                    'UPDATE',
-                    oldData,
-                    updatedCase as unknown as Record<string, unknown>,
-                    session.tenantId,
-                    session.userId
+                const updatedCase = await updateWithOptimisticLock(
+                    prisma.case,
+                    { caseId: id, tenantId: session.tenantId },
+                    { currentVersion: version, data },
+                    'Case'
                 );
-            } catch (workflowError) {
-                console.error('Failed to trigger workflows for case update:', workflowError);
-            }
 
-            return successResponse(updatedCase, "Case updated successfully");
+                await prisma.auditLog.create({
+                    data: {
+                        actionType: 'CASE_UPDATED',
+                        entityType: 'case',
+                        entityId: id,
+                        description: `Case updated: ${(updatedCase as any).caseNumber}`,
+                        performedById: session.userId,
+                        tenantId: session.tenantId,
+                        beforeValue: JSON.stringify(existingCase),
+                        afterValue: JSON.stringify(updatedCase)
+                    }
+                });
+
+                // Trigger workflows for case update
+                try {
+                    await TriggerManager.triggerWorkflows(
+                        EntityType.CASE,
+                        (updatedCase as any).caseId,
+                        'UPDATE',
+                        oldData,
+                        updatedCase as unknown as Record<string, unknown>,
+                        session.tenantId,
+                        session.userId
+                    );
+                } catch (workflowError) {
+                    console.error('Failed to trigger workflows for case update:', workflowError);
+                }
+
+                // WebSocket Broadcast
+                try {
+                    await emitCaseUpdated(session.tenantId, updatedCase);
+                } catch (wsError) {
+                    console.error('[WebSocket] Case update broadcast failed:', wsError);
+                }
+
+                const response = successResponse(updatedCase, "Case updated successfully");
+                await storeIdempotencyResult(req, response);
+                return response;
+
+            } catch (error) {
+                const lockError = handleOptimisticLockError(error);
+                if (lockError) {
+                    return NextResponse.json(lockError, { status: 409 });
+                }
+                throw error;
+            }
         });
 
     } catch (error) {
@@ -136,6 +167,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
         const session = await getSession();
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
+
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+        if (idempotencyError) return idempotencyError;
 
         if (!['ADMIN', 'PROCESS_MANAGER'].includes(session.role)) {
             return forbiddenResponse();
@@ -158,7 +193,16 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
                 }
             });
 
-            return successResponse(null, "Case deleted successfully");
+            // WebSocket Broadcast
+            try {
+                await emitCaseDeleted(session.tenantId, id);
+            } catch (wsError) {
+                console.error('[WebSocket] Case delete broadcast failed:', wsError);
+            }
+
+            const response = successResponse(null, "Case deleted successfully");
+            await storeIdempotencyResult(req, response);
+            return response;
         });
     } catch (error) {
         return handleApiError(error);

@@ -13,12 +13,19 @@ import { ReactNode, useEffect } from 'react';
 import { getQueryClient } from '../lib/queryClient';
 import { initializeOfflineQueueListeners, processQueue, hasPendingItems } from '../utils/offlineQueue';
 
+import { useTenant } from '../context/TenantContext';
+import { useWebSocket } from '@/lib/websocket/client';
+
 interface QueryProviderProps {
     children: ReactNode;
 }
 
 export function QueryProvider({ children }: QueryProviderProps) {
     const queryClient = getQueryClient();
+    const { currentTenant } = useTenant();
+
+    // Initialize global WebSocket connection
+    useWebSocket(currentTenant?.id);
 
     // Initialize offline queue listeners
     useEffect(() => {

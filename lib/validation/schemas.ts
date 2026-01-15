@@ -103,11 +103,13 @@ export const LeadSchema = z.object({
     // JSON Fields (expecting parsed arrays/objects if coming from frontend JSON body)
     mobileNumbers: z.array(MobileNumberSchema).optional(),
     activities: z.array(ActivitySchema).optional(),
-    customFields: z.record(z.any()).optional(),
-    submitted_payload: z.record(z.any()).optional()
+    customFields: z.record(z.string(), z.any()).optional(),
+    submitted_payload: z.record(z.string(), z.any()).optional()
 });
 
-export const LeadUpdateSchema = LeadSchema.partial();
+export const LeadUpdateSchema = LeadSchema.partial().extend({
+    version: z.number().int().min(1, 'Version is required for updates').optional()
+});
 
 export const LeadFiltersSchema = z.object({
     status: z.union([z.string(), z.array(z.string())]).optional(),
@@ -165,10 +167,12 @@ export const CaseSchema = z.object({
     electricityLoad: z.string().optional(),
     electricityLoadType: z.string().optional(),
 
-    originalLeadData: z.record(z.any()).optional()
+    originalLeadData: z.record(z.string(), z.any()).optional()
 });
 
-export const CaseUpdateSchema = CaseSchema.partial();
+export const CaseUpdateSchema = CaseSchema.partial().extend({
+    version: z.number().int().min(1, 'Version is required for updates').optional()
+});
 
 export const CaseFiltersSchema = z.object({
     status: z.union([z.string(), z.array(z.string())]).optional(),
@@ -194,6 +198,7 @@ export const DocumentUploadSchema = z.object({
 });
 
 export const DocumentUpdateSchema = z.object({
+    version: z.number().int().min(1, 'Version is required for updates').optional(),
     documentType: z.string().optional(),
     status: z.enum(['PENDING', 'RECEIVED', 'VERIFIED', 'REJECTED']).optional(),
     notes: z.string().optional(),
@@ -220,7 +225,8 @@ export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown) {
     } else {
         return {
             success: false,
-            errors: result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`)
+            errors: result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`)
         };
     }
 }
+

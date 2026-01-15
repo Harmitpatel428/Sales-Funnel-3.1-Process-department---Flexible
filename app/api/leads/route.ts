@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import { requirePermissions, getRecordLevelFilter } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
+import { emitLeadCreated } from '@/lib/websocket/server';
 
 export async function GET(req: NextRequest) {
     try {
@@ -190,6 +191,13 @@ export async function POST(req: NextRequest) {
                 );
             } catch (workflowError) {
                 console.error('Failed to trigger workflows for lead creation:', workflowError);
+            }
+
+            // WebSocket Broadcast
+            try {
+                await emitLeadCreated(session.tenantId, lead);
+            } catch (wsError) {
+                console.error('[WebSocket] Lead creation broadcast failed:', wsError);
             }
 
             return NextResponse.json({

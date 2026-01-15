@@ -5,9 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { z } from 'zod';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
+import { emitDocumentUpdated, emitDocumentDeleted } from '@/lib/websocket/server';
 
 const BulkActionSchema = z.object({
     action: z.enum(['DELETE', 'VERIFY', 'REJECT', 'DOWNLOAD_ZIP']),
@@ -17,7 +18,7 @@ const BulkActionSchema = z.object({
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
+
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, user.tenantId);
+        if (idempotencyError) return idempotencyError;
 
         const body = await req.json();
         const { action, documentIds, reason } = BulkActionSchema.parse(body);
@@ -51,98 +56,121 @@ export async function POST(req: NextRequest) {
 
         let result;
 
-        switch (action) {
-            case 'DELETE':
-                // Soft delete all
-                result = await prisma.document.updateMany({
-                    where: { id: { in: documentIds } },
-                    data: {
-                        isDeleted: true,
-                        deletedById: user.id,
-                        deletedAt: new Date(),
-                    },
-                });
+        // Wrap all operations in transaction
+        await prisma.$transaction(async (tx) => {
+            switch (action) {
+                case 'DELETE':
+                    result = await tx.document.updateMany({
+                        where: { id: { in: documentIds } },
+                        data: {
+                            isDeleted: true,
+                            deletedById: user.id,
+                            deletedAt: new Date(),
+                            version: { increment: 1 }
+                        },
+                    });
 
-                // Log
-                await prisma.documentAccessLog.createMany({
-                    data: documentIds.map(id => ({
-                        documentId: id,
-                        userId: user.id,
-                        action: 'BULK_DELETE',
-                        ipAddress: req.headers.get('x-forwarded-for'),
-                        userAgent: req.headers.get('user-agent'),
-                    })),
-                });
-                break;
+                    await tx.documentAccessLog.createMany({
+                        data: documentIds.map(id => ({
+                            documentId: id,
+                            userId: user.id,
+                            action: 'BULK_DELETE',
+                            ipAddress: req.headers.get('x-forwarded-for'),
+                            userAgent: req.headers.get('user-agent'),
+                        })),
+                    });
+                    break;
 
-            case 'VERIFY':
-                result = await prisma.document.updateMany({
-                    where: { id: { in: documentIds } },
-                    data: {
-                        status: 'VERIFIED',
-                        verifiedById: user.id,
-                        verifiedAt: new Date(),
-                        rejectionReason: null,
-                    },
-                });
+                case 'VERIFY':
+                    result = await tx.document.updateMany({
+                        where: { id: { in: documentIds } },
+                        data: {
+                            status: 'VERIFIED',
+                            verifiedById: user.id,
+                            verifiedAt: new Date(),
+                            rejectionReason: null,
+                            version: { increment: 1 }
+                        },
+                    });
 
-                await prisma.documentAccessLog.createMany({
-                    data: documentIds.map(id => ({
-                        documentId: id,
-                        userId: user.id,
-                        action: 'BULK_VERIFY',
-                        ipAddress: req.headers.get('x-forwarded-for'),
-                        userAgent: req.headers.get('user-agent'),
-                    })),
-                });
-                break;
+                    await tx.documentAccessLog.createMany({
+                        data: documentIds.map(id => ({
+                            documentId: id,
+                            userId: user.id,
+                            action: 'BULK_VERIFY',
+                            ipAddress: req.headers.get('x-forwarded-for'),
+                            userAgent: req.headers.get('user-agent'),
+                        })),
+                    });
+                    break;
 
-            case 'REJECT':
-                if (!reason) {
-                    return NextResponse.json({ error: 'Reason required for rejection' }, { status: 400 });
+                case 'REJECT':
+                    if (!reason) {
+                        throw new Error('Reason required for rejection');
+                    }
+                    result = await tx.document.updateMany({
+                        where: { id: { in: documentIds } },
+                        data: {
+                            status: 'REJECTED',
+                            rejectionReason: reason,
+                            verifiedById: null,
+                            verifiedAt: null,
+                            version: { increment: 1 }
+                        },
+                    });
+
+                    await tx.documentAccessLog.createMany({
+                        data: documentIds.map(id => ({
+                            documentId: id,
+                            userId: user.id,
+                            action: 'BULK_REJECT',
+                            ipAddress: req.headers.get('x-forwarded-for'),
+                            userAgent: req.headers.get('user-agent'),
+                        })),
+                    });
+                    break;
+
+                case 'DOWNLOAD_ZIP':
+                    throw new Error('Bulk ZIP download not yet implemented');
+            }
+        });
+
+        // WebSocket Broadcast
+        try {
+            const affectedDocs = await prisma.document.findMany({
+                where: { id: { in: documentIds } }
+            });
+
+            for (const doc of affectedDocs) {
+                if (action === 'DELETE') {
+                    emitDocumentDeleted(user.tenantId, doc.id, user.id);
+                } else {
+                    emitDocumentUpdated(user.tenantId, doc, user.id);
                 }
-                result = await prisma.document.updateMany({
-                    where: { id: { in: documentIds } },
-                    data: {
-                        status: 'REJECTED',
-                        rejectionReason: reason,
-                        verifiedById: null,
-                        verifiedAt: null,
-                    },
-                });
-
-                await prisma.documentAccessLog.createMany({
-                    data: documentIds.map(id => ({
-                        documentId: id,
-                        userId: user.id,
-                        action: 'BULK_REJECT',
-                        ipAddress: req.headers.get('x-forwarded-for'),
-                        userAgent: req.headers.get('user-agent'),
-                    })),
-                });
-                break;
-
-            case 'DOWNLOAD_ZIP':
-                // For Zip download, we would typically generate a background job
-                // or return a stream. Implementing a full zip stream here is complex.
-                // For MVP, we'll return a "Not Implemented" or just list of download URLs.
-                return NextResponse.json({
-                    error: 'Bulk ZIP download not yet implemented. Please download files individually.',
-                    status: 'NOT_IMPLEMENTED'
-                }, { status: 501 });
+            }
+        } catch (wsError) {
+            console.error('[WebSocket] Bulk document broadcast failed:', wsError);
         }
 
-        return NextResponse.json({
+        const response = NextResponse.json({
             success: true,
             action,
             count: result?.count || 0,
         });
+
+        // Store idempotency result
+        await storeIdempotencyResult(req, response);
+
+        return response;
 
     } catch (error) {
         console.error('Bulk action error:', error);
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
         }
-        return NextResponse.json({ error: 'Bulk action failed' }, { status: 500 });
+        return NextResponse.json({
+            error: 'Bulk action failed',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        }, { status: 500 });
     }
 }

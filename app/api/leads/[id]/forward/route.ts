@@ -7,6 +7,8 @@ import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, errorResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
+import { emitLeadUpdated, emitCaseCreated } from '@/lib/websocket/server';
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
@@ -21,6 +23,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         const session = await getSession();
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
+
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+        if (idempotencyError) return idempotencyError;
 
         const body = await req.json();
         const validation = validateRequest(ForwardToProcessSchema, body);
@@ -68,7 +74,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                             kva: lead.kva,
 
                             processStatus: 'PENDING',
-                            priority: 'MEDIUM'
+                            priority: 'MEDIUM',
+                            version: 1
                         }
                     });
                     caseIds.push(newCase.caseId);
@@ -86,7 +93,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                     });
                 }
 
-                // Update Lead
+                // Update Lead with version increment
                 await tx.lead.update({
                     where: { id: lead.id },
                     data: {
@@ -94,6 +101,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                         convertedAt: now,
                         isDeleted: true, // Pseudo-delete as per requirements ("isDeleted: true")
                         status: 'WON', // Usually converted leads are won
+                        version: { increment: 1 }
                     }
                 });
 
@@ -111,7 +119,28 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                 });
             });
 
-            return successResponse({ caseIds }, "Lead converted to process successfully");
+            // WebSocket Broadcast
+            try {
+                // Fetch updated data for accurate broadcast
+                const [updatedLead, createdCases] = await Promise.all([
+                    prisma.lead.findUnique({ where: { id: lead.id } }),
+                    prisma.case.findMany({ where: { caseId: { in: caseIds } } })
+                ]);
+
+                if (updatedLead) {
+                    emitLeadUpdated(session.tenantId, updatedLead, session.userId);
+                }
+
+                for (const caseData of createdCases) {
+                    emitCaseCreated(session.tenantId, caseData, session.userId);
+                }
+            } catch (wsError) {
+                console.error('[WebSocket] Lead forward broadcast failed:', wsError);
+            }
+
+            const response = successResponse({ caseIds }, "Lead converted to process successfully");
+            await storeIdempotencyResult(req, response);
+            return response;
         });
     } catch (error) {
         return handleApiError(error);

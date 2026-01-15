@@ -10,6 +10,7 @@ import { logRequest } from '@/lib/middleware/request-logger';
 import { Prisma } from '@prisma/client';
 import { getRecordLevelFilter } from '@/lib/middleware/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
+import { emitCaseCreated } from '@/lib/websocket/server';
 
 export async function GET(req: NextRequest) {
     try {
@@ -168,6 +169,13 @@ export async function POST(req: NextRequest) {
                 );
             } catch (workflowError) {
                 console.error('Failed to trigger workflows for case creation:', workflowError);
+            }
+
+            // WebSocket Broadcast
+            try {
+                await emitCaseCreated(session.tenantId, newCase);
+            } catch (wsError) {
+                console.error('[WebSocket] Case creation broadcast failed:', wsError);
             }
 
             return successResponse(newCase, "Case created successfully");

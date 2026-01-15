@@ -6,6 +6,8 @@ import { useState, useEffect, memo } from 'react';
 import { useUsers } from '../context/UserContext';
 import LoginModal from './LoginModal';
 import TenantSwitcher from './TenantSwitcher';
+import { ConnectionStatus } from '@/components/websocket/ConnectionStatus';
+import { useTenant } from '@/app/context/TenantContext';
 
 interface NavigationProps {
   onExportClick?: () => void;
@@ -14,6 +16,7 @@ interface NavigationProps {
 const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) {
   const pathname = usePathname();
   const { currentUser, logout, isAuthenticated, canViewAllCases, canManageCases, canAccessSalesDashboard, canAccessProcessDashboard } = useUsers();
+  const { currentTenant } = useTenant();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const [showLoginModal, setShowLoginModal] = useState(false);
 
@@ -209,6 +212,13 @@ const Navigation = memo(function Navigation({ onExportClick }: NavigationProps) 
                 >
                   Sign In
                 </button>
+              )}
+
+              {/* WebSocket Connection Status */}
+              {isAuthenticated && (
+                <div className="hidden sm:block">
+                  <ConnectionStatus tenantId={currentTenant?.id} />
+                </div>
               )}
 
               {/* Clock */}

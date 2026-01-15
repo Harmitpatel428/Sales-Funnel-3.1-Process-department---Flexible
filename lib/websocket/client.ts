@@ -1,134 +1,194 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useQueryClient, QueryClient } from '@tanstack/react-query';
+import { isDuplicate } from './deduplication';
 
-export type WebSocketEventType =
-    | 'lead_created' | 'lead_updated' | 'lead_deleted'
-    | 'case_created' | 'case_updated' | 'case_deleted'
-    | 'report_generated' | 'notification';
-
-interface WebSocketMessage {
-    type: WebSocketEventType;
+export interface WebSocketMessage {
+    id: string;
+    sequenceNumber: number;
     tenantId: string;
+    eventType: string;
     payload: any;
     timestamp: string;
 }
 
-interface UseWebSocketOptions {
-    onMessage?: (message: WebSocketMessage) => void;
-    onConnect?: () => void;
-    onDisconnect?: () => void;
-    onError?: (error: Event) => void;
-    autoReconnect?: boolean;
-    reconnectInterval?: number;
-}
-
-export function useWebSocket(
-    tenantId: string | undefined,
-    events: WebSocketEventType[],
-    options: UseWebSocketOptions = {}
-) {
+/**
+ * Hook for managing WebSocket connection
+ */
+export function useWebSocket(tenantId?: string, options: { onMessage?: (msg: any) => void } = {}) {
     const [isConnected, setIsConnected] = useState(false);
-    const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
-    const wsRef = useRef<WebSocket | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const {
-        onMessage, onConnect, onDisconnect, onError,
-        autoReconnect = true, reconnectInterval = 5000
-    } = options;
+    const socketRef = useRef<WebSocket | null>(null);
+    const lastSequenceRef = useRef<number>(0);
+    const queryClient = useQueryClient();
+    const optionsRef = useRef(options);
+    optionsRef.current = options;
 
     const connect = useCallback(() => {
-        if (!tenantId || typeof window === 'undefined') return;
+        if (!tenantId || socketRef.current?.readyState === WebSocket.OPEN) return;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/api/reports/realtime?tenantId=${tenantId}`;
+        const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
 
-        try {
-            const ws = new WebSocket(wsUrl);
+        socket.onopen = () => {
+            setIsConnected(true);
+            // Sync missed events
+            socket.send(JSON.stringify({
+                action: 'sync',
+                lastEventId: lastSequenceRef.current,
+            }));
+        };
 
-            ws.onopen = () => {
-                setIsConnected(true);
-                onConnect?.();
-                // Subscribe to events
-                ws.send(JSON.stringify({ action: 'subscribe', events }));
-            };
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
 
-            ws.onmessage = (event) => {
-                try {
-                    const message: WebSocketMessage = JSON.parse(event.data);
-                    if (events.includes(message.type)) {
-                        setLastMessage(message);
-                        onMessage?.(message);
+                if (message.type === 'sync_response') {
+                    // Process missed events
+                    for (const ev of (message.events || [])) {
+                        if (!isDuplicate(ev.id)) {
+                            handleMessage(ev, queryClient);
+                            optionsRef.current.onMessage?.(ev);
+                            if (ev.sequenceNumber > lastSequenceRef.current) {
+                                lastSequenceRef.current = ev.sequenceNumber;
+                            }
+                        }
                     }
-                } catch (err) {
-                    console.error('Failed to parse WebSocket message:', err);
+                } else if (message.id && !isDuplicate(message.id)) {
+                    handleMessage(message, queryClient);
+                    optionsRef.current.onMessage?.(message);
+                    if (message.sequenceNumber > lastSequenceRef.current) {
+                        lastSequenceRef.current = message.sequenceNumber;
+                    }
+                } else if (message.type === 'ping') {
+                    socket.send(JSON.stringify({ type: 'pong', lastEventId: lastSequenceRef.current }));
+                } else {
+                    // Other messages like presence
+                    optionsRef.current.onMessage?.(message);
                 }
-            };
+            } catch (error) {
+                console.error('WebSocket message parsing error:', error);
+            }
+        };
 
-            ws.onclose = () => {
-                setIsConnected(false);
-                onDisconnect?.();
-                if (autoReconnect) {
-                    reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval);
-                }
-            };
+        socket.onclose = () => {
+            setIsConnected(false);
+            // Reconnect after 3 seconds
+            setTimeout(connect, 3000);
+        };
 
-            ws.onerror = (error) => {
-                onError?.(error);
-            };
-
-            wsRef.current = ws;
-        } catch (err) {
-            console.error('Failed to create WebSocket:', err);
-        }
-    }, [tenantId, events, onMessage, onConnect, onDisconnect, onError, autoReconnect, reconnectInterval]);
-
-    const disconnect = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-        }
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-        setIsConnected(false);
-    }, []);
-
-    const send = useCallback((data: any) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify(data));
-        }
-    }, []);
+        socketRef.current = socket;
+    }, [tenantId, queryClient]);
 
     useEffect(() => {
         connect();
-        return () => disconnect();
-    }, [connect, disconnect]);
+        return () => {
+            socketRef.current?.close();
+        };
+    }, [connect]);
 
-    return { isConnected, lastMessage, send, connect, disconnect };
+    const sendMessage = (action: string, data: any) => {
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({ action, ...data }));
+        }
+    };
+
+    return { isConnected, sendMessage };
 }
 
 /**
- * Hook for subscribing to specific entity updates
+ * Handle incoming WebSocket messages and update cache
  */
-export function useRealtimeUpdates(
-    tenantId: string | undefined,
-    onLeadUpdate?: (lead: any) => void,
-    onCaseUpdate?: (caseData: any) => void
-) {
-    const events: WebSocketEventType[] = [
-        'lead_created', 'lead_updated', 'lead_deleted',
-        'case_created', 'case_updated', 'case_deleted'
-    ];
+function handleMessage(message: WebSocketMessage, queryClient: QueryClient) {
+    const { eventType, payload } = message;
 
-    return useWebSocket(tenantId, events, {
+    switch (eventType) {
+        case 'lead_created':
+        case 'lead_updated':
+        case 'lead_deleted':
+            queryClient.invalidateQueries({ queryKey: ['leads'] });
+            if (payload.id) queryClient.invalidateQueries({ queryKey: ['lead', payload.id] });
+            break;
+
+        case 'case_created':
+        case 'case_updated':
+        case 'case_deleted':
+            queryClient.invalidateQueries({ queryKey: ['cases'] });
+            if (payload.caseId) queryClient.invalidateQueries({ queryKey: ['case', payload.caseId] });
+            break;
+
+        case 'document_created':
+        case 'document_updated':
+        case 'document_deleted':
+            queryClient.invalidateQueries({ queryKey: ['documents'] });
+            if (payload.documentId) queryClient.invalidateQueries({ queryKey: ['document', payload.documentId] });
+            break;
+    }
+}
+
+/**
+ * Hook for tracking presence on a specific entity
+ */
+export function usePresence(
+    tenantId: string | undefined,
+    entityType: 'lead' | 'case' | 'document',
+    entityId: string,
+    currentUser?: { id: string, name: string }
+) {
+    const [activeUsers, setActiveUsers] = useState<any[]>([]);
+
+    const { isConnected, sendMessage } = useWebSocket(tenantId, {
         onMessage: (message) => {
-            if (message.type.startsWith('lead_')) {
-                onLeadUpdate?.(message.payload);
-            } else if (message.type.startsWith('case_')) {
-                onCaseUpdate?.(message.payload);
+            if (message.type?.startsWith('presence_')) {
+                const data = message.payload;
+                if (data.entityType === entityType && data.entityId === entityId) {
+                    if (message.type === 'presence_left') {
+                        setActiveUsers(prev => prev.filter(u => u.userId !== data.userId));
+                    } else {
+                        setActiveUsers(prev => {
+                            const exists = prev.find(u => u.userId === data.userId);
+                            if (exists) return prev.map(u => u.userId === data.userId ? data : u);
+                            return [...prev, data];
+                        });
+                    }
+                }
+            } else if (message.type === 'initial_presence') {
+                const data = message.payload;
+                if (data.entityType === entityType && data.entityId === entityId) {
+                    setActiveUsers(data.users || []);
+                }
             }
         }
     });
+
+    useEffect(() => {
+        if (isConnected && entityId && currentUser) {
+            sendMessage('presence', {
+                entityType,
+                entityId,
+                action: 'viewing',
+                userId: currentUser.id,
+                userName: currentUser.name
+            });
+
+            const interval = setInterval(() => {
+                sendMessage('presence', {
+                    entityType,
+                    entityId,
+                    action: 'heartbeat'
+                });
+            }, 30000);
+
+            return () => {
+                clearInterval(interval);
+                sendMessage('presence', {
+                    entityType,
+                    entityId,
+                    action: 'left'
+                });
+            };
+        }
+    }, [isConnected, entityId, entityType, sendMessage, currentUser]);
+
+    return { activeUsers, isConnected };
 }

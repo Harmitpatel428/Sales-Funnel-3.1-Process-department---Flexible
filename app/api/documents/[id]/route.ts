@@ -7,13 +7,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { z } from 'zod';
 import { getStorageProvider } from '@/lib/storage';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
+import { emitDocumentUpdated, emitDocumentDeleted } from '@/lib/websocket/server';
 
 // Validation Schema
 const DocumentUpdateSchema = z.object({
+    version: z.number().int().min(1, 'Version is required for updates'),
     documentType: z.string().optional(),
     status: z.enum(['PENDING', 'RECEIVED', 'VERIFIED', 'REJECTED']).optional(),
     notes: z.string().optional(),
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         const { id } = await params;
 
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -113,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         const { id } = await params;
 
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -128,9 +131,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, user.tenantId);
+        if (idempotencyError) return idempotencyError;
+
         // Parse body
         const body = await req.json();
-        const updates = DocumentUpdateSchema.parse(body);
+        const { version, ...updateData } = DocumentUpdateSchema.parse(body);
 
         // Get existing document
         const existing = await prisma.document.findFirst({
@@ -145,53 +152,80 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'Document not found' }, { status: 404 });
         }
 
-        // Update document
-        const document = await prisma.document.update({
-            where: { id },
-            data: {
-                ...updates,
-                // If status changes to VERIFIED, set verifiedBy
-                ...(updates.status === 'VERIFIED' && {
-                    verifiedById: user.id,
-                    verifiedAt: new Date(),
-                }),
-            },
-            include: {
-                uploadedBy: {
-                    select: { id: true, name: true, email: true },
-                },
-                verifiedBy: {
-                    select: { id: true, name: true, email: true },
-                },
-            },
-        });
+        try {
+            // Prepare update data with verification fields
+            const updatePayload: any = { ...updateData };
+            if (updateData.status === 'VERIFIED') {
+                updatePayload.verifiedById = user.id;
+                updatePayload.verifiedAt = new Date();
+            }
 
-        // Log access
-        await prisma.documentAccessLog.create({
-            data: {
-                documentId: document.id,
-                userId: user.id,
-                action: 'UPDATE',
-                ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
-                userAgent: req.headers.get('user-agent'),
-            },
-        });
+            const document = await updateWithOptimisticLock(
+                prisma.document,
+                { id, tenantId: user.tenantId },
+                { currentVersion: version, data: updatePayload },
+                'Document'
+            );
 
-        return NextResponse.json({
-            success: true,
-            document: {
-                ...document,
-                encryptionKey: undefined,
-                encryptionIV: undefined,
-            },
-        });
+            // Fetch with includes for response
+            const fullDocument = await prisma.document.findUnique({
+                where: { id },
+                include: {
+                    uploadedBy: {
+                        select: { id: true, name: true, email: true },
+                    },
+                    verifiedBy: {
+                        select: { id: true, name: true, email: true },
+                    },
+                },
+            });
+
+            // Log access
+            await prisma.documentAccessLog.create({
+                data: {
+                    documentId: id,
+                    userId: user.id,
+                    action: 'UPDATE',
+                    ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
+                    userAgent: req.headers.get('user-agent'),
+                },
+            });
+
+            const response = NextResponse.json({
+                success: true,
+                document: {
+                    ...fullDocument,
+                    encryptionKey: undefined,
+                    encryptionIV: undefined,
+                },
+            });
+
+            // WebSocket Broadcast
+            try {
+                if (fullDocument) {
+                    await emitDocumentUpdated(user.tenantId, fullDocument);
+                }
+            } catch (wsError) {
+                console.error('[WebSocket] Document update broadcast failed:', wsError);
+            }
+
+            await storeIdempotencyResult(req, response);
+            return response;
+
+        } catch (error) {
+            const lockError = handleOptimisticLockError(error);
+            if (lockError) {
+                return NextResponse.json(lockError, { status: 409 });
+            }
+            throw error;
+        }
 
     } catch (error) {
         console.error('Update document error:', error);
         if (error instanceof z.ZodError) {
             return NextResponse.json({
                 error: 'Validation error',
-                details: error.errors,
+                details: error.issues,
             }, { status: 400 });
         }
         return NextResponse.json({
@@ -207,7 +241,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
         const { id } = await params;
 
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -221,6 +255,10 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
         if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
+
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, user.tenantId);
+        if (idempotencyError) return idempotencyError;
 
         // Get existing document
         const existing = await prisma.document.findFirst({
@@ -256,10 +294,20 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
             },
         });
 
-        return NextResponse.json({
+        // WebSocket Broadcast
+        try {
+            await emitDocumentDeleted(user.tenantId, id);
+        } catch (wsError) {
+            console.error('[WebSocket] Document delete broadcast failed:', wsError);
+        }
+
+        const response = NextResponse.json({
             success: true,
             message: 'Document deleted successfully',
         });
+
+        await storeIdempotencyResult(req, response);
+        return response;
 
     } catch (error) {
         console.error('Delete document error:', error);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
+import { OptimisticLockError } from '@/lib/utils/optimistic-locking';
 
 export function handleApiError(error: unknown) {
     console.error('[API Error]:', error);
@@ -10,9 +11,27 @@ export function handleApiError(error: unknown) {
             {
                 success: false,
                 message: 'Validation Error',
-                errors: error.errors.map(e => `${e.path.join('.')}: ${e.message}`)
+                errors: error.issues.map(e => `${e.path.join('.')}: ${e.message}`)
             },
             { status: 400 }
+        );
+    }
+
+    if (error instanceof OptimisticLockError) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: 'CONFLICT',
+                message: error.message,
+                code: 'OPTIMISTIC_LOCK_FAILED',
+                details: {
+                    entityType: error.entityType,
+                    entityId: error.entityId,
+                    expectedVersion: error.expectedVersion,
+                    actualVersion: error.actualVersion
+                }
+            },
+            { status: 409 }
         );
     }
 

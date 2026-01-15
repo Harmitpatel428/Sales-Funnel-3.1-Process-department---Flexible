@@ -56,6 +56,9 @@ model Tenant {
   oauthClients              OAuthClient[]
   webhookSubscriptions      WebhookSubscription[]
   integrationInstallations  IntegrationInstallation[]
+  // Idempotency
+  idempotencyLogs   IdempotencyLog[]
+  websocket_events  WebSocketEventLog[]
 
   @@index([slug])
   @@index([subdomain])
@@ -212,6 +215,7 @@ model Lead {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   tenantId           String
+  version            Int       @default(1)
   tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy          User?     @relation("CreatedBy", fields: [createdById], references: [id])
   assignedTo         User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
@@ -306,6 +310,7 @@ model Case {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime
   tenantId              String
+  version               Int       @default(1)
   tenants               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   users                 User?     @relation(fields: [assignedProcessUserId], references: [id])
 
@@ -330,6 +335,24 @@ model email_queue {
   updatedAt DateTime
 
   @@index([status])
+}
+
+model IdempotencyLog {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  endpoint       String
+  requestHash    String
+  responseStatus Int
+  responseBody   String
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  
+  @@index([key])
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("idempotency_logs")
 }
 
 model mfa_secrets {
@@ -508,6 +531,7 @@ model Document {
   deletedById       String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  version           Int                 @default(1)
   
   tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   versions          DocumentVersion[]
@@ -1267,4 +1291,23 @@ model IntegrationInstallation {
   @@unique([integrationId, tenantId])
   @@index([tenantId])
   @@map("integration_installations")
+}
+
+model WebSocketEventLog {
+  id                String    @id @default(cuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  eventId           String    @unique  // UUID from WebSocket event
+  sequenceNumber    Int                // Auto-increment per tenant
+  eventType         String             // lead_created, lead_updated, etc.
+  payload           String               // JSON stringified (SQLite handles Long String)
+  
+  userId            String?            // User who triggered the event
+  timestamp         DateTime  @default(now())
+  expiresAt         DateTime           // For cleanup (24 hours from creation)
+  
+  @@index([tenantId, sequenceNumber])
+  @@index([expiresAt])
+  @@map("websocket_event_logs")
 }

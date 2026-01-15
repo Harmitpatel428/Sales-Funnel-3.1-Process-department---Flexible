@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
@@ -8,9 +8,12 @@ import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { z } from 'zod';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 
 const StatusUpdateSchema = z.object({
-    newStatus: ProcessStatusEnum
+    newStatus: ProcessStatusEnum,
+    version: z.number().int().min(1, 'Version is required for updates')
 });
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
@@ -27,11 +30,15 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 
+        // Check idempotency
+        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+        if (idempotencyError) return idempotencyError;
+
         const body = await req.json();
         const validation = validateRequest(StatusUpdateSchema, body);
         if (!validation.success) return validationErrorResponse(validation.errors!);
 
-        const { newStatus } = validation.data!;
+        const { newStatus, version } = validation.data!;
 
         return await withTenant(session.tenantId, async () => {
             const existingCase = await prisma.case.findFirst({
@@ -49,7 +56,6 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
             const updates: any = {
                 processStatus: newStatus,
-                updatedAt: new Date()
             };
 
             if (newStatus === 'CLOSED') {
@@ -57,24 +63,37 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
                 // Closure reason could be passed in body, but simpler here
             }
 
-            const updatedCase = await prisma.case.update({
-                where: { caseId: id },
-                data: updates
-            });
+            try {
+                const updatedCase = await updateWithOptimisticLock(
+                    prisma.case,
+                    { caseId: id, tenantId: session.tenantId },
+                    { currentVersion: version, data: updates },
+                    'Case'
+                );
 
-            await prisma.auditLog.create({
-                data: {
-                    actionType: 'CASE_STATUS_UPDATED',
-                    entityType: 'case',
-                    entityId: id,
-                    description: `Case status changed from ${existingCase.processStatus} to ${newStatus}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
-                    metadata: JSON.stringify({ oldStatus: existingCase.processStatus, newStatus })
+                await prisma.auditLog.create({
+                    data: {
+                        actionType: 'CASE_STATUS_UPDATED',
+                        entityType: 'case',
+                        entityId: id,
+                        description: `Case status changed from ${existingCase.processStatus} to ${newStatus}`,
+                        performedById: session.userId,
+                        tenantId: session.tenantId,
+                        metadata: JSON.stringify({ oldStatus: existingCase.processStatus, newStatus })
+                    }
+                });
+
+                const response = successResponse(updatedCase, "Status updated successfully");
+                await storeIdempotencyResult(req, response);
+                return response;
+
+            } catch (error) {
+                const lockError = handleOptimisticLockError(error);
+                if (lockError) {
+                    return NextResponse.json(lockError, { status: 409 });
                 }
-            });
-
-            return successResponse(updatedCase, "Status updated successfully");
+                throw error;
+            }
         });
 
     } catch (error) {

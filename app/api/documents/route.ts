@@ -6,14 +6,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { z } from 'zod';
 import { getStorageProvider, getStorageConfig, generateStoragePath, generateChecksum, validateFileSize, validateMimeType } from '@/lib/storage';
 import { encryptDocumentForStorage } from '@/lib/document-encryption';
 import { scanFileOrThrow, VirusDetectedError, ScanFailedError } from '@/lib/virus-scanner';
 import { extractText, isOcrSupported } from '@/lib/ocr';
 import { calculateRetentionDate } from '@/lib/retention-policy';
+import { emitDocumentCreated } from '@/lib/websocket/server';
 
 // Validation Schemas
 const DocumentUploadMetadataSchema = z.object({
@@ -36,7 +36,7 @@ const DocumentFiltersSchema = z.object({
 export async function POST(req: NextRequest) {
     try {
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
             if (e instanceof z.ZodError) {
                 return NextResponse.json({
                     error: 'Invalid metadata',
-                    details: e.errors,
+                    details: e.issues,
                 }, { status: 400 });
             }
             throw e;
@@ -136,28 +136,7 @@ export async function POST(req: NextRequest) {
         );
 
         // Calculate retention expiration
-        let expiresAt: Date | null = null;
-
-        // 1. Try to find a dynamic policy first
-        const policy = await prisma.retentionPolicy.findUnique({
-            where: {
-                tenantId_documentType: {
-                    tenantId: user.tenantId,
-                    documentType: metadata.documentType
-                }
-            }
-        });
-
-        if (policy) {
-            const period = JSON.parse(policy.retentionPeriod as string);
-            const now = new Date();
-            expiresAt = now;
-            if (period.years) expiresAt.setFullYear(expiresAt.getFullYear() + period.years);
-            if (period.months) expiresAt.setMonth(expiresAt.getMonth() + period.months);
-        } else {
-            // 2. Fallback to static policy
-            expiresAt = calculateRetentionDate(metadata.documentType);
-        }
+        const expiresAt = await calculateRetentionDate(user.tenantId, metadata.documentType);
 
         // Upload to storage
         const storage = getStorageProvider();
@@ -230,6 +209,13 @@ export async function POST(req: NextRequest) {
             processOcrAsync(document.id, buffer, file.type).catch(console.error);
         }
 
+        // WebSocket Broadcast
+        try {
+            await emitDocumentCreated(user.tenantId, document);
+        } catch (wsError) {
+            console.error('[WebSocket] Document creation broadcast failed:', wsError);
+        }
+
         // Generate pre-signed URL for immediate preview
         const previewUrl = await storage.generatePresignedUrl(storagePath, 900);
 
@@ -256,7 +242,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
     try {
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
