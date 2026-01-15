@@ -9,6 +9,7 @@ import type { Lead, LeadFilters, ColumnConfig } from '../types/shared';
 import EditableCell from './EditableCell';
 import EditableHeaderCell from './EditableHeaderCell';
 import LoadingSpinner from './LoadingSpinner';
+import { LeadSchema } from '@/lib/validation/schemas';
 
 const MobileNumbersModal = lazy(() => import('./MobileNumbersModal'));
 const ColumnManagementModal = lazy(() => import('./ColumnManagementModal'));
@@ -645,6 +646,8 @@ const LeadTable = React.memo(function LeadTable({
                       placeholder="Mobile number"
                       fieldName="mobileNumber"
                       lead={lead}
+                      schema={LeadSchema}
+                      entityType="lead"
                       className="text-xs max-w-12 truncate flex-1"
                     />
                     <button
@@ -683,6 +686,8 @@ const LeadTable = React.memo(function LeadTable({
                     placeholder="Select Status"
                     fieldName={fieldKey}
                     lead={lead}
+                    schema={LeadSchema}
+                    entityType="lead"
                     className="text-xs"
                   />
                 ) : (
@@ -708,6 +713,8 @@ const LeadTable = React.memo(function LeadTable({
                     placeholder="DD-MM-YYYY"
                     fieldName={fieldKey}
                     lead={lead}
+                    schema={LeadSchema}
+                    entityType="lead"
                     className="text-xs min-w-16"
                   />
                 ) : (
@@ -729,6 +736,8 @@ const LeadTable = React.memo(function LeadTable({
                   placeholder={`Enter ${column.label.toLowerCase()}`}
                   fieldName={fieldKey}
                   lead={lead}
+                  schema={LeadSchema}
+                  entityType="lead"
                   className="text-xs"
                 />
               ) : (

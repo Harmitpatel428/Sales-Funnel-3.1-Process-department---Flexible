@@ -15,10 +15,13 @@ import { initializeOfflineQueueListeners, processQueue, hasPendingItems } from '
 
 import { useTenant } from '../context/TenantContext';
 import { RealtimeSyncProvider } from './RealtimeSyncProvider';
+import { useWebSocketConflicts } from '../hooks/useWebSocketConflicts';
+import { NotificationToast } from './NotificationToast';
 
 interface QueryProviderProps {
     children: ReactNode;
 }
+
 
 export function QueryProvider({ children }: QueryProviderProps) {
     const queryClient = getQueryClient();
@@ -65,6 +68,7 @@ export function QueryProvider({ children }: QueryProviderProps) {
         <QueryClientProvider client={queryClient}>
             <RealtimeSyncProvider>
                 {children}
+                <NotificationToast />
             </RealtimeSyncProvider>
             <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>

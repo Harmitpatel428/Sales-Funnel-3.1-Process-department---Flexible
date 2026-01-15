@@ -14,6 +14,10 @@ import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitDocumentUpdated, emitDocumentDeleted } from '@/lib/websocket/server';
 
+import { DocumentUploadSchema, DocumentFiltersSchema } from '@/lib/validation/schemas';
+import { validateDocumentCrossFields } from '@/lib/validation/cross-field-rules';
+import { validateRequest } from '@/lib/validation/schemas'; // Just in case, though manual used
+
 // Validation Schema
 const DocumentUpdateSchema = z.object({
     version: z.number().int().min(1, 'Version is required for updates'),
@@ -150,6 +154,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
         if (!existing) {
             return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+        }
+
+        // Validate cross-field rules
+        const mergedDocument = { ...existing, ...updateData };
+        // Cast to any because validateDocumentCrossFields expects DocumentUpload shape which matches Document fields mostly
+        const crossErrors = validateDocumentCrossFields(mergedDocument as any);
+        if (crossErrors.length > 0) {
+            return NextResponse.json({
+                error: 'Validation error',
+                details: crossErrors,
+            }, { status: 400 });
         }
 
         try {

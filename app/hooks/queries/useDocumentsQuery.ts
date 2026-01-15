@@ -7,6 +7,9 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { CaseDocument, DocumentStatus } from '../../types/processTypes';
+import { DocumentSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
 
 // Query keys factory for type-safe keys
 export const documentKeys = {
@@ -86,7 +89,14 @@ export function useDocumentsQuery(
                 params.status = filters.status;
             }
 
-            return apiClient.get<DocumentsResponse>('/api/documents', { params });
+            const response = await apiClient.get<DocumentsResponse>('/api/documents', { params });
+            const ResponseSchema = z.object({
+                success: z.boolean().optional(),
+                documents: z.array(DocumentSchema.partial().passthrough()),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         select: (data) => data.documents.map(mapDocument),
         staleTime: 20000, // 20 seconds - documents change frequently

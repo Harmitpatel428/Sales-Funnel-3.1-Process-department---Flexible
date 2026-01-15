@@ -67,8 +67,7 @@ export const ActivitySchema = z.object({
     performedBy: z.string().optional()
 });
 
-export const LeadSchema = z.object({
-    // Core Data
+export const LeadBaseSchema = z.object({
     // Core Data
     clientName: z.string().optional(),
     mobileNumber: z.string().optional(),
@@ -100,6 +99,10 @@ export const LeadSchema = z.object({
     isDone: z.boolean().optional(),
     mandateStatus: z.string().optional(),
 
+    // Dates
+    createdAt: z.string().or(z.date()).optional(),
+    followUpDate: DateStringSchema.optional(),
+
     // JSON Fields (expecting parsed arrays/objects if coming from frontend JSON body)
     mobileNumbers: z.array(MobileNumberSchema).optional(),
     activities: z.array(ActivitySchema).optional(),
@@ -107,7 +110,31 @@ export const LeadSchema = z.object({
     submitted_payload: z.record(z.string(), z.any()).optional()
 });
 
-export const LeadUpdateSchema = LeadSchema.partial().extend({
+export const LeadSchema = LeadBaseSchema.refine((data) => {
+    // Email required when status is CONTACTED or QUALIFIED
+    if (['CONTACTED', 'QUALIFIED'].includes(data.status) && !data.email) {
+        return false;
+    }
+    return true;
+}, { message: "Email is required when status is CONTACTED or QUALIFIED", path: ['email'] })
+    .refine((data) => {
+        // followUpDate must be after createdAt when both are present
+        if (data.followUpDate && data.createdAt) {
+            const followUp = new Date(data.followUpDate).getTime();
+            const created = new Date(data.createdAt).getTime();
+            return followUp > created;
+        }
+        return true;
+    }, { message: "Follow-up date must be after created date", path: ['followUpDate'] })
+    .refine((data) => {
+        // Notes are required for most statuses except specific exemptions
+        const exemptStatuses = ['Work Alloted', 'Others', 'NEW']; // Adding NEW as common sense default
+        if (exemptStatuses.includes(data.status) || !data.status) return true;
+
+        return !!(data.notes && data.notes.trim());
+    }, { message: "Last discussion (notes) is required for this status", path: ['notes'] });
+
+export const LeadUpdateSchema = LeadBaseSchema.partial().extend({
     version: z.number().int().min(1, 'Version is required for updates').optional()
 });
 
@@ -135,11 +162,22 @@ export const ForwardToProcessSchema = z.object({
     deletedFrom: z.string().optional()
 });
 
+export const LeadBulkUpdateSchema = z.object({
+    leadIds: z.array(z.string()).min(1, "At least one lead must be selected"),
+    updates: LeadUpdateSchema
+});
+
+export const CaseBulkAssignSchema = z.object({
+    caseIds: z.array(z.string()).min(1, "At least one case must be selected"),
+    userId: z.string(),
+    roleId: z.string().optional()
+});
+
 // ==========================================
 // Case Schemas
 // ==========================================
 
-export const CaseSchema = z.object({
+export const CaseBaseSchema = z.object({
     leadId: z.string(),
     caseNumber: z.string(),
     schemeType: z.string().optional(),
@@ -170,7 +208,15 @@ export const CaseSchema = z.object({
     originalLeadData: z.record(z.string(), z.any()).optional()
 });
 
-export const CaseUpdateSchema = CaseSchema.partial().extend({
+export const CaseSchema = CaseBaseSchema.refine((data) => {
+    // assignedProcessUserId is required when processStatus is not DOCUMENTS_PENDING
+    if (data.processStatus !== 'DOCUMENTS_PENDING' && !data.assignedProcessUserId) {
+        return false;
+    }
+    return true;
+}, { message: "Assigned process user is required when status is not DOCUMENTS_PENDING", path: ['assignedProcessUserId'] });
+
+export const CaseUpdateSchema = CaseBaseSchema.partial().extend({
     version: z.number().int().min(1, 'Version is required for updates').optional()
 });
 
@@ -188,6 +234,25 @@ export const CaseFiltersSchema = z.object({
 // Document Schemas
 // ==========================================
 
+export const DocumentStatusEnum = z.enum(['PENDING', 'RECEIVED', 'VERIFIED', 'REJECTED']);
+
+export const DocumentSchema = z.object({
+    id: z.string(),
+    caseId: z.string(),
+    documentType: z.string(),
+    fileName: z.string(),
+    fileSize: z.number(),
+    mimeType: z.string(),
+    status: DocumentStatusEnum.default('PENDING'),
+    virusScanStatus: z.string().optional(),
+    ocrStatus: z.string().optional(),
+    uploadedById: z.string(),
+    createdAt: z.string().or(z.date()),
+    updatedAt: z.string().or(z.date()),
+    version: z.number().int().optional(),
+    previewUrl: z.string().optional()
+});
+
 export const DocumentUploadSchema = z.object({
     caseId: z.string().cuid(),
     documentType: z.string().min(1, "Document type is required"),
@@ -195,7 +260,29 @@ export const DocumentUploadSchema = z.object({
     fileSize: z.number().positive().max(50 * 1024 * 1024, "File size limit is 50MB"),
     mimeType: z.string().regex(/^(application\/pdf|image\/(jpeg|png|jpg|gif|webp)|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation)$/, "Unsupported file type"),
     notes: z.string().optional()
-});
+}).refine((data) => {
+    // Validate file extension matches declared mimeType (basic check)
+    const extension = data.fileName.split('.').pop()?.toLowerCase();
+    if (!extension) return true; // Can't check
+
+    const mimeToExt: Record<string, string[]> = {
+        'application/pdf': ['pdf'],
+        'image/jpeg': ['jpg', 'jpeg'],
+        'image/png': ['png'],
+        'image/webp': ['webp'],
+        'application/msword': ['doc'],
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
+        'application/vnd.ms-excel': ['xls'],
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx']
+    };
+
+    // Check if the mime type corresponds to the extension
+    // This is a loose check; improved logic can be added
+    if (mimeToExt[data.mimeType] && !mimeToExt[data.mimeType].includes(extension)) {
+        return false;
+    }
+    return true;
+}, { message: "File extension does not match the provided MIME type", path: ['fileName'] });
 
 export const DocumentUpdateSchema = z.object({
     version: z.number().int().min(1, 'Version is required for updates').optional(),
@@ -230,3 +317,20 @@ export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown) {
     }
 }
 
+
+// ==========================================
+// Metadata Exports
+// ==========================================
+
+export const LeadSchemaKeys = LeadSchema.keyof().options;
+export const CaseSchemaKeys = CaseSchema.keyof().options;
+export const DocumentSchemaKeys = DocumentUploadSchema.keyof().options;
+
+export function getSchemaForEntity(entityType: 'lead' | 'case' | 'document') {
+    switch (entityType) {
+        case 'lead': return LeadSchema;
+        case 'case': return CaseSchema;
+        case 'document': return DocumentUploadSchema;
+        default: throw new Error(`Unknown entity type: ${entityType}`);
+    }
+}

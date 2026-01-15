@@ -185,6 +185,8 @@ export interface Lead {
   assignedAt?: string;           // Timestamp of assignment
   // Immutable snapshot of exact form values at submission time
   submitted_payload?: Record<string, any>;
+  version: number;               // For optimistic locking
+  updatedAt?: string;            // For conflict detection
 }
 
 /**

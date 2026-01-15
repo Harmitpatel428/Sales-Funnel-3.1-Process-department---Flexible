@@ -15,6 +15,10 @@ import { useDebouncedValue } from '../utils/debounce';
 import { validateExportHeaders, validateRequiredHeaders, getExportSuggestions, getHeaderPatternScore } from '../constants/exportUtils';
 import { findBestFuzzyMatch, normalizeHeader, getHeaderVariations } from '../utils/stringUtils';
 import * as XLSX from 'xlsx';
+import { useWebSocketConflicts } from '../hooks/useWebSocketConflicts';
+import ConflictResolutionModal from '../components/ConflictResolutionModal';
+import { applyResolution } from '../utils/optimistic';
+import { useUpdateLeadMutation } from '../hooks/mutations/useLeadsMutations';
 
 const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
@@ -107,6 +111,29 @@ export default function AllLeadsPage() {
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const isSearching = searchInput !== debouncedSearch;
   const canSeeAllLeads = canViewAllLeads();
+
+  // Conflict Resolution
+  // Conflict Resolution
+  const conflictFilter = useCallback((c: any) => c.entityType === 'lead', []);
+  const { conflictState, cancelConflict } = useWebSocketConflicts(conflictFilter);
+  const updateLeadMutation = useUpdateLeadMutation();
+
+  const handleConflictResolve = async (resolution: any) => {
+    if (!conflictState) return;
+
+    const resolvedEntity = applyResolution(resolution, conflictState);
+
+    try {
+      await updateLeadMutation.mutateAsync({
+        id: conflictState.optimistic.id,
+        ...resolvedEntity,
+        version: conflictState.server.version
+      });
+      cancelConflict();
+    } catch (error) {
+      console.error('Failed to resolve conflict:', error);
+    }
+  };
 
   // Build dynamic field mapping that includes current custom headers and column configuration
   // Memoized to avoid rebuilding on every cell mapping
@@ -753,7 +780,8 @@ export default function AllLeadsPage() {
 
   // Helper functions for delete operations
   const performSingleDelete = async (leadId: string, reason?: string) => {
-    const result = await forwardToProcess(leadId, reason, 'all_leads');
+    // Pass empty array for benefitTypes as this is a delete/forward operation from all-leads
+    const result = await forwardToProcess(leadId, [], reason, 'all_leads');
 
     if (result.success) {
       showToastNotification(
@@ -773,7 +801,7 @@ export default function AllLeadsPage() {
 
   const performBulkDelete = async (leadIds: string[], reason?: string) => {
     const forwardPromises = leadIds.map(leadId =>
-      forwardToProcess(leadId, reason, 'all_leads')
+      forwardToProcess(leadId, [], reason, 'all_leads')
     );
 
     const results = await Promise.all(forwardPromises);
@@ -2908,6 +2936,19 @@ export default function AllLeadsPage() {
           />
         </div>
       </div>
+
+      {/* Conflict Resolution Modal */}
+      {conflictState && (
+        <ConflictResolutionModal
+          isOpen={true}
+          entityType={conflictState.entityType as any}
+          conflicts={conflictState.conflicts}
+          optimisticEntity={conflictState.optimistic}
+          serverEntity={conflictState.server}
+          onResolve={handleConflictResolve}
+          onCancel={cancelConflict}
+        />
+      )}
 
       {/* Lead Detail Modal */}
       {showLeadModal && (

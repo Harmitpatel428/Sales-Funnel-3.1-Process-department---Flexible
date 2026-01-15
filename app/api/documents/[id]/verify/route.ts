@@ -5,8 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+
+import { z } from 'zod';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+
+const VerifySchema = z.object({
+    version: z.number().int().min(1, 'Version is required for updates'),
+});
 
 interface RouteParams {
     params: Promise<{ id: string }>;
@@ -17,7 +23,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         const { id } = await params;
 
         // Authenticate
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -35,6 +41,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        const body = await req.json();
+        const { version } = VerifySchema.parse(body);
+
         const document = await prisma.document.findFirst({
             where: { id, tenantId: user.tenantId, isDeleted: false },
         });
@@ -43,32 +52,42 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'Document not found' }, { status: 404 });
         }
 
-        // Update status
-        const updated = await prisma.document.update({
-            where: { id },
-            data: {
-                status: 'VERIFIED',
-                verifiedById: user.id,
-                verifiedAt: new Date(),
-                rejectionReason: null, // Clear any previous rejection
-            },
-            include: {
-                verifiedBy: { select: { id: true, name: true } }
+        try {
+            // Update status
+            const updated = await updateWithOptimisticLock(
+                prisma.document,
+                { id, tenantId: user.tenantId },
+                {
+                    currentVersion: version,
+                    data: {
+                        status: 'VERIFIED',
+                        verifiedById: user.id,
+                        verifiedAt: new Date(),
+                        rejectionReason: null, // Clear any previous rejection
+                    }
+                },
+                'Document'
+            );
+
+            // Log action
+            await prisma.documentAccessLog.create({
+                data: {
+                    documentId: id,
+                    userId: user.id,
+                    action: 'VERIFY',
+                    ipAddress: req.headers.get('x-forwarded-for'),
+                    userAgent: req.headers.get('user-agent'),
+                },
+            });
+
+            return NextResponse.json({ success: true, document: updated });
+        } catch (error) {
+            const lockError = handleOptimisticLockError(error);
+            if (lockError) {
+                return NextResponse.json(lockError, { status: 409 });
             }
-        });
-
-        // Log action
-        await prisma.documentAccessLog.create({
-            data: {
-                documentId: id,
-                userId: user.id,
-                action: 'VERIFY',
-                ipAddress: req.headers.get('x-forwarded-for'),
-                userAgent: req.headers.get('user-agent'),
-            },
-        });
-
-        return NextResponse.json({ success: true, document: updated });
+            throw error;
+        }
 
     } catch (error) {
         console.error('Verify document error:', error);

@@ -10,6 +10,7 @@
  * - For invalidation, we use broad invalidation with exact: false to cover all filter variants
  */
 
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { Lead, ColumnConfig } from '../../types/shared';
@@ -17,6 +18,18 @@ import { leadKeys } from '../queries/useLeadsQuery';
 import { caseKeys } from '../queries/useCasesQuery';
 import { addToQueue, isOnline } from '../../utils/offlineQueue';
 import { isNetworkError } from '../../utils/errorHandling';
+import {
+    createOptimisticUpdate,
+    reconcileWithServer,
+    ConflictState
+} from '../../utils/optimistic';
+import { showToast } from '../../components/NotificationToast';
+import { LeadSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
+
+const IMPORTANT_LEAD_FIELDS = ['status', 'assignedToId', 'isDone', 'convertedToCaseId'];
+
 
 // Response types matching the API responses stored in cache
 interface LeadsListResponse {
@@ -67,7 +80,14 @@ export function useCreateLeadMutation() {
 
     return useMutation({
         mutationFn: async (lead: Omit<Lead, 'id'>) => {
-            return apiClient.post<LeadMutationResponse>('/api/leads', lead);
+            const response = await apiClient.post<LeadMutationResponse>('/api/leads', lead);
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: LeadSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onMutate: async (newLead) => {
             // Cancel any outgoing refetches for all lead list queries
@@ -134,10 +154,25 @@ export function useCreateLeadMutation() {
  */
 export function useUpdateLeadMutation() {
     const queryClient = useQueryClient();
+    const versionRef = useRef<Record<string, number>>({});
 
     return useMutation({
-        mutationFn: async (lead: Lead) => {
-            return apiClient.put<LeadMutationResponse>(`/api/leads/${lead.id}`, lead);
+        mutationFn: async (updatedLead: Partial<Lead> & { id: string }) => {
+            const version = (updatedLead as any).version ?? versionRef.current[updatedLead.id];
+            // Clear ref for this ID as it's been used for this specific mutation call
+            if (updatedLead.id) delete versionRef.current[updatedLead.id];
+
+            const response = await apiClient.put<LeadMutationResponse>(`/api/leads/${updatedLead.id}`, {
+                ...updatedLead,
+                version // Ensure version is sent for optimistic locking
+            });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: LeadSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onMutate: async (updatedLead) => {
             // Cancel any outgoing refetches
@@ -147,9 +182,18 @@ export function useUpdateLeadMutation() {
             const previousListCaches = queryClient.getQueriesData<LeadsListResponse>({
                 queryKey: leadKeys.lists()
             });
-            const previousDetail = queryClient.getQueryData<LeadDetailResponse>(
+            const lastKnownGoodResponse = queryClient.getQueryData<LeadDetailResponse>(
                 leadKeys.detail(updatedLead.id)
             );
+            const lastKnownGood = lastKnownGoodResponse?.data;
+
+            // Capture version for mutationFn
+            if (lastKnownGood && updatedLead.id) {
+                versionRef.current[updatedLead.id] = lastKnownGood.version;
+            }
+
+            // Use our utility for optimistic update with version increment
+            const optimisticLead = createOptimisticUpdate({ ...lastKnownGood, ...updatedLead } as Lead, {});
 
             // Optimistically update all list caches
             queryClient.setQueriesData<LeadsListResponse>(
@@ -161,7 +205,7 @@ export function useUpdateLeadMutation() {
                         data: {
                             ...old.data,
                             leads: old.data.leads.map((l: Lead) =>
-                                l.id === updatedLead.id ? updatedLead : l
+                                l.id === optimisticLead.id ? optimisticLead : l
                             ),
                         },
                     };
@@ -170,17 +214,83 @@ export function useUpdateLeadMutation() {
 
             // Optimistically update detail cache
             queryClient.setQueryData<LeadDetailResponse>(
-                leadKeys.detail(updatedLead.id),
+                leadKeys.detail(optimisticLead.id),
                 (old) => {
                     if (!old) return old;
-                    return { ...old, data: updatedLead };
+                    (optimisticLead as any).__lastKnownGood = lastKnownGood; // Store base for WS reconciliation
+                    return { ...old, data: optimisticLead };
                 }
             );
 
-            return { previousListCaches, previousDetail, leadId: updatedLead.id };
+            return {
+                previousListCaches,
+                previousDetail: lastKnownGoodResponse,
+                lastKnownGood,
+                optimisticEntity: optimisticLead,
+                leadId: updatedLead.id
+            };
         },
-        onError: (err, updatedLead, context) => {
-            // Rollback all list caches
+        onSuccess: (response, updatedLead, context) => {
+            // Reconcile with server response
+            if (context?.lastKnownGood && context?.optimisticEntity) {
+                const result = reconcileWithServer(
+                    context.optimisticEntity,
+                    response.data,
+                    context.lastKnownGood,
+                    IMPORTANT_LEAD_FIELDS
+                );
+
+                if (result.status === 'success' && response.data.version > context.lastKnownGood.version + 1) {
+                    showToast({
+                        type: 'info',
+                        title: 'Data Synchronized',
+                        message: 'Other changes were applied while you were editing.'
+                    });
+                } else if (result.status === 'conflict') {
+                    // Trigger conflict resolution event/state
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'lead',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return; // Don't proceed with standard success update yet
+                }
+            }
+
+            // Invalidate all related queries
+            queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });
+            queryClient.invalidateQueries({ queryKey: leadKeys.detail(updatedLead.id) });
+        },
+        onError: (err: any, updatedLead, context) => {
+            // Special handling for optimistic lock failure
+            if (err?.code === 'OPTIMISTIC_LOCK_FAILED' || err?.status === 409) {
+                const serverEntity = err?.details?.currentEntity || err?.response?.data?.details?.currentEntity;
+                if (serverEntity && context?.lastKnownGood && context?.optimisticEntity) {
+                    const result = reconcileWithServer(
+                        context.optimisticEntity,
+                        serverEntity,
+                        context.lastKnownGood,
+                        IMPORTANT_LEAD_FIELDS
+                    );
+
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'lead',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return;
+                }
+            }
+
+            // Standard fallback
             if (context?.previousListCaches) {
                 context.previousListCaches.forEach(([queryKey, data]) => {
                     if (data) {
@@ -188,7 +298,6 @@ export function useUpdateLeadMutation() {
                     }
                 });
             }
-            // Rollback detail cache
             if (context?.previousDetail) {
                 queryClient.setQueryData(
                     leadKeys.detail(updatedLead.id),
@@ -196,20 +305,16 @@ export function useUpdateLeadMutation() {
                 );
             }
 
-            // Queue for offline if network error
             if (isNetworkError(err) && !isOnline()) {
                 addToQueue({
                     type: 'UPDATE_LEAD',
-                    payload: updatedLead,
+                    payload: { ...updatedLead, version: context?.lastKnownGood?.version ?? updatedLead.version },
                     endpoint: `/api/leads/${updatedLead.id}`,
                     method: 'PUT',
-                });
+                    version: context?.lastKnownGood?.version ?? updatedLead.version,
+                    lastKnownGood: context?.lastKnownGood
+                } as any);
             }
-        },
-        onSuccess: (_, updatedLead) => {
-            // Invalidate all related queries
-            queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });
-            queryClient.invalidateQueries({ queryKey: leadKeys.detail(updatedLead.id) });
         },
     });
 }
@@ -444,11 +549,19 @@ export function useMarkLeadDoneMutation() {
 
     return useMutation({
         mutationFn: async (lead: Lead) => {
-            return apiClient.put<LeadMutationResponse>(`/api/leads/${lead.id}`, {
+            const response = await apiClient.put<LeadMutationResponse>(`/api/leads/${lead.id}`, {
                 ...lead,
+                version: lead.version,
                 isDone: true,
                 lastActivityDate: new Date().toISOString(),
             });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: LeadSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onSuccess: (_, lead) => {
             queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });

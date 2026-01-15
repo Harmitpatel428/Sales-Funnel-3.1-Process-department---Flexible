@@ -2,19 +2,24 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
-import { ForwardToProcessSchema, validateRequest } from '@/lib/validation/schemas';
+import { ForwardToProcessSchema } from '@/lib/validation/schemas';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
-import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, errorResponse } from '@/lib/api/response-helpers';
+import { successResponse, unauthorizedResponse, notFoundResponse, errorResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitLeadUpdated, emitCaseCreated } from '@/lib/websocket/server';
+import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
+import { z } from 'zod';
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
 }
 
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+// Omit leadId from body schema since it's in the URL params
+const ForwardSchema = ForwardToProcessSchema.omit({ leadId: true });
+
+export const POST = withValidation(ForwardSchema)(async (req: ValidatedRequest<z.infer<typeof ForwardSchema>>, context: { params: Promise<{ id: string }> }) => {
     try {
         const rateLimitError = await rateLimitMiddleware(req, 30);
         if (rateLimitError) return rateLimitError;
@@ -28,11 +33,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
         if (idempotencyError) return idempotencyError;
 
-        const body = await req.json();
-        const validation = validateRequest(ForwardToProcessSchema, body);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
-
-        const { benefitTypes, reason } = validation.data!;
+        // Validation Middleware Output
+        const { benefitTypes, reason } = req.validatedData;
 
         return await withTenant(session.tenantId, async () => {
             const lead = await prisma.lead.findFirst({
@@ -47,13 +49,6 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
             const now = new Date();
 
             await prisma.$transaction(async (tx) => {
-                // Create one case per benefit type? Or one case with multiple benefits?
-                // User prompt said: "Create Case(s) based on benefitTypes (one case per benefit type)"
-
-                // Need to generate case number. Simple counter or random for now.
-                // In real app, might need a atomic counter or simpler format.
-                // Using timestamp + index for uniqueness + simplicity here.
-
                 for (let i = 0; i < benefitTypes.length; i++) {
                     const type = benefitTypes[i];
                     const caseNumber = `CASE-${Date.now()}-${i + 1}`;
@@ -63,7 +58,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                             tenantId: session.tenantId,
                             leadId: lead.id,
                             caseNumber: caseNumber,
-                            benefitTypes: JSON.stringify([type]), // Single benefit per case as per instruction? Or list? "One case per benefit type" implies separate cases.
+                            benefitTypes: JSON.stringify([type]),
                             originalLeadData: JSON.stringify(lead),
 
                             // Denormalized data
@@ -97,10 +92,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
                 await tx.lead.update({
                     where: { id: lead.id },
                     data: {
-                        convertedToCaseId: caseIds.join(','), // Store all IDs? Schema says String?, so maybe first ID or serialized list.
+                        convertedToCaseId: caseIds.join(','),
                         convertedAt: now,
-                        isDeleted: true, // Pseudo-delete as per requirements ("isDeleted: true")
-                        status: 'WON', // Usually converted leads are won
+                        isDeleted: true,
+                        status: 'WON',
                         version: { increment: 1 }
                     }
                 });
@@ -121,18 +116,17 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
             // WebSocket Broadcast
             try {
-                // Fetch updated data for accurate broadcast
                 const [updatedLead, createdCases] = await Promise.all([
                     prisma.lead.findUnique({ where: { id: lead.id } }),
                     prisma.case.findMany({ where: { caseId: { in: caseIds } } })
                 ]);
 
                 if (updatedLead) {
-                    emitLeadUpdated(session.tenantId, updatedLead, session.userId);
+                    emitLeadUpdated(session.tenantId, updatedLead);
                 }
 
                 for (const caseData of createdCases) {
-                    emitCaseCreated(session.tenantId, caseData, session.userId);
+                    emitCaseCreated(session.tenantId, caseData);
                 }
             } catch (wsError) {
                 console.error('[WebSocket] Lead forward broadcast failed:', wsError);
@@ -145,4 +139,4 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     } catch (error) {
         return handleApiError(error);
     }
-}
+});

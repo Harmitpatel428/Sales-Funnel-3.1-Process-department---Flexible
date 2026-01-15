@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { PermissionKey, PERMISSIONS, SENSITIVE_FIELDS } from '@/app/types/permissions';
+import { emitPermissionsChanged } from '@/lib/websocket/server';
+import crypto from 'crypto';
 
 // Cache for user permissions (in-memory)
 // In a production serverless environment, this local cache might be per-lambda instance.
@@ -245,4 +247,18 @@ export async function getFieldPermissions(
 // Clear permission cache for user
 export function clearPermissionCache(userId: string) {
     permissionCache.delete(userId);
+}
+
+export async function computePermissionsHash(userId: string): Promise<string> {
+    const permissions = await getUserPermissions(userId);
+    const sorted = Array.from(permissions).sort();
+    return crypto.createHash('md5').update(sorted.join(',')).digest('hex');
+}
+
+export async function invalidatePermissionCacheForUser(userId: string, tenantId: string): Promise<void> {
+    clearPermissionCache(userId);
+    // Emit WebSocket event to all user's connected clients
+    // We compute hash ensuring we get fresh permissions (cache was just cleared)
+    const newHash = await computePermissionsHash(userId);
+    await emitPermissionsChanged(tenantId, userId, newHash);
 }

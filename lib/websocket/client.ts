@@ -6,6 +6,13 @@ import { isDuplicate } from './deduplication';
 import { leadKeys } from '@/app/hooks/queries/useLeadsQuery';
 import { caseKeys } from '@/app/hooks/queries/useCasesQuery';
 import { documentKeys } from '@/app/hooks/queries/useDocumentsQuery';
+import { reconcileWithServer } from '@/app/utils/optimistic';
+
+const IMPORTANT_FIELDS: Record<string, string[]> = {
+    lead: ['status', 'assignedToId', 'isDone', 'convertedToCaseId'],
+    case: ['processStatus', 'assignedProcessUserId', 'closedAt'],
+    document: ['status', 'verifiedById', 'rejectionReason']
+};
 
 export interface WebSocketMessage {
     id: string;
@@ -106,41 +113,122 @@ function handleMessage(message: WebSocketMessage, queryClient: QueryClient) {
     const { eventType, payload } = message;
 
     switch (eventType) {
-        case 'lead_created':
         case 'lead_updated':
+            if (payload.id) {
+                handleEntityUpdate(queryClient, leadKeys.detail(payload.id), leadKeys.lists(), payload, 'lead');
+            }
+            break;
+
+        case 'lead_created':
         case 'lead_deleted':
             queryClient.invalidateQueries({ queryKey: leadKeys.lists() });
             if (payload.id) {
                 queryClient.invalidateQueries({ queryKey: leadKeys.detail(payload.id) });
-                if (eventType === 'lead_updated') {
-                    queryClient.setQueryData(leadKeys.detail(payload.id), { success: true, data: payload });
-                }
+            }
+            break;
+
+        case 'case_updated':
+            if (payload.caseId) {
+                handleEntityUpdate(queryClient, caseKeys.detail(payload.caseId), caseKeys.lists(), payload, 'case');
             }
             break;
 
         case 'case_created':
-        case 'case_updated':
         case 'case_deleted':
             queryClient.invalidateQueries({ queryKey: caseKeys.lists() });
             if (payload.caseId) {
                 queryClient.invalidateQueries({ queryKey: caseKeys.detail(payload.caseId) });
-                if (eventType === 'case_updated') {
-                    queryClient.setQueryData(caseKeys.detail(payload.caseId), { success: true, data: payload });
-                }
+            }
+            break;
+
+        case 'document_updated':
+            if (payload.id || payload.documentId) {
+                queryClient.invalidateQueries({ queryKey: documentKeys.lists() });
+                // Document updates are less critical for conflict resolution in lists typically,
+                // but if we had a detail view we would use handleEntityUpdate
             }
             break;
 
         case 'document_created':
-        case 'document_updated':
         case 'document_deleted':
             queryClient.invalidateQueries({ queryKey: documentKeys.lists() });
-            if (payload.documentId) {
-                queryClient.invalidateQueries({ queryKey: documentKeys.detail(payload.documentId) });
-                if (eventType === 'document_updated') {
-                    queryClient.setQueryData(documentKeys.detail(payload.documentId), { success: true, document: payload });
-                }
-            }
             break;
+
+        case 'session_invalidated':
+            // Clear all local state, invalidate React Query cache, redirect to login
+            queryClient.clear();
+            localStorage.clear();
+            sessionStorage.clear();
+            // We should ideally use a router or window relocation, but this is a deep utility function.
+            // Dispatching an event allows the UI component (hook) to handle the redirect cleanly.
+            window.dispatchEvent(new CustomEvent('session-invalidated', { detail: payload }));
+            break;
+
+        case 'permissions_changed':
+            // Invalidate permission-dependent queries, show notification
+            queryClient.invalidateQueries();
+            window.dispatchEvent(new CustomEvent('permission-changed', { detail: payload }));
+            break;
+
+        case 'account_locked':
+            // Show lock notification, logout immediately
+            window.dispatchEvent(new CustomEvent('account-locked', { detail: payload }));
+            break;
+
+        case 'session_expiring':
+            // Show expiry warning modal
+            window.dispatchEvent(new CustomEvent('session-expiring', { detail: payload }));
+            break;
+    }
+}
+
+/**
+ * Generic handler for entity updates with conflict detection
+ */
+function handleEntityUpdate(
+    queryClient: QueryClient,
+    detailKey: readonly unknown[],
+    listKey: readonly unknown[],
+    driver: any, // The payload from server
+    entityType: 'lead' | 'case'
+) {
+    const currentData: any = queryClient.getQueryData(detailKey);
+    const localEntity = currentData?.data;
+
+    // Determine the base version:
+    // 1. If we have a stored __lastKnownGood on the optimistic entity, use it.
+    // 2. Fallback to the server payload itself (driver) if unavailable.
+    //    (This implies if we aren't tracking a base, we assume no conflict against the server's truth)
+    const baseEntity = (localEntity as any)?.__lastKnownGood || driver;
+
+    if (localEntity) {
+        const result = reconcileWithServer(
+            localEntity,
+            driver,
+            baseEntity,
+            IMPORTANT_FIELDS[entityType]
+        );
+
+        if (result.status === 'success') {
+            // No conflict (or auto-resolved), apply server update
+            queryClient.setQueryData(detailKey, { success: true, data: result.entity });
+            queryClient.invalidateQueries({ queryKey: listKey });
+        } else {
+            // Genuine conflict detected
+            window.dispatchEvent(new CustomEvent('app-conflict', {
+                detail: {
+                    entityType,
+                    conflicts: result.conflicts,
+                    optimistic: result.optimistic,
+                    server: result.server,
+                    base: result.base,
+                }
+            }));
+        }
+    } else {
+        // No local state, just update
+        queryClient.setQueryData(detailKey, { success: true, data: driver });
+        queryClient.invalidateQueries({ queryKey: listKey });
     }
 }
 

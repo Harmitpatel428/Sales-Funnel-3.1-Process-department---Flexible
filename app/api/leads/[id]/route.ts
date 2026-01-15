@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
 import { LeadUpdateSchema, validateRequest } from '@/lib/validation/schemas';
+import { validateLeadCrossFields } from '@/lib/validation/cross-field-rules';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse } from '@/lib/api/response-helpers';
@@ -80,6 +81,12 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
             });
 
             if (!existingLead) return notFoundResponse('Lead');
+
+            // Validate cross-field rules on the potential new state
+            // Merging existing fields with updates to ensure rules like "Status requires Notes" are checked effectively
+            const mergedLead = { ...existingLead, ...updates };
+            const crossErrors = validateLeadCrossFields(mergedLead as any);
+            if (crossErrors.length > 0) return validationErrorResponse(crossErrors);
 
             // Capture old data for workflow trigger
             const oldData = existingLead as unknown as Record<string, unknown>;

@@ -37,6 +37,8 @@ export interface OfflineQueueItem {
     retryCount: number;
     endpoint: string;
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    version?: number;
+    lastKnownGood?: any;
 }
 
 // Event callbacks
@@ -151,6 +153,25 @@ async function processItem(item: OfflineQueueItem): Promise<boolean> {
             headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
             body: isFormData ? item.payload : JSON.stringify(item.payload),
         });
+
+        if (response.status === 409) {
+            const errorData = await response.json();
+            const serverEntity = errorData?.details?.currentEntity;
+
+            if (serverEntity && item.lastKnownGood) {
+                // Trigger conflict resolution flow
+                window.dispatchEvent(new CustomEvent('app-conflict', {
+                    detail: {
+                        entityType: item.type.split('_')[1].toLowerCase(),
+                        conflicts: [], // Will be detected by reconciliation
+                        optimistic: item.payload,
+                        server: serverEntity,
+                        base: item.lastKnownGood,
+                    }
+                }));
+            }
+            return false;
+        }
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);

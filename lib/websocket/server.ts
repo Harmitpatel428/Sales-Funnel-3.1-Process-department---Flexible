@@ -190,3 +190,85 @@ export async function emitPresenceUpdate(tenantId: string, entityType: string, e
         },
     });
 }
+
+// Session Lifecycle Emitters
+
+export async function emitSessionInvalidated(tenantId: string, userId: string, reason: string): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'session_invalidated',
+        tenantId,
+        payload: { userId, reason },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+
+    // Broadcast only to the specific user's connections
+    // We need to implement filtering in broadcastToTenant or handle it here
+    broadcastToUser(tenantId, userId, event);
+}
+
+export async function emitPermissionsChanged(tenantId: string, userId: string, newPermissionsHash: string): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'permissions_changed',
+        tenantId,
+        payload: { userId, newPermissionsHash },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToUser(tenantId, userId, event);
+}
+
+export async function emitAccountLocked(tenantId: string, userId: string, lockedUntil: Date): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'account_locked',
+        tenantId,
+        payload: { userId, lockedUntil },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToUser(tenantId, userId, event);
+}
+
+export async function emitSessionExpiring(tenantId: string, userId: string, expiresAt: Date): Promise<void> {
+    // Note: Expiring events might not need persistence if they are transient warnings, 
+    // but useful for debugging. We'll persist for consistency.
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'session_expiring',
+        tenantId,
+        payload: { userId, expiresAt },
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToUser(tenantId, userId, event);
+}
+
+/**
+ * Broadcast message to specific user in a tenant
+ */
+export function broadcastToUser(tenantId: string, userId: string, message: any): void {
+    const tenantClients = clients.get(tenantId);
+    if (!tenantClients) return;
+
+    const data = JSON.stringify(message);
+    tenantClients.forEach(socket => {
+        if (socket.readyState === 1 && socket.userId === userId) {
+            socket.send(data);
+        }
+    });
+}

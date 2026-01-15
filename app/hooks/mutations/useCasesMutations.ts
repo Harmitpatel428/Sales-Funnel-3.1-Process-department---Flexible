@@ -10,12 +10,25 @@
  * - For invalidation, we use broad invalidation with exact: false to cover all filter variants
  */
 
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { Case, ProcessStatus, UserRole, BulkAssignmentResult } from '../../types/processTypes';
 import { caseKeys } from '../queries/useCasesQuery';
 import { addToQueue, isOnline } from '../../utils/offlineQueue';
 import { isNetworkError } from '../../utils/errorHandling';
+import {
+    createOptimisticUpdate,
+    reconcileWithServer,
+} from '../../utils/optimistic';
+import { showToast } from '../../components/NotificationToast';
+
+import { CaseSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
+
+const IMPORTANT_CASE_FIELDS = ['processStatus', 'assignedProcessUserId', 'closedAt'];
+
 
 // Response types matching the API responses stored in cache
 interface CasesListResponse {
@@ -42,9 +55,7 @@ interface CaseMutationResponse {
 interface CreateCaseResponse {
     success: boolean;
     message: string;
-    data: {
-        caseId: string;
-    };
+    data: Case;
 }
 
 interface DeleteResponse {
@@ -103,11 +114,18 @@ export function useCreateCaseMutation() {
                 electricityLoadType?: 'HT' | 'LT' | '';
             };
         }) => {
-            return apiClient.post<CreateCaseResponse>('/api/cases', {
+            const response = await apiClient.post<CreateCaseResponse>('/api/cases', {
                 leadId,
                 schemeType,
                 ...metadata,
             });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: CaseSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
@@ -120,6 +138,7 @@ export function useCreateCaseMutation() {
  */
 export function useUpdateCaseMutation() {
     const queryClient = useQueryClient();
+    const versionRef = useRef<Record<string, number>>({});
 
     return useMutation({
         mutationFn: async ({
@@ -129,7 +148,20 @@ export function useUpdateCaseMutation() {
             caseId: string;
             updates: Partial<Case>;
         }) => {
-            return apiClient.put<CaseMutationResponse>(`/api/cases/${caseId}`, updates);
+            const version = (updates as any).version ?? versionRef.current[caseId];
+            if (caseId) delete versionRef.current[caseId];
+
+            const response = await apiClient.put<CaseMutationResponse>(`/api/cases/${caseId}`, {
+                ...updates,
+                version
+            });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: CaseSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onMutate: async ({ caseId, updates }) => {
             await queryClient.cancelQueries({ queryKey: caseKeys.all, exact: false });
@@ -138,9 +170,20 @@ export function useUpdateCaseMutation() {
             const previousListCaches = queryClient.getQueriesData<CasesListResponse>({
                 queryKey: caseKeys.lists()
             });
-            const previousDetail = queryClient.getQueryData<CaseDetailResponse>(
+            const lastKnownGoodResponse = queryClient.getQueryData<CaseDetailResponse>(
                 caseKeys.detail(caseId)
             );
+            const lastKnownGood = lastKnownGoodResponse?.data;
+
+            // Capture version for mutationFn
+            if (lastKnownGood && caseId) {
+                versionRef.current[caseId] = lastKnownGood.version;
+            }
+
+            // Use our utility for optimistic update with version increment
+            // We need a full entity for createOptimisticUpdate, but we might only have partial updates
+            const currentEntity = lastKnownGood || ({} as Case);
+            const optimisticCase = createOptimisticUpdate({ ...currentEntity, ...updates } as Case, {});
 
             // Optimistically update all list caches
             queryClient.setQueriesData<CasesListResponse>(
@@ -152,9 +195,7 @@ export function useUpdateCaseMutation() {
                         data: {
                             ...old.data,
                             cases: old.data.cases.map((c: Case) =>
-                                c.caseId === caseId
-                                    ? { ...c, ...updates, updatedAt: new Date().toISOString() }
-                                    : c
+                                c.caseId === caseId ? optimisticCase : c
                             ),
                         },
                     };
@@ -162,23 +203,80 @@ export function useUpdateCaseMutation() {
             );
 
             // Optimistically update detail cache
-            if (previousDetail) {
-                queryClient.setQueryData<CaseDetailResponse>(
-                    caseKeys.detail(caseId),
-                    (old) => {
-                        if (!old?.data) return old;
-                        return {
-                            ...old,
-                            data: { ...old.data, ...updates, updatedAt: new Date().toISOString() }
-                        };
-                    }
+            queryClient.setQueryData<CaseDetailResponse>(
+                caseKeys.detail(caseId),
+                (old) => {
+                    if (!old) return old;
+                    (optimisticCase as any).__lastKnownGood = lastKnownGood; // Store base for WS reconciliation
+                    return { ...old, data: optimisticCase };
+                }
+            );
+
+            return {
+                previousListCaches,
+                previousDetail: lastKnownGoodResponse,
+                lastKnownGood,
+                optimisticEntity: optimisticCase,
+                caseId
+            };
+        },
+        onSuccess: (response, { caseId }, context) => {
+            // Reconcile with server response
+            if (context?.lastKnownGood && context?.optimisticEntity) {
+                const result = reconcileWithServer(
+                    context.optimisticEntity,
+                    response.data,
+                    context.lastKnownGood,
+                    IMPORTANT_CASE_FIELDS
                 );
+
+                if (result.status === 'success' && response.data.version > context.lastKnownGood.version + 1) {
+                    showToast({
+                        type: 'info',
+                        title: 'Data Synchronized',
+                        message: 'Other changes were applied while you were editing.'
+                    });
+                } else if (result.status === 'conflict') {
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'case',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return;
+                }
             }
 
-            return { previousListCaches, previousDetail, caseId };
+            queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
+            queryClient.invalidateQueries({ queryKey: caseKeys.detail(caseId) });
         },
-        onError: (err, { caseId }, context) => {
-            // Rollback all list caches
+        onError: (err: any, { caseId, updates }, context) => {
+            if (err?.code === 'OPTIMISTIC_LOCK_FAILED' || err?.status === 409) {
+                const serverEntity = err?.details?.currentEntity || err?.response?.data?.details?.currentEntity;
+                if (serverEntity && context?.lastKnownGood && context?.optimisticEntity) {
+                    const result = reconcileWithServer(
+                        context.optimisticEntity,
+                        serverEntity,
+                        context.lastKnownGood,
+                        IMPORTANT_CASE_FIELDS
+                    );
+
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'case',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return;
+                }
+            }
+
             if (context?.previousListCaches) {
                 context.previousListCaches.forEach(([queryKey, data]) => {
                     if (data) {
@@ -186,7 +284,6 @@ export function useUpdateCaseMutation() {
                     }
                 });
             }
-            // Rollback detail cache
             if (context?.previousDetail) {
                 queryClient.setQueryData(caseKeys.detail(caseId), context.previousDetail);
             }
@@ -194,15 +291,13 @@ export function useUpdateCaseMutation() {
             if (isNetworkError(err) && !isOnline()) {
                 addToQueue({
                     type: 'UPDATE_CASE',
-                    payload: { caseId },
+                    payload: { caseId, ...updates, version: context?.lastKnownGood?.version ?? (updates as any).version },
                     endpoint: `/api/cases/${caseId}`,
                     method: 'PUT',
-                });
+                    version: context?.lastKnownGood?.version ?? (updates as any).version,
+                    lastKnownGood: context?.lastKnownGood
+                } as any);
             }
-        },
-        onSuccess: (data, { caseId }) => {
-            queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
-            queryClient.invalidateQueries({ queryKey: caseKeys.detail(caseId) });
         },
     });
 }
@@ -279,9 +374,16 @@ export function useUpdateCaseStatusMutation() {
             caseId: string;
             newStatus: ProcessStatus;
         }) => {
-            return apiClient.patch<StatusResponse>(`/api/cases/${caseId}/status`, {
+            const response = await apiClient.patch<StatusResponse>(`/api/cases/${caseId}/status`, {
                 newStatus,
             });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: CaseSchema,
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onMutate: async ({ caseId, newStatus }) => {
             await queryClient.cancelQueries({ queryKey: caseKeys.all, exact: false });

@@ -165,6 +165,7 @@ export interface Case {
     plantMachineryValue?: string;
     electricityLoad?: string;
     electricityLoadType?: 'HT' | 'LT' | '';
+    version: number;               // For optimistic locking
 }
 
 /**
@@ -247,6 +248,7 @@ export interface CaseDocument {
     verifiedBy?: string;               // User ID
     rejectionReason?: string;
     notes?: string;
+    version: number;                   // For optimistic locking
 }
 
 // ============================================================================

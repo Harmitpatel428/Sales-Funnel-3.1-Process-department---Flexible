@@ -59,10 +59,31 @@ model Tenant {
   // Idempotency
   idempotencyLogs   IdempotencyLog[]
   websocket_events  WebSocketEventLog[]
+  validation_bypasses ValidationBypassLog[]
 
   @@index([slug])
   @@index([subdomain])
   @@map("tenants")
+}
+
+model ValidationBypassLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  reason      String
+  endpoint    String
+  token       String   @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([token])
+  @@map("validation_bypass_logs")
 }
 
 model RetentionPolicy {
@@ -144,6 +165,7 @@ model User {
   apiKeys                   ApiKey[]
   oauthTokens               OAuthToken[]
   integrationInstallations  IntegrationInstallation[]
+  validation_bypasses       ValidationBypassLog[]
 
   @@index([tenantId])
   @@map("users")

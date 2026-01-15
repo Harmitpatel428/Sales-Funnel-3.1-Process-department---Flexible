@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
 import { CaseUpdateSchema, validateRequest } from '@/lib/validation/schemas';
+import { validateCaseCrossFields } from '@/lib/validation/cross-field-rules';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
@@ -84,6 +85,11 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
             });
 
             if (!existingCase) return notFoundResponse('Case');
+
+            // Validate cross-field rules
+            const mergedCase = { ...existingCase, ...updates };
+            const crossErrors = validateCaseCrossFields(mergedCase as any);
+            if (crossErrors.length > 0) return validationErrorResponse(crossErrors);
 
             // Capture old data for workflow trigger
             const oldData = existingCase as unknown as Record<string, unknown>;

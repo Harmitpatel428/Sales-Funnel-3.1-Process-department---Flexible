@@ -7,6 +7,9 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { Case, CaseFilters, ProcessStatus, CasePriority } from '../../types/processTypes';
+import { CaseSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
 
 // Query keys factory for type-safe keys
 export const caseKeys = {
@@ -79,7 +82,21 @@ export function useCasesQuery(
                 params.dateRangeEnd = filters.dateRangeEnd;
             }
 
-            return apiClient.get<CasesResponse>('/api/cases', { params });
+            if (filters?.dateRangeEnd) {
+                params.dateRangeEnd = filters.dateRangeEnd;
+            }
+
+            const response = await apiClient.get<CasesResponse>('/api/cases', { params });
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: z.object({
+                    cases: z.array(CaseSchema.partial().passthrough()),
+                    total: z.number().optional()
+                }),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         select: (data) => data.data.cases,
         staleTime: 30000, // 30 seconds
@@ -97,7 +114,14 @@ export function useCaseQuery(
     return useQuery({
         queryKey: caseKeys.detail(caseId),
         queryFn: async () => {
-            return apiClient.get<CaseResponse>(`/api/cases/${caseId}`);
+            const response = await apiClient.get<CaseResponse>(`/api/cases/${caseId}`);
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: CaseSchema.partial().passthrough(),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         select: (data) => data.data,
         staleTime: 60000, // 1 minute

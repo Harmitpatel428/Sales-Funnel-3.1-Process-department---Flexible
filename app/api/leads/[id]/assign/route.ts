@@ -1,12 +1,20 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
-import { AssignLeadSchema, validateRequest } from '@/lib/validation/schemas';
+import { validateRequest } from '@/lib/validation/schemas';
+import { z } from 'zod';
+
+const AssignLeadSchema = z.object({
+    userId: z.string(),
+    assignedBy: z.string().optional(),
+    version: z.number().int().min(1, 'Version is required for updates')
+});
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
 
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
@@ -44,28 +52,47 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
             if (!targetUser) return notFoundResponse('User');
 
-            const updatedLead = await prisma.lead.update({
-                where: { id },
-                data: {
-                    assignedToId: userId,
-                    assignedBy: assignedBy,
-                    assignedAt: new Date()
-                }
-            });
+            // Extraction of version should happen before this, but let's ensure it's in the schema or body
+            const version = (body as any).version;
+            if (typeof version !== 'number') {
+                return validationErrorResponse(['Version field is required for updates']);
+            }
 
-            await prisma.auditLog.create({
-                data: {
-                    actionType: 'LEAD_ASSIGNED',
-                    entityType: 'lead',
-                    entityId: id,
-                    description: `Lead assigned to ${targetUser.name}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
-                    metadata: JSON.stringify({ assignedTo: targetUser.id, assignedBy })
-                }
-            });
+            try {
+                const updatedLead = await updateWithOptimisticLock(
+                    prisma.lead,
+                    { id, tenantId: session.tenantId },
+                    {
+                        currentVersion: version,
+                        data: {
+                            assignedToId: userId,
+                            assignedBy: assignedBy,
+                            assignedAt: new Date()
+                        }
+                    },
+                    'Lead'
+                );
 
-            return successResponse(updatedLead, "Lead assigned successfully");
+                await prisma.auditLog.create({
+                    data: {
+                        actionType: 'LEAD_ASSIGNED',
+                        entityType: 'lead',
+                        entityId: id,
+                        description: `Lead assigned to ${targetUser.name}`,
+                        performedById: session.userId,
+                        tenantId: session.tenantId,
+                        metadata: JSON.stringify({ assignedTo: targetUser.id, assignedBy })
+                    }
+                });
+
+                return successResponse(updatedLead, "Lead assigned successfully");
+            } catch (error) {
+                const lockError = handleOptimisticLockError(error);
+                if (lockError) {
+                    return NextResponse.json(lockError, { status: 409 });
+                }
+                throw error;
+            }
         });
 
     } catch (error) {

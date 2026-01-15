@@ -1,8 +1,21 @@
-'use client';
-
 import type { Lead } from '../types/shared';
 import { validateColumnName, validateColumnType, validateColumnDeletion } from '../constants/columnConfig';
 import { formatDateToDDMMYYYY, parseDateFromDDMMYYYY } from '../utils/dateUtils';
+import { LeadSchema, LeadBaseSchema } from '@/lib/validation/schemas';
+import { z } from 'zod';
+
+// Helper to validate a single field using Zod schema
+export const validateFieldWithZod = (schema: z.ZodSchema, fieldName: string, value: any, fullData: any): string | null => {
+  // Construct provisional data
+  const provisionalData = { ...fullData, [fieldName]: value };
+  const result = schema.safeParse(provisionalData);
+  if (!result.success) {
+    // Find issue for this path
+    const issue = result.error.issues.find(i => i.path.includes(fieldName));
+    return issue ? issue.message : null;
+  }
+  return null;
+};
 
 // Validation functions for individual fields
 export const validateKva = (value: string): string | null => {
@@ -97,7 +110,13 @@ export const validateLeadField = (fieldName: keyof Lead, value: any, lead?: Lead
     });
   }
 
-  // Handle standard fields
+  // Use Zod schema for standard fields if lead context is available
+  if (lead && LeadBaseSchema.shape[fieldName as keyof typeof LeadBaseSchema.shape]) {
+    const zodError = validateFieldWithZod(LeadSchema, fieldName as string, value, lead);
+    if (zodError) return zodError;
+  }
+
+  // Fallback to legacy validation for specific UI behaviors not yet in Zod or for finer control
   switch (fieldName) {
     case 'kva':
       return validateKva(value);

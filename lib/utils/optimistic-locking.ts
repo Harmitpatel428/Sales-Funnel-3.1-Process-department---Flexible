@@ -5,7 +5,8 @@ export class OptimisticLockError extends Error {
         public entityType: string,
         public entityId: string,
         public expectedVersion: number,
-        public actualVersion: number
+        public actualVersion: number,
+        public currentEntity?: any
     ) {
         super(
             `Optimistic lock failed for ${entityType} ${entityId}. ` +
@@ -55,7 +56,8 @@ export async function updateWithOptimisticLock<T>(
             entityType,
             where.id || where.caseId,
             currentVersion,
-            current.version
+            current.version,
+            current
         );
     }
 
@@ -74,7 +76,8 @@ export function handleOptimisticLockError(error: unknown) {
                 entityType: error.entityType,
                 entityId: error.entityId,
                 expectedVersion: error.expectedVersion,
-                actualVersion: error.actualVersion
+                actualVersion: error.actualVersion,
+                currentEntity: error.currentEntity
             }
         };
     }

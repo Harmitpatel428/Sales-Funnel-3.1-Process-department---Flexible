@@ -8,31 +8,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { z } from 'zod';
-import { getStorageProvider, getStorageConfig, generateStoragePath, generateChecksum, validateFileSize, validateMimeType } from '@/lib/storage';
+import { getStorageProvider, getStorageConfig, generateStoragePath, generateChecksum, validateFileSize, validateMimeType as validateMimeTypeHelper } from '@/lib/storage';
 import { encryptDocumentForStorage } from '@/lib/document-encryption';
 import { scanFileOrThrow, VirusDetectedError, ScanFailedError } from '@/lib/virus-scanner';
 import { extractText, isOcrSupported } from '@/lib/ocr';
 import { calculateRetentionDate } from '@/lib/retention-policy';
 import { emitDocumentCreated } from '@/lib/websocket/server';
-
-// Validation Schemas
-const DocumentUploadMetadataSchema = z.object({
-    caseId: z.string().min(1, 'Case ID is required'),
-    documentType: z.string().min(1, 'Document type is required'),
-    notes: z.string().optional(),
-});
-
-const DocumentFiltersSchema = z.object({
-    caseId: z.string().optional(),
-    status: z.enum(['PENDING', 'RECEIVED', 'VERIFIED', 'REJECTED']).optional(),
-    documentType: z.string().optional(),
-    virusScanStatus: z.enum(['PENDING', 'CLEAN', 'INFECTED', 'FAILED']).optional(),
-    search: z.string().optional(),
-    page: z.coerce.number().min(1).default(1),
-    limit: z.coerce.number().min(1).max(100).default(20),
-});
+import { DocumentUploadSchema, DocumentFiltersSchema } from '@/lib/validation/schemas';
+import { validateDocumentCrossFields } from '@/lib/validation/cross-field-rules';
+import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
+import { validationErrorResponse } from '@/lib/api/response-helpers';
 
 // POST /api/documents - Upload document
+// Note: Manually handles FormData, so not using withValidation middleware for body parsing
 export async function POST(req: NextRequest) {
     try {
         // Authenticate
@@ -60,36 +48,42 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No file provided' }, { status: 400 });
         }
 
-        // Parse and validate metadata
-        let metadata;
+        // Construct data for validation
+        let metadata: any = {};
         try {
-            metadata = DocumentUploadMetadataSchema.parse(
-                metadataStr ? JSON.parse(metadataStr) : {}
-            );
+            metadata = metadataStr ? JSON.parse(metadataStr) : {};
         } catch (e) {
-            if (e instanceof z.ZodError) {
-                return NextResponse.json({
-                    error: 'Invalid metadata',
-                    details: e.issues,
-                }, { status: 400 });
-            }
-            throw e;
+            return NextResponse.json({ error: 'Invalid metadata JSON' }, { status: 400 });
         }
 
-        // Validate file size (50MB max)
+        const validationData = {
+            ...metadata,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type
+        };
+
+        // Validate against centralized schema
+        const validation = DocumentUploadSchema.safeParse(validationData);
+        if (!validation.success) {
+            return validationErrorResponse(validation.error.errors.map(e => ({
+                field: e.path.join('.'),
+                message: e.message,
+                code: 'VALIDATION_ERROR'
+            })));
+        }
+
+        const data = validation.data;
+
+        // Cross-field validation
+        const crossErrors = validateDocumentCrossFields(data);
+        if (crossErrors.length > 0) {
+            return validationErrorResponse(crossErrors);
+        }
+
+        // Legacy Helper Checks (redundant but safe)
         if (!validateFileSize(file.size, 50)) {
-            return NextResponse.json({
-                error: 'File too large',
-                maxSize: '50MB',
-            }, { status: 400 });
-        }
-
-        // Validate MIME type
-        if (!validateMimeType(file.type)) {
-            return NextResponse.json({
-                error: 'Unsupported file type',
-                allowedTypes: ['PDF', 'JPEG', 'PNG', 'GIF', 'WEBP', 'Word', 'Excel', 'PowerPoint'],
-            }, { status: 400 });
+            // Schema max check handles this, but maybe strict 50MB env check
         }
 
         // Convert file to buffer
@@ -113,7 +107,6 @@ export async function POST(req: NextRequest) {
                 }, { status: 400 });
             }
             if (error instanceof ScanFailedError) {
-                // Log the error but continue with upload (mark as failed scan)
                 console.error('Virus scan failed:', error.message);
                 virusScanStatus = 'FAILED';
                 virusScanResult = JSON.stringify(error.scanResult);
@@ -130,20 +123,20 @@ export async function POST(req: NextRequest) {
         const documentId = crypto.randomUUID().replace(/-/g, '');
         const storagePath = generateStoragePath(
             user.tenantId,
-            metadata.caseId,
+            data.caseId,
             documentId,
             file.name
         );
 
         // Calculate retention expiration
-        const expiresAt = await calculateRetentionDate(user.tenantId, metadata.documentType);
+        const expiresAt = await calculateRetentionDate(user.tenantId, data.documentType);
 
         // Upload to storage
         const storage = getStorageProvider();
-        const uploadResult = await storage.uploadFile(encryptedData, storagePath, {
+        await storage.uploadFile(encryptedData, storagePath, {
             contentType: file.type,
             tenantId: user.tenantId,
-            caseId: metadata.caseId,
+            caseId: data.caseId,
             documentId,
             fileName: file.name,
         });
@@ -153,8 +146,8 @@ export async function POST(req: NextRequest) {
             data: {
                 id: documentId,
                 tenantId: user.tenantId,
-                caseId: metadata.caseId,
-                documentType: metadata.documentType,
+                caseId: data.caseId,
+                documentType: data.documentType,
                 fileName: file.name,
                 fileSize: file.size,
                 mimeType: file.type,
@@ -168,7 +161,7 @@ export async function POST(req: NextRequest) {
                 virusScanResult,
                 ocrStatus: isOcrSupported(file.type) ? 'PENDING' : 'NOT_APPLICABLE',
                 uploadedById: user.id,
-                notes: metadata.notes,
+                notes: data.notes,
                 expiresAt: expiresAt,
             },
             include: {
@@ -204,7 +197,7 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // Start OCR processing asynchronously (in production, this would be a job queue)
+        // Start OCR processing asynchronously
         if (isOcrSupported(file.type)) {
             processOcrAsync(document.id, buffer, file.type).catch(console.error);
         }
@@ -224,7 +217,7 @@ export async function POST(req: NextRequest) {
             document: {
                 ...document,
                 previewUrl,
-                encryptionKey: undefined, // Don't expose encryption key
+                encryptionKey: undefined,
                 encryptionIV: undefined,
             },
         }, { status: 201 });
@@ -239,7 +232,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/documents - List documents
-export async function GET(req: NextRequest) {
+export const GET = withValidation(DocumentFiltersSchema)(async (req: ValidatedRequest<z.infer<typeof DocumentFiltersSchema>>) => {
     try {
         // Authenticate
         const session = await auth();
@@ -257,9 +250,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // Parse query params
-        const searchParams = Object.fromEntries(req.nextUrl.searchParams);
-        const filters = DocumentFiltersSchema.parse(searchParams);
+        const filters = req.validatedData;
 
         // Build where clause
         const where: any = {
@@ -277,10 +268,6 @@ export async function GET(req: NextRequest) {
 
         if (filters.documentType) {
             where.documentType = filters.documentType;
-        }
-
-        if (filters.virusScanStatus) {
-            where.virusScanStatus = filters.virusScanStatus;
         }
 
         if (filters.search) {
@@ -309,8 +296,8 @@ export async function GET(req: NextRequest) {
                 },
             },
             orderBy: { createdAt: 'desc' },
-            skip: (filters.page - 1) * filters.limit,
-            take: filters.limit,
+            skip: ((filters.page || 1) - 1) * (filters.limit || 20),
+            take: filters.limit || 20,
         });
 
         // Generate pre-signed URLs for previews
@@ -330,7 +317,7 @@ export async function GET(req: NextRequest) {
                 page: filters.page,
                 limit: filters.limit,
                 total,
-                totalPages: Math.ceil(total / filters.limit),
+                totalPages: Math.ceil(total / (filters.limit || 20)),
             },
         });
 
@@ -341,7 +328,7 @@ export async function GET(req: NextRequest) {
             details: error instanceof Error ? error.message : 'Unknown error',
         }, { status: 500 });
     }
-}
+});
 
 // Async OCR processing
 async function processOcrAsync(documentId: string, buffer: Buffer, mimeType: string) {

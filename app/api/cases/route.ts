@@ -1,8 +1,10 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
-import { CaseSchema, CaseFiltersSchema, validateRequest } from '@/lib/validation/schemas';
+import { CaseSchema, CaseFiltersSchema } from '@/lib/validation/schemas';
+import { validateCaseCrossFields } from '@/lib/validation/cross-field-rules';
+import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, validationErrorResponse } from '@/lib/api/response-helpers';
@@ -11,8 +13,9 @@ import { Prisma } from '@prisma/client';
 import { getRecordLevelFilter } from '@/lib/middleware/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 import { emitCaseCreated } from '@/lib/websocket/server';
+import { z } from 'zod';
 
-export async function GET(req: NextRequest) {
+export const GET = withValidation(CaseFiltersSchema)(async (req: ValidatedRequest<z.infer<typeof CaseFiltersSchema>>) => {
     try {
         const rateLimitError = await rateLimitMiddleware(req, 100);
         if (rateLimitError) return rateLimitError;
@@ -21,25 +24,7 @@ export async function GET(req: NextRequest) {
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 
-        const { searchParams } = new URL(req.url);
-        const queryParams: Record<string, any> = {};
-        searchParams.forEach((value, key) => {
-            if (key === 'status') {
-                if (queryParams[key]) {
-                    if (Array.isArray(queryParams[key])) queryParams[key].push(value);
-                    else queryParams[key] = [queryParams[key], value];
-                } else {
-                    queryParams[key] = value;
-                }
-            } else {
-                queryParams[key] = value;
-            }
-        });
-
-        const validation = validateRequest(CaseFiltersSchema, queryParams);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
-
-        const filters = validation.data!;
+        const filters = req.validatedData;
 
         // Get record-level filter
         const recordFilter = await getRecordLevelFilter(session.userId, 'cases', 'view');
@@ -106,9 +91,9 @@ export async function GET(req: NextRequest) {
     } catch (error) {
         return handleApiError(error);
     }
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withValidation(CaseSchema)(async (req: ValidatedRequest<z.infer<typeof CaseSchema>>) => {
     try {
         const rateLimitError = await rateLimitMiddleware(req, 30);
         if (rateLimitError) return rateLimitError;
@@ -121,14 +106,12 @@ export async function POST(req: NextRequest) {
         if (!['ADMIN', 'PROCESS_MANAGER', 'SALES_MANAGER'].includes(session.role)) {
             // Technically sales managers might forward leads which creates cases via /forward endpoint,
             // but direct case creation might be restricted.
-            // Allowing for now based on user plan "Check permissions (ADMIN, PROCESS_MANAGER, SALES_MANAGER)".
         }
 
-        const body = await req.json();
-        const validation = validateRequest(CaseSchema, body);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
+        const data = req.validatedData;
 
-        const data = validation.data!;
+        const crossErrors = validateCaseCrossFields(data as any);
+        if (crossErrors.length > 0) return validationErrorResponse(crossErrors);
 
         return await withTenant(session.tenantId, async () => {
             // Stringify JSON fields
@@ -183,4 +166,4 @@ export async function POST(req: NextRequest) {
     } catch (error) {
         return handleApiError(error);
     }
-}
+});

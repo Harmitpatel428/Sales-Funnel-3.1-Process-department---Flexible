@@ -129,10 +129,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansGujarati.variable} antialiased bg-gray-50`}
       >
-        <QueryProvider>
+        <TenantProvider>
           <UserProvider>
-            <LeadProvider>
-              <TenantProvider>
+            <QueryProvider>
+              <LeadProvider>
                 <ImpersonationProvider>
                   <CaseProvider>
                     <DocumentProvider>
@@ -157,10 +157,10 @@ export default function RootLayout({
                     </DocumentProvider>
                   </CaseProvider>
                 </ImpersonationProvider>
-              </TenantProvider>
-            </LeadProvider>
+              </LeadProvider>
+            </QueryProvider>
           </UserProvider>
-        </QueryProvider>
+        </TenantProvider>
       </body>
     </html>
   );

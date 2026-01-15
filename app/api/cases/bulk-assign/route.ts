@@ -4,19 +4,15 @@ import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
-import { successResponse, unauthorizedResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
+import { successResponse, unauthorizedResponse, forbiddenResponse, validationErrorResponse } from '@/lib/api/response-helpers';
 import { logRequest } from '@/lib/middleware/request-logger';
 import { z } from 'zod';
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitCaseUpdated } from '@/lib/websocket/server';
+import { CaseBulkAssignSchema } from '@/lib/validation/schemas';
+import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
 
-const BulkAssignSchema = z.object({
-    caseIds: z.array(z.string()),
-    userId: z.string(),
-    roleId: z.string().optional()
-});
-
-export async function POST(req: NextRequest) {
+export const POST = withValidation(CaseBulkAssignSchema)(async (req: ValidatedRequest<z.infer<typeof CaseBulkAssignSchema>>) => {
     try {
         const rateLimitError = await rateLimitMiddleware(req, 10);
         if (rateLimitError) return rateLimitError;
@@ -33,11 +29,8 @@ export async function POST(req: NextRequest) {
         const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
         if (idempotencyError) return idempotencyError;
 
-        const body = await req.json();
-        const validation = BulkAssignSchema.safeParse(body);
-        if (!validation.success) return validationErrorResponse(validation.error.issues.map(e => e.message));
-
-        const { caseIds, userId, roleId } = validation.data;
+        // Validation handled by middleware
+        const { caseIds, userId, roleId } = req.validatedData;
 
         return await withTenant(session.tenantId, async () => {
             const targetUser = await prisma.user.findFirst({
@@ -62,11 +55,11 @@ export async function POST(req: NextRequest) {
                     }
                 });
 
-                // Create audit logs (one aggregated log or one per case? Aggregated better for bulk)
+                // Create audit logs (aggregated)
                 await tx.auditLog.create({
                     data: {
                         actionType: 'CASE_BULK_ASSIGNED',
-                        entityType: 'case', // generic
+                        entityType: 'case',
                         description: `Bulk assigned ${updateResult.count} cases to ${targetUser.name}`,
                         performedById: session.userId,
                         tenantId: session.tenantId,
@@ -81,7 +74,7 @@ export async function POST(req: NextRequest) {
                     where: { caseId: { in: caseIds }, tenantId: session.tenantId }
                 });
                 for (const c of updatedCases) {
-                    emitCaseUpdated(session.tenantId, c, session.userId);
+                    emitCaseUpdated(session.tenantId, c);
                 }
             } catch (wsError) {
                 console.error('[WebSocket] Bulk assign broadcast failed:', wsError);
@@ -95,4 +88,4 @@ export async function POST(req: NextRequest) {
     } catch (error) {
         return handleApiError(error);
     }
-}
+});

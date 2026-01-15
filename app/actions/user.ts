@@ -1,9 +1,11 @@
 'use server';
 
 import { prisma } from '@/lib/db';
-import { hashPassword } from '@/lib/auth';
+import { hashPassword, invalidateSession } from '@/lib/auth';
 import { requireRole } from './auth';
 import { addServerAuditLog } from './audit';
+import { invalidatePermissionCacheForUser } from '@/lib/middleware/permissions';
+import { emitAccountLocked, emitSessionInvalidated } from '@/lib/websocket/server';
 
 // ============================================================================
 // USER MANAGEMENT SERVER ACTIONS
@@ -111,7 +113,8 @@ export async function createUserAction(data: {
                 password: hashedPassword,
                 role: data.role,
                 isActive: true,
-                roleId: data.roleId || null,
+                customRole: data.roleId ? { connect: { id: data.roleId } } : undefined,
+                tenant: { connect: { id: session.tenantId } },
             },
         });
 
@@ -168,6 +171,18 @@ export async function updateUserAction(
             metadata: { updates: Object.keys(updates) },
         });
 
+        // Trigger Cache Invalidation & Events
+        if (updates.role || updates.roleId !== undefined) {
+            // If role changed, invalidate permission cache
+            await invalidatePermissionCacheForUser(userId, existingUser.tenantId);
+        }
+
+        if (updates.isActive === false) {
+            // If deactivated, lock account and invalidate session
+            await emitAccountLocked(existingUser.tenantId, userId, null);
+            await emitSessionInvalidated(existingUser.tenantId, userId, 'account_deactivated');
+        }
+
         return { success: true, message: 'User updated successfully' };
     } catch (error) {
         console.error('Update user error:', error);
@@ -202,6 +217,9 @@ export async function deleteUserAction(userId: string): Promise<{ success: boole
             description: `User "${user.name}" deleted`,
             metadata: { deletedUserRole: user.role, deletedUserEmail: user.email },
         });
+
+        // Invalidate session for deleted user
+        await emitSessionInvalidated(user.tenantId, userId, 'user_deleted');
 
         return { success: true, message: 'User deleted successfully' };
     } catch (error) {

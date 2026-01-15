@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { requirePermissions } from '@/lib/middleware/permissions';
+import { requirePermissions, invalidatePermissionCacheForUser } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 
 export async function PATCH(
@@ -56,6 +56,17 @@ export async function PATCH(
                 afterValue: JSON.stringify({ resource, fieldName, canView, canEdit })
             }
         });
+
+        // Invalidate permissions for all users with this role
+        const affectedUsers = await prisma.user.findMany({
+            where: { roleId: roleId, isActive: true },
+            select: { id: true, tenantId: true }
+        });
+
+        // Invalidate in parallel
+        await Promise.all(affectedUsers.map(u =>
+            invalidatePermissionCacheForUser(u.id, u.tenantId)
+        ));
 
         return NextResponse.json({ success: true, data: fieldPermission });
     } catch (error) {

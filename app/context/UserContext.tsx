@@ -4,6 +4,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { User, UserRole, UserSession } from '../types/processTypes';
 import { loginAction, logoutAction, getCurrentUser } from '../actions/auth';
 import { getUsers, createUserAction, updateUserAction, deleteUserAction, resetUserPasswordAction } from '../actions/user';
+import { useSession } from '@/app/hooks/useSession';
+import { useMultiTabSync } from '@/app/hooks/useMultiTabSync';
+import SessionExpiryWarning from '../components/SessionExpiryWarning';
 
 export interface UserContextType {
     currentUser: UserSession | null;
@@ -68,6 +71,73 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Session Management Integration
+    const { sessionState, refreshSession: extendSession, refetch: refetchSession } = useSession();
+    const { broadcastLogout, broadcastRefresh } = useMultiTabSync();
+    const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+
+    // Listen for session events
+    useEffect(() => {
+        const handleSessionExpiring = (e: any) => {
+            setShowExpiryWarning(true);
+        };
+
+        const handleAccountLocked = (e: any) => {
+            // alert('Your account has been locked. Please contact administrator.');
+            logout(); // Force logout
+        };
+
+        const handlePermissionChanged = () => {
+            refreshUser();
+            // Also invalidate queries if queryClient available here, but useMultiTabSync handles query invalidation.
+            // But we need to refresh local user object to update permissions provided by this context.
+        };
+
+        const handleSessionLogout = () => {
+            logout(true); // true = skip broadcast to avoid infinite loop
+        };
+
+        const handleSessionInvalidated = () => {
+            logout(true);
+        };
+
+        window.addEventListener('session-expiring', handleSessionExpiring);
+        window.addEventListener('account-locked', handleAccountLocked);
+        window.addEventListener('permission-changed', handlePermissionChanged);
+        window.addEventListener('session-logout-requested', handleSessionLogout);
+        window.addEventListener('session-invalidated', handleSessionInvalidated);
+
+        return () => {
+            window.removeEventListener('session-expiring', handleSessionExpiring);
+            window.removeEventListener('account-locked', handleAccountLocked);
+            window.removeEventListener('permission-changed', handlePermissionChanged);
+            window.removeEventListener('session-logout-requested', handleSessionLogout);
+            window.removeEventListener('session-invalidated', handleSessionInvalidated);
+        };
+    }, []); // eslint-disable-next-line react-hooks/exhaustive-deps
+
+
+
+    // Sync expiry warning with hook state
+    useEffect(() => {
+        if (sessionState.timeUntilExpiry > 0 && sessionState.timeUntilExpiry < 300000) { // 5 minutes
+            setShowExpiryWarning(true);
+        } else {
+            setShowExpiryWarning(false);
+        }
+    }, [sessionState.timeUntilExpiry]);
+
+
+
+    const handleExtendSession = async () => {
+        const success = await extendSession();
+        if (success) {
+            setShowExpiryWarning(false);
+            broadcastRefresh();
+        }
+        return success;
+    };
+
     // Fetch current user from server on mount
     const refreshUser = useCallback(async () => {
         try {
@@ -88,11 +158,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     role: user.role as UserRole,
                     permissions: user.permissions,
                     mfaEnabled: user.mfaEnabled,
-                    ssoProvider: user.ssoProvider,
+                    ssoProvider: user.ssoProvider as any,
                     roleId: user.roleId,
-                    customRole: user.customRole
+                    customRole: user.customRole,
+                    loginAt: user.lastLoginAt || new Date().toISOString()
                 });
-                return user; // Return user for chaining
+                return user as any; // Cast to satisfy callback type, though we might need to fix return type of getCurrentUser or refreshUser signature
             } else {
                 setCurrentUser(null);
                 return null;
@@ -169,12 +240,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
                         name: result.user.name,
                         email: result.user.email,
                         role: result.user.role as UserRole,
-                        permissions: result.user.permissions, // Added permissions
+                        permissions: result.user.permissions,
                         mfaEnabled: result.user.mfaEnabled,
-                        ssoProvider: result.user.ssoProvider || undefined
+                        ssoProvider: result.user.ssoProvider as any,
+                        roleId: result.user.roleId,
+                        customRole: result.user.customRole,
+                        loginAt: result.user.lastLoginAt || new Date().toISOString()
                     });
                     // Refresh users list after login (if admin)
                     await refreshUsers();
+                    // Restart session polling (since it stops on invalid session)
+                    refetchSession();
                 }
             }
             return result;
@@ -186,16 +262,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
     }, [refreshUsers]);
 
-    const logout = useCallback(async () => {
+    const logout = useCallback(async (skipBroadcast: boolean = false) => {
         try {
             await logoutAction();
             setCurrentUser(null);
             setUsers([]);
+            if (!skipBroadcast) {
+                broadcastLogout();
+            }
+            // Redirect usually handled by button or component
+            if (typeof window !== 'undefined') {
+                window.location.href = '/';
+            }
         } catch (error) {
             console.error('Logout error:', error);
             setCurrentUser(null);
+            if (typeof window !== 'undefined') {
+                window.location.href = '/';
+            }
         }
-    }, []);
+    }, [broadcastLogout]);
 
     // ============================================================================
     // USER MANAGEMENT OPERATIONS
@@ -509,6 +595,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
         canEditField
     ]);
 
+    // Handle invalid session (Comment 1) - Placed after logout definition
+    useEffect(() => {
+        // If session is explicitly invalid (not just loading or initial state), logout
+        if (!isLoading && sessionState.valid === false && currentUser) {
+            console.log("Session detected as invalid, logging out...");
+            logout(true); // Skip broadcast to avoid loops if other tabs are also detecting
+        }
+    }, [sessionState.valid, isLoading, currentUser, logout]);
+
     // Show loading state
     if (isLoading) {
         return (
@@ -521,6 +616,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
     return (
         <UserContext.Provider value={contextValue}>
             {children}
+            <SessionExpiryWarning
+                show={showExpiryWarning}
+                timeUntilExpiry={sessionState.timeUntilExpiry}
+                onExtend={handleExtendSession}
+                onLogout={() => logout(false)}
+            />
         </UserContext.Provider>
     );
 }

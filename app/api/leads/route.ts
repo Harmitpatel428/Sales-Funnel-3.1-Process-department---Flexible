@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { withTenant } from '@/lib/tenant';
-import { LeadSchema, LeadFiltersSchema, validateRequest } from '@/lib/validation/schemas';
+import { LeadSchema, LeadFiltersSchema } from '@/lib/validation/schemas';
+import { validateLeadCrossFields } from '@/lib/validation/cross-field-rules'; // Prepare import, might need file creation check? it exists.
+import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
 import { handleApiError } from '@/lib/middleware/error-handler';
 import { successResponse, unauthorizedResponse, validationErrorResponse } from '@/lib/api/response-helpers';
@@ -13,9 +15,8 @@ import { PERMISSIONS } from '@/app/types/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 import { emitLeadCreated } from '@/lib/websocket/server';
 
-export async function GET(req: NextRequest) {
+export const GET = withValidation(LeadFiltersSchema)(async (req: ValidatedRequest<typeof LeadFiltersSchema._output>) => {
     try {
-
         // 1. Rate Limiting
         const rateLimitError = await rateLimitMiddleware(req, 100);
         if (rateLimitError) return rateLimitError;
@@ -23,7 +24,6 @@ export async function GET(req: NextRequest) {
 
         // 2. Authentication
         const session = await getSession();
-
 
         logRequest(req, session);
 
@@ -40,28 +40,8 @@ export async function GET(req: NextRequest) {
         // Get record-level filter
         const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'view');
 
-
-        // 3. Validation & Parsing
-        const { searchParams } = new URL(req.url);
-        const queryParams: Record<string, any> = {};
-        searchParams.forEach((value, key) => {
-            // Handle array params like status=NEW&status=CONTACTED
-            if (key === 'status') {
-                if (queryParams[key]) {
-                    if (Array.isArray(queryParams[key])) queryParams[key].push(value);
-                    else queryParams[key] = [queryParams[key], value];
-                } else {
-                    queryParams[key] = value;
-                }
-            } else {
-                queryParams[key] = value;
-            }
-        });
-
-        const validation = validateRequest(LeadFiltersSchema, queryParams);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
-
-        const filters = validation.data!;
+        // 3. Validation - Handled by Middleware
+        const filters = req.validatedData;
 
         // 4. Execution
         return await withTenant(session.tenantId, async () => {
@@ -121,9 +101,9 @@ export async function GET(req: NextRequest) {
     } catch (error) {
         return handleApiError(error);
     }
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withValidation(LeadSchema)(async (req: ValidatedRequest<typeof LeadSchema._output>) => {
     try {
         // 1. Rate Limiting
         const rateLimitError = await rateLimitMiddleware(req, 30);
@@ -139,12 +119,15 @@ export async function POST(req: NextRequest) {
         const permissionError = await requirePermissions([PERMISSIONS.LEADS_CREATE])(req);
         if (permissionError) return permissionError;
 
-        // 3. Validation
-        const body = await req.json();
-        const validation = validateRequest(LeadSchema, body);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
+        // 3. Validation - Middleware handled Schema
+        const data = req.validatedData;
 
-        const data = validation.data!;
+        // Cross-field Validation
+        // Cast data to Partial<Lead> for validation? data is inferred from Zod.
+        const crossErrors = validateLeadCrossFields(data as any);
+        if (crossErrors.length > 0) {
+            return validationErrorResponse(crossErrors);
+        }
 
         // 4. Execution
         return await withTenant(session.tenantId, async () => {
@@ -210,4 +193,4 @@ export async function POST(req: NextRequest) {
     } catch (error) {
         return handleApiError(error);
     }
-}
+});

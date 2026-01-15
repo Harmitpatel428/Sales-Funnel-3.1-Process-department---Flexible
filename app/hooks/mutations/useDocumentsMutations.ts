@@ -10,12 +10,25 @@
  * - For invalidation, we use broad invalidation with exact: false to cover all filter variants
  */
 
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { CaseDocument, DocumentStatus } from '../../types/processTypes';
 import { documentKeys } from '../queries/useDocumentsQuery';
 import { addToQueue, isOnline } from '../../utils/offlineQueue';
 import { isNetworkError } from '../../utils/errorHandling';
+import {
+    createOptimisticUpdate,
+    reconcileWithServer,
+} from '../../utils/optimistic';
+import { showToast } from '../../components/NotificationToast';
+
+import { DocumentSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
+
+const IMPORTANT_DOCUMENT_FIELDS = ['status', 'verifiedById', 'rejectionReason'];
+
 
 // API response document type (different from CaseDocument which is the domain model)
 interface ApiDocument {
@@ -106,7 +119,19 @@ export function useUploadDocumentMutation() {
 
             // Use apiClient.post with FormData to inherit global timeout/error handling
             // apiClient automatically handles FormData by not setting Content-Type header
-            return apiClient.post<UploadResponse>('/api/documents', formData);
+            const response = await apiClient.post<UploadResponse>('/api/documents', formData);
+
+            // Validate with matched schema (UploadResponse shape)
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                document: DocumentSchema.passthrough().partial().extend({
+                    previewUrl: z.string().optional()
+                }),
+                message: z.string().optional()
+            });
+
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         // No optimistic update for file uploads - can't show file before it's uploaded
         onError: (err, variables) => {
@@ -149,6 +174,7 @@ export function useUploadDocumentMutation() {
  */
 export function useUpdateDocumentMutation() {
     const queryClient = useQueryClient();
+    const versionRef = useRef<Record<string, number>>({});
 
     return useMutation({
         mutationFn: async ({
@@ -158,42 +184,127 @@ export function useUpdateDocumentMutation() {
             documentId: string;
             updates: Partial<CaseDocument>;
         }) => {
-            return apiClient.patch<DocumentMutationResponse>(`/api/documents/${documentId}`, updates);
+            const version = (updates as any).version ?? versionRef.current[documentId];
+            if (documentId) delete versionRef.current[documentId];
+
+            const response = await apiClient.patch<DocumentMutationResponse>(`/api/documents/${documentId}`, {
+                ...updates,
+                version
+            });
+
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                document: DocumentSchema.partial().passthrough(),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         onMutate: async ({ documentId, updates }) => {
             await queryClient.cancelQueries({ queryKey: documentKeys.all, exact: false });
 
+            // Snapshot single document cache if it exists
             const previousListCaches = queryClient.getQueriesData<DocumentsListResponse>({
                 queryKey: documentKeys.lists()
             });
 
-            // Map CaseDocument updates to API document fields
-            // Only include fields that exist in both types
-            const apiUpdates: Partial<ApiDocument> = {};
-            if (updates.documentType !== undefined) apiUpdates.documentType = updates.documentType;
-            if (updates.fileName !== undefined) apiUpdates.fileName = updates.fileName;
-            if (updates.fileSize !== undefined) apiUpdates.fileSize = updates.fileSize;
-            if (updates.mimeType !== undefined) apiUpdates.mimeType = updates.mimeType;
-            if (updates.status !== undefined) apiUpdates.status = updates.status;
-            if (updates.rejectionReason !== undefined) apiUpdates.rejectionReason = updates.rejectionReason;
+            // Find the current document in one of the lists to use as base
+            let currentDoc: ApiDocument | undefined;
+            for (const [, list] of previousListCaches) {
+                currentDoc = list?.documents.find(d => d.id === documentId);
+                if (currentDoc) break;
+            }
+
+            if (!currentDoc) return { previousListCaches };
+
+            // Use our utility for optimistic update
+            const baseEntity = { ...currentDoc, version: (currentDoc as any).version || 1 } as any;
+
+            // Capture version for mutationFn
+            if (documentId) {
+                versionRef.current[documentId] = baseEntity.version;
+            }
+
+            const optimisticDoc = createOptimisticUpdate(baseEntity, updates as any);
 
             // Optimistically update all list caches
             queryClient.setQueriesData<DocumentsListResponse>(
                 { queryKey: documentKeys.lists() },
                 (old) => {
                     if (!old?.documents) return old;
+                    (optimisticDoc as any).__lastKnownGood = baseEntity; // Store base for WS reconciliation
                     return {
                         ...old,
                         documents: old.documents.map((d): ApiDocument =>
-                            d.id === documentId ? { ...d, ...apiUpdates } : d
+                            d.id === documentId ? { ...d, ...optimisticDoc } : d
                         ),
                     };
                 }
             );
 
-            return { previousListCaches };
+            return {
+                previousListCaches,
+                lastKnownGood: baseEntity,
+                optimisticEntity: optimisticDoc,
+                documentId
+            };
         },
-        onError: (err, { documentId, updates }, context) => {
+        onSuccess: (response, { documentId }, context) => {
+            // Reconcile with server response
+            if (context?.lastKnownGood && context?.optimisticEntity) {
+                const result = reconcileWithServer(
+                    context.optimisticEntity,
+                    response.document,
+                    context.lastKnownGood,
+                    IMPORTANT_DOCUMENT_FIELDS
+                );
+
+                if (result.status === 'success' && response.document.version > context.lastKnownGood.version + 1) {
+                    showToast({
+                        type: 'info',
+                        title: 'Data Synchronized',
+                        message: 'Other changes were applied while you were editing.'
+                    });
+                } else if (result.status === 'conflict') {
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'document',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return;
+                }
+            }
+
+            queryClient.invalidateQueries({ queryKey: documentKeys.lists(), exact: false });
+        },
+        onError: (err: any, { documentId, updates }, context) => {
+            if (err?.code === 'OPTIMISTIC_LOCK_FAILED' || err?.status === 409) {
+                const serverEntity = err?.details?.currentEntity || err?.response?.data?.details?.currentEntity;
+                if (serverEntity && context?.lastKnownGood && context?.optimisticEntity) {
+                    const result = reconcileWithServer(
+                        context.optimisticEntity,
+                        serverEntity,
+                        context.lastKnownGood,
+                        IMPORTANT_DOCUMENT_FIELDS
+                    );
+
+                    window.dispatchEvent(new CustomEvent('app-conflict', {
+                        detail: {
+                            entityType: 'document',
+                            conflicts: result.conflicts,
+                            optimistic: result.optimistic,
+                            server: result.server,
+                            base: result.base,
+                        }
+                    }));
+                    return;
+                }
+            }
+
             if (context?.previousListCaches) {
                 context.previousListCaches.forEach(([queryKey, data]) => {
                     if (data) {
@@ -205,14 +316,13 @@ export function useUpdateDocumentMutation() {
             if (isNetworkError(err) && !isOnline()) {
                 addToQueue({
                     type: 'UPDATE_DOCUMENT',
-                    payload: { documentId, updates },
+                    payload: { documentId, ...updates, version: context?.lastKnownGood?.version ?? (updates as any).version },
                     endpoint: `/api/documents/${documentId}`,
                     method: 'PATCH',
-                });
+                    version: context?.lastKnownGood?.version ?? (updates as any).version,
+                    lastKnownGood: context?.lastKnownGood
+                } as any);
             }
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: documentKeys.lists(), exact: false });
         },
     });
 }

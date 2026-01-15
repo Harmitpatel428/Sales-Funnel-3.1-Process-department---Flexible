@@ -30,6 +30,11 @@ export interface AuthResult {
         email: string;
         role: string;
         permissions?: string[];
+        roleId?: string | null;
+        customRole?: { id: string; name: string } | null;
+        mfaEnabled?: boolean;
+        ssoProvider?: 'google' | 'microsoft' | 'saml' | null;
+        lastLoginAt?: string;
     };
 }
 
@@ -49,6 +54,11 @@ export async function loginAction(username: string, password: string, rememberMe
                     { username: username.toLowerCase() },
                     { email: username.toLowerCase() }
                 ]
+            },
+            include: { // Include custom role to get role name
+                customRole: {
+                    select: { id: true, name: true }
+                }
             }
         });
 
@@ -90,6 +100,12 @@ export async function loginAction(username: string, password: string, rememberMe
                 email: user.email,
                 role: user.role,
                 permissions: Array.from(await getUserPermissions(user.id)),
+                // Add extended fields
+                roleId: user.roleId,
+                customRole: user.customRole,
+                mfaEnabled: user.mfaEnabled,
+                ssoProvider: user.ssoProvider as any,
+                lastLoginAt: new Date().toISOString() // Just logged in
             },
         };
     } catch (error: any) {
@@ -157,7 +173,8 @@ export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
                     }
                 },
                 mfaEnabled: true,
-                ssoProvider: true
+                ssoProvider: true,
+                lastLoginAt: true // Fetch last login
             },
         });
 
@@ -172,12 +189,19 @@ export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
             email: user.email,
             role: user.role,
             permissions: Array.from(await getUserPermissions(user.id)),
+            roleId: user.roleId,
+            customRole: user.customRole,
+            mfaEnabled: user.mfaEnabled,
+            ssoProvider: user.ssoProvider as any,
+            lastLoginAt: user.lastLoginAt?.toISOString()
         };
     } catch (error) {
         console.error('Get current user error:', error);
         return null;
     }
 }
+
+
 
 /**
  * Check if the current user has any of the specified roles.

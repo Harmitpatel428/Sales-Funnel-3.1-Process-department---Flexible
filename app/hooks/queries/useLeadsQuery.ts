@@ -7,6 +7,9 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '../../lib/apiClient';
 import { Lead, LeadFilters, Activity } from '../../types/shared';
+import { LeadSchema } from '@/lib/validation/schemas';
+import { assertApiResponse } from '@/app/utils/typeGuards';
+import { z } from 'zod';
 
 // Query keys factory for type-safe keys
 export const leadKeys = {
@@ -67,7 +70,19 @@ export function useLeadsQuery(
                 params.followUpDateEnd = filters.followUpDateEnd;
             }
 
-            return apiClient.get<LeadsResponse>('/api/leads', { params });
+            const response = await apiClient.get<LeadsResponse>('/api/leads', { params });
+
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: z.object({
+                    leads: z.array(LeadSchema.partial().passthrough()),
+                    total: z.number().optional()
+                }),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+
+            return response;
         },
         select: (data) => data.data.leads,
         staleTime: 30000, // 30 seconds
@@ -85,7 +100,14 @@ export function useLeadQuery(
     return useQuery({
         queryKey: leadKeys.detail(leadId),
         queryFn: async () => {
-            return apiClient.get<LeadResponse>(`/api/leads/${leadId}`);
+            const response = await apiClient.get<LeadResponse>(`/api/leads/${leadId}`);
+            const ResponseSchema = z.object({
+                success: z.boolean(),
+                data: LeadSchema.partial().passthrough(),
+                message: z.string().optional()
+            });
+            assertApiResponse(ResponseSchema, response);
+            return response;
         },
         select: (data) => data.data,
         staleTime: 60000, // 1 minute

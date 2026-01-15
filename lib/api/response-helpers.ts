@@ -20,6 +20,24 @@ export function forbiddenResponse() {
     return errorResponse('Forbidden', undefined, 403);
 }
 
-export function validationErrorResponse(errors: string[]) {
-    return errorResponse('Validation Error', errors, 400);
+export function validationErrorResponse(errors: string[] | Array<{ field: string, message: string, code: string }>) {
+    let formattedErrors: Array<{ field: string, message: string, code: string }>;
+
+    if (errors.length > 0 && typeof errors[0] === 'string') {
+        // Legacy support
+        formattedErrors = (errors as string[]).map(msg => ({
+            field: 'unknown',
+            message: msg,
+            code: 'VALIDATION_ERROR'
+        }));
+    } else {
+        formattedErrors = errors as Array<{ field: string, message: string, code: string }>;
+    }
+
+    return NextResponse.json({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        errors: formattedErrors
+    }, { status: 400 });
 }

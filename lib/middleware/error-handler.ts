@@ -7,11 +7,31 @@ export function handleApiError(error: unknown) {
     console.error('[API Error]:', error);
 
     if (error instanceof ZodError) {
+        // Import dynamically or assume it's available? 
+        // Better to import at top. 
+        // Since I can't add imports easily with replace_file_content mid-file without breaking, I'll return the object directly or use a helper if imported.
+        // I will match formatValidationErrors logic here to avoid circular dependencies if validation.ts imports this?
+        // validation.ts imports NextResponse. 
+        // Let's duplicate logic or better: just map it.
+
         return NextResponse.json(
             {
                 success: false,
-                message: 'Validation Error',
-                errors: error.issues.map(e => `${e.path.join('.')}: ${e.message}`)
+                error: 'VALIDATION_ERROR',
+                message: 'Validation failed',
+                errors: error.issues.map(issue => {
+                    let code = 'INVALID_VALUE';
+                    if (issue.code === 'invalid_type') code = 'INVALID_TYPE';
+                    if (issue.code === 'too_small') code = 'VALUE_TOO_SMALL';
+                    if (issue.code === 'too_big') code = 'VALUE_TOO_LARGE';
+                    if (issue.message.includes('required')) code = 'REQUIRED_FIELD';
+
+                    return {
+                        field: issue.path.join('.'),
+                        message: issue.message,
+                        code
+                    };
+                })
             },
             { status: 400 }
         );

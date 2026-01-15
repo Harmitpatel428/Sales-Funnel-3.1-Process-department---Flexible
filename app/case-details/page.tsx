@@ -17,6 +17,11 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { PresenceIndicator } from '../components/PresenceIndicator';
 import { ProcessStatus, CaseDocument, UserRole } from '../types/processTypes';
+import { useWebSocketConflicts } from '../hooks/useWebSocketConflicts';
+import ConflictResolutionModal from '../components/ConflictResolutionModal';
+import { applyResolution } from '../utils/optimistic';
+import { useUpdateCaseMutation } from '../hooks/mutations/useCasesMutations';
+import { useUpdateDocumentMutation } from '../hooks/mutations/useDocumentsMutations';
 
 function CaseDetailContent() {
     const searchParams = useSearchParams();
@@ -62,6 +67,45 @@ function CaseDetailContent() {
     const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
     const [selectedUserId, setSelectedUserId] = useState<string>('');
     const [assignmentRemarks, setAssignmentRemarks] = useState('');
+
+    // Conflict Resolution
+    // Filter conflicts for this case or its documents
+    const conflictFilter = useCallback((c: any) => {
+        return (c.entityType === 'case' && c.optimistic.caseId === caseId) ||
+            (c.entityType === 'document' && documents.some(d => d.documentId === (c.optimistic.id || c.optimistic.documentId)));
+    }, [caseId, documents]);
+
+    const { conflictState, resolveConflict, cancelConflict } = useWebSocketConflicts(conflictFilter);
+
+    const updateCaseMutation = useUpdateCaseMutation();
+    const updateDocumentMutation = useUpdateDocumentMutation();
+
+    const handleConflictResolve = async (resolution: any) => {
+        if (!conflictState) return;
+
+        const resolvedEntity = applyResolution(resolution, conflictState);
+        const { entityType } = conflictState;
+
+        try {
+            if (entityType === 'case') {
+                await updateCaseMutation.mutateAsync({
+                    caseId: conflictState.optimistic.caseId,
+                    updates: { ...resolvedEntity, version: conflictState.server.version }
+                });
+            } else if (entityType === 'document') {
+                const docId = conflictState.optimistic.id || conflictState.optimistic.documentId;
+                await updateDocumentMutation.mutateAsync({
+                    documentId: docId,
+                    updates: { ...resolvedEntity, version: conflictState.server.version }
+                });
+            }
+            // After successful mutation, clear conflict
+            cancelConflict();
+        } catch (error) {
+            console.error('Failed to resolve conflict:', error);
+            // Optionally show toast
+        }
+    };
 
     // Permission check for case assignment
     const canAssignCase = currentUser && (
@@ -370,6 +414,19 @@ function CaseDetailContent() {
             fallback={<AccessDenied />}
         >
             <>
+                {/* Conflict Resolution Modal */}
+                {conflictState && (
+                    <ConflictResolutionModal
+                        isOpen={true}
+                        entityType={conflictState.entityType as any}
+                        conflicts={conflictState.conflicts}
+                        optimisticEntity={conflictState.optimistic}
+                        serverEntity={conflictState.server}
+                        onResolve={handleConflictResolve}
+                        onCancel={cancelConflict}
+                    />
+                )}
+
                 {/* Status Update Modal */}
                 <StatusUpdateModal
                     isOpen={statusModal.isOpen}
