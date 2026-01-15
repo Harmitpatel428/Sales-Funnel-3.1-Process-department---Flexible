@@ -97,4 +97,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       console.error('Decryption/Download failed:', err);
       return NextResponse.json({ error: 'Failed to process document' }, { status: 500 });
     }
+  } catch (error) {
+    console.error('Document download error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}

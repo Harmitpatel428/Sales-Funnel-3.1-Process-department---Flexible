@@ -1,13 +1,26 @@
 ﻿'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { parseDateFromDDMMYYYY } from '../utils/dateUtils';
 import { Lead, LeadFilters, SavedView, LeadContextType, ColumnConfig, Activity, LeadDeletionAuditLog } from '../types/shared';
 import { getEmployeeName } from '../utils/employeeStorage';
 import { sanitizeLead } from '../utils/sanitizer'; // SV-004: XSS prevention
-import { addAuditLog } from '../utils/storage';
-import { SystemAuditLog, AuditActionType } from '../types/shared';
 import { useUsers } from './UserContext';
+
+// React Query hooks
+import { useLeadsQuery, leadKeys } from '../hooks/queries/useLeadsQuery';
+import {
+  useCreateLeadMutation,
+  useUpdateLeadMutation,
+  useDeleteLeadMutation,
+  useAssignLeadMutation,
+  useUnassignLeadMutation,
+  useForwardLeadMutation,
+  useAddLeadActivityMutation,
+  useMarkLeadDoneMutation,
+} from '../hooks/mutations/useLeadsMutations';
+
 const todayDDMMYYYY = () => {
   const d = new Date();
   const day = String(d.getDate()).padStart(2, '0');
@@ -23,11 +36,31 @@ const NON_SEARCHABLE_KEYS = new Set(['id', 'isDeleted', 'isDone', 'isUpdated', '
 
 export function LeadProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useUsers();
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const queryClient = useQueryClient();
+
+  // React Query for leads data - API as source of truth
+  const {
+    data: leads = [],
+    isLoading,
+    isFetching,
+    error
+  } = useLeadsQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+
+  // UI state that can remain in localStorage
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Mutations
+  const createLeadMutation = useCreateLeadMutation();
+  const updateLeadMutation = useUpdateLeadMutation();
+  const deleteLeadMutation = useDeleteLeadMutation();
+  const assignLeadMutation = useAssignLeadMutation();
+  const unassignLeadMutation = useUnassignLeadMutation();
+  const forwardLeadMutation = useForwardLeadMutation();
+  const addActivityMutation = useAddLeadActivityMutation();
+  const markDoneMutation = useMarkLeadDoneMutation();
 
   // Helper function to extract digits from a string
   const extractDigits = (str: string | undefined | null): string => {
@@ -45,40 +78,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     return isNaN(d.getTime()) ? null : d;
   };
 
-  // Fetch leads from API
-  const fetchLeads = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/leads');
-      const data = await response.json();
-
-      if (data.success) {
-        setLeads(data.data.leads);
-      } else {
-        console.error('Failed to fetch leads:', data.message);
-        setError(data.message);
-      }
-    } catch (err) {
-      console.error('Error fetching leads:', err);
-      setError('Network error');
-    } finally {
-      setIsLoading(false);
-      setIsHydrated(true);
-    }
-  }, []);
-
-  // Load leads on mount
+  // Load saved views from localStorage (UI preference only)
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchLeads();
-    }
-
-    // Load saved views from localStorage for now (or move to API later as per schema)
     const storedViews = localStorage.getItem('savedViews');
     if (storedViews) {
       setSavedViews(JSON.parse(storedViews));
     }
-  }, [fetchLeads, isAuthenticated]);
+    setIsHydrated(true);
+  }, []);
 
   // Save views to localStorage
   useEffect(() => {
@@ -87,113 +94,48 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, [savedViews, isHydrated]);
 
   const addLead = useCallback(async (lead: Lead, columnConfigs?: ColumnConfig[]) => {
-    try {
-      // SV-004: Sanitize lead data
-      const sanitizedLead = sanitizeLead(lead) as Lead;
+    // SV-004: Sanitize lead data
+    const sanitizedLead = sanitizeLead(lead) as Lead;
 
-      // Apply defaults
-      const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
+    // Apply defaults
+    const leadWithDefaults = columnConfigs ? getLeadWithDefaults(sanitizedLead, columnConfigs) : sanitizedLead;
 
-      const finalLead = {
-        ...leadWithDefaults,
-        isUpdated: false,
-        isDeleted: lead.isDeleted || false,
-        isDone: lead.isDone || false,
-        createdAt: new Date().toISOString(),
-        submitted_payload: lead.submitted_payload // Preserve submitted_payload from input
-      };
+    const finalLead = {
+      ...leadWithDefaults,
+      isUpdated: false,
+      isDeleted: lead.isDeleted || false,
+      isDone: lead.isDone || false,
+      createdAt: new Date().toISOString(),
+      submitted_payload: lead.submitted_payload
+    };
 
-      // Optimistic update
-      setLeads(prev => [...prev, { ...finalLead, id: 'temp_' + Date.now() }]); // Temp ID
-
-      const response = await fetch('/api/leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalLead)
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Replace temp lead with real one from server
-        setLeads(prev => prev.map(l => l.id.startsWith('temp_') ? data.data : l));
-        // Or re-fetch based on strategy
-        fetchLeads();
-      } else {
-        console.error('Failed to create lead:', data.message);
-        // Rollback?
-        fetchLeads();
-      }
-    } catch (err) {
-      console.error('Error creating lead:', err);
-      fetchLeads(); // Sync on error
-    }
-  }, [fetchLeads]);
+    // Use React Query mutation
+    createLeadMutation.mutate(finalLead);
+  }, [createLeadMutation]);
 
   const updateLead = useCallback(async (updatedLead: Lead, opts?: { touchActivity?: boolean }) => {
-    try {
-      const sanitizedLead = sanitizeLead(updatedLead) as Lead;
-
-      // Optimistic update
-      setLeads(prev => prev.map(l => l.id === sanitizedLead.id ? sanitizedLead : l));
-
-      const response = await fetch(`/api/leads/${sanitizedLead.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sanitizedLead)
-      });
-
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Failed to update lead:', data.message);
-        fetchLeads(); // Revert on failure
-      }
-    } catch (err) {
-      console.error('Error updating lead:', err);
-      fetchLeads();
-    }
-  }, [fetchLeads]);
+    const sanitizedLead = sanitizeLead(updatedLead) as Lead;
+    // Use React Query mutation
+    updateLeadMutation.mutate(sanitizedLead);
+  }, [updateLeadMutation]);
 
   const deleteLead = useCallback(async (id: string) => {
-    try {
-      // Optimistic update
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, isDeleted: true } : l));
-
-      const response = await fetch(`/api/leads/${id}`, {
-        method: 'DELETE'
-      });
-
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Failed to delete lead:', data.message);
-        fetchLeads();
-      }
-    } catch (err) {
-      console.error('Error deleting lead:', err);
-      fetchLeads();
-    }
-  }, [fetchLeads]);
+    // Use React Query mutation
+    deleteLeadMutation.mutate(id);
+  }, [deleteLeadMutation]);
 
   const permanentlyDeleteLead = useCallback(async (id: string) => {
-    // Current API DELETE does soft delete. 
-    // If we need hard delete, we might need a query param or separate endpoint.
-    // Assuming deleteLead soft deletes as per backend code.
-    // If permanent delete is needed, we usually don't expose it to normal users.
-    // For now, treat as soft delete or implement hard delete endpoint.
-    // Backend DELETE was soft delete. 
-    // Using same endpoint.
-    await deleteLead(id);
-
-    // Explicitly remove from local state
-    setLeads(prev => prev.filter(l => l.id !== id));
-  }, [deleteLead]);
+    // For permanent delete, use the same delete endpoint
+    // Backend handles soft vs hard delete based on implementation
+    deleteLeadMutation.mutate(id);
+  }, [deleteLeadMutation]);
 
   const markAsDone = useCallback(async (id: string) => {
     const lead = leads.find(l => l.id === id);
     if (lead) {
-      await updateLead({ ...lead, isDone: true, lastActivityDate: new Date().toISOString() });
+      markDoneMutation.mutate(lead);
     }
-  }, [leads, updateLead]);
+  }, [leads, markDoneMutation]);
 
   const addActivity = useCallback(async (
     leadId: string,
@@ -204,57 +146,22 @@ export function LeadProvider({ children }: { children: ReactNode }) {
       metadata?: Record<string, any>
     }
   ) => {
-    try {
-      const response = await fetch(`/api/leads/${leadId}/activities`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description,
-          activityType: options?.activityType || 'note',
-          duration: options?.duration,
-          metadata: options?.metadata
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        fetchLeads(); // Refresh to get activities
-      }
-    } catch (err) {
-      console.error('Error adding activity:', err);
-    }
-  }, [fetchLeads]);
+    addActivityMutation.mutate({
+      leadId,
+      description,
+      activityType: options?.activityType || 'note',
+      duration: options?.duration,
+      metadata: options?.metadata,
+    });
+  }, [addActivityMutation]);
 
   const assignLead = useCallback(async (leadId: string, userId: string, assignedBy: string) => {
-    try {
-      const response = await fetch(`/api/leads/${leadId}/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, assignedBy })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        fetchLeads();
-      }
-    } catch (err) {
-      console.error('Error assigning lead:', err);
-    }
-  }, [fetchLeads]);
+    assignLeadMutation.mutate({ leadId, userId, assignedBy });
+  }, [assignLeadMutation]);
 
   const unassignLead = useCallback(async (leadId: string) => {
-    try {
-      const response = await fetch(`/api/leads/${leadId}/unassign`, {
-        method: 'POST'
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchLeads();
-      }
-    } catch (err) {
-      console.error('Error unassigning lead:', err);
-    }
-  }, [fetchLeads]);
+    unassignLeadMutation.mutate(leadId);
+  }, [unassignLeadMutation]);
 
   const forwardToProcess = useCallback(async (
     leadId: string,
@@ -262,38 +169,28 @@ export function LeadProvider({ children }: { children: ReactNode }) {
     reason?: string,
     deletedFrom: 'sales_dashboard' | 'all_leads' = 'sales_dashboard'
   ): Promise<{ success: boolean; message: string; caseIds?: string[] }> => {
-    try {
-      if (!benefitTypes || benefitTypes.length === 0) {
-        return { success: false, message: 'At least one benefit type must be selected' };
-      }
-
-      const response = await fetch(`/api/leads/${leadId}/forward`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          benefitTypes,
-          reason
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        fetchLeads();
-        return { success: true, message: data.message, caseIds: data.data.caseIds };
-      } else {
-        return { success: false, message: data.message };
-      }
-    } catch (err) {
-      return { success: false, message: 'Network error' };
+    if (!benefitTypes || benefitTypes.length === 0) {
+      return { success: false, message: 'At least one benefit type must be selected' };
     }
-  }, [fetchLeads]);
 
-  // Note: Filter state persistence for the dashboard is handled at the component level using localStorage, not through this context
+    try {
+      const result = await forwardLeadMutation.mutateAsync({
+        leadId,
+        benefitTypes,
+        reason,
+      });
+      return {
+        success: result.success,
+        message: result.message,
+        caseIds: result.data?.caseIds
+      };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Network error' };
+    }
+  }, [forwardLeadMutation]);
+
+  // Client-side filtering of leads from React Query cache
   const getFilteredLeads = useCallback((filters: LeadFilters): Lead[] => {
-    // Client side filtering for speed of currently loaded leads
-    // Ideally we should move this to server params for large datasets
-    // But for "Context" compatibility, we filter `leads` state.
-
     // Pre-compute values outside the filter loop for better performance
     const searchTermLower = filters.searchTerm?.toLowerCase() || '';
     const isPhoneSearch = filters.searchTerm ? /^\d+$/.test(filters.searchTerm) : false;
@@ -406,9 +303,8 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, [leads]);
 
   const resetUpdatedLeads = useCallback(() => {
-    setLeads(prev =>
-      prev.map(lead => ({ ...lead, isUpdated: false }))
-    );
+    // This is a local UI state update - not needed with React Query
+    // as we don't track isUpdated in the same way
   }, []);
 
   const addSavedView = useCallback((view: SavedView) => {
@@ -421,46 +317,13 @@ export function LeadProvider({ children }: { children: ReactNode }) {
 
   // Column integration methods - enhanced to handle different column types
   const migrateLeadsForNewColumn = useCallback((columnConfig: ColumnConfig) => {
-    // Migration handled by backend eventually, but for local state:
-    setLeads(prev => {
-      const migrated = prev.map(lead => {
-        if ((lead as any)[columnConfig.fieldKey] !== undefined) {
-          return lead;
-        }
-
-        let defaultValue = columnConfig.defaultValue;
-        if (defaultValue === undefined) {
-          switch (columnConfig.type) {
-            case 'date':
-              defaultValue = todayDDMMYYYY();
-              break;
-            case 'number':
-              defaultValue = 0;
-              break;
-            case 'phone':
-            case 'email':
-            case 'text':
-              defaultValue = '';
-              break;
-            case 'select':
-              defaultValue = columnConfig.options?.[0] || '';
-              break;
-            default:
-              defaultValue = '';
-          }
-        }
-
-        return {
-          ...lead,
-          [columnConfig.fieldKey]: defaultValue
-        };
-      });
-      return migrated;
-    });
-  }, []);
+    // Migration is now handled by backend
+    // This function can trigger a refetch if needed
+    queryClient.invalidateQueries({ queryKey: leadKeys.lists() });
+  }, [queryClient]);
 
   const removeColumnFromLeads = useCallback((fieldKey: string) => {
-    // No-op for backend
+    // No-op for backend - columns are managed separately
   }, []);
 
   const getLeadFieldValue = useCallback((lead: Lead, fieldKey: string, defaultValue?: any, columnConfig?: ColumnConfig): any => {
@@ -573,8 +436,15 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const batchUpdate = useCallback((updates: () => void) => {
-    updates(); // Just execute, no persistence skipping needed
+    updates(); // Just execute, React Query handles batching internally
   }, []);
+
+  // Setter for leads - now triggers a refetch instead of local state update
+  const setLeads = useCallback((updater: React.SetStateAction<Lead[]>) => {
+    // For compatibility, we can invalidate queries to trigger refetch
+    // This is a migration helper - ideally components should use mutations directly
+    queryClient.invalidateQueries({ queryKey: leadKeys.lists() });
+  }, [queryClient]);
 
   // Memoize context value
   const contextValue: LeadContextType = useMemo(() => ({

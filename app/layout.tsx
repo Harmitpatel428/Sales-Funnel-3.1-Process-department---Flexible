@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_Gujarati } from "next/font/google";
 import "./globals.css";
+import { QueryProvider } from "./components/QueryProvider";
 import { LeadProvider } from "./context/LeadContext";
 import { PasswordProvider } from "./context/PasswordContext";
 import { ColumnProvider } from "./context/ColumnContext";
@@ -128,36 +129,38 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansGujarati.variable} antialiased bg-gray-50`}
       >
-        <UserProvider>
-          <LeadProvider>
-            <TenantProvider>
-              <ImpersonationProvider>
-                <CaseProvider>
-                  <DocumentProvider>
-                    <TimelineProvider>
-                      <PasswordProvider>
-                        <ColumnProvider>
-                          <HeaderProvider>
-                            <NavigationProvider>
-                              <EmployeeSetupWrapper>
-                                <div className="flex flex-col h-screen">
-                                  <NavigationWrapper />
-                                  <main className="flex-1 overflow-y-auto p-0">
-                                    {children}
-                                  </main>
-                                </div>
-                              </EmployeeSetupWrapper>
-                            </NavigationProvider>
-                          </HeaderProvider>
-                        </ColumnProvider>
-                      </PasswordProvider>
-                    </TimelineProvider>
-                  </DocumentProvider>
-                </CaseProvider>
-              </ImpersonationProvider>
-            </TenantProvider>
-          </LeadProvider>
-        </UserProvider>
+        <QueryProvider>
+          <UserProvider>
+            <LeadProvider>
+              <TenantProvider>
+                <ImpersonationProvider>
+                  <CaseProvider>
+                    <DocumentProvider>
+                      <TimelineProvider>
+                        <PasswordProvider>
+                          <ColumnProvider>
+                            <HeaderProvider>
+                              <NavigationProvider>
+                                <EmployeeSetupWrapper>
+                                  <div className="flex flex-col h-screen">
+                                    <NavigationWrapper />
+                                    <main className="flex-1 overflow-y-auto p-0">
+                                      {children}
+                                    </main>
+                                  </div>
+                                </EmployeeSetupWrapper>
+                              </NavigationProvider>
+                            </HeaderProvider>
+                          </ColumnProvider>
+                        </PasswordProvider>
+                      </TimelineProvider>
+                    </DocumentProvider>
+                  </CaseProvider>
+                </ImpersonationProvider>
+              </TenantProvider>
+            </LeadProvider>
+          </UserProvider>
+        </QueryProvider>
       </body>
     </html>
   );

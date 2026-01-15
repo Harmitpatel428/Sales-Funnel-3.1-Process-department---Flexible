@@ -1,11 +1,22 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     CaseDocument,
     DocumentStatus,
     DocumentContextType
 } from '../types/processTypes';
+
+// React Query hooks
+import { useDocumentsQuery, useDocumentsByCaseQuery, documentKeys } from '../hooks/queries/useDocumentsQuery';
+import {
+    useUploadDocumentMutation,
+    useUpdateDocumentMutation,
+    useDeleteDocumentMutation,
+    useVerifyDocumentMutation,
+    useRejectDocumentMutation,
+} from '../hooks/mutations/useDocumentsMutations';
 
 // ============================================================================
 // CONTEXT
@@ -14,53 +25,34 @@ import {
 const DocumentContext = createContext<DocumentContextType | undefined>(undefined);
 
 export function DocumentProvider({ children }: { children: ReactNode }) {
-    const [documents, setDocuments] = useState<CaseDocument[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const queryClient = useQueryClient();
 
-    // Helper to fetch documents
-    const fetchDocuments = useCallback(async (caseId?: string) => {
-        setIsLoading(true);
-        try {
-            const url = caseId
-                ? `/api/documents?caseId=${caseId}`
-                : '/api/documents';
+    // Track the current case ID for document fetching
+    const [currentCaseId, setCurrentCaseId] = useState<string | undefined>(undefined);
 
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch documents');
+    // React Query for documents - API as source of truth
+    const {
+        data: documents = [],
+        isLoading,
+        isFetching,
+        error
+    } = useDocumentsQuery(
+        currentCaseId ? { caseId: currentCaseId } : undefined
+    );
 
-            const data = await res.json();
-            // Map API response to CaseDocument type
-            const mappedDocs = data.documents.map((doc: any) => ({
-                documentId: doc.id,
-                caseId: doc.caseId,
-                documentType: doc.documentType,
-                fileName: doc.fileName,
-                fileSize: doc.fileSize,
-                mimeType: doc.mimeType,
-                uploadedBy: doc.uploadedBy?.name || doc.uploadedById,
-                uploadedAt: doc.createdAt,
-                status: doc.status,
-                rejectionReason: doc.rejectionReason,
-                verifiedBy: doc.verifiedBy?.name,
-                verifiedAt: doc.verifiedAt,
-                filePath: doc.previewUrl || '' // Use preview URL as filePath
-            }));
+    // Mutations
+    const uploadMutation = useUploadDocumentMutation();
+    const updateMutation = useUpdateDocumentMutation();
+    const deleteMutation = useDeleteDocumentMutation();
+    const verifyMutation = useVerifyDocumentMutation();
+    const rejectMutation = useRejectDocumentMutation();
 
-            setDocuments(mappedDocs);
-        } catch (err: any) {
-            console.error(err);
-            setError(err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    // Initial load? No, we load on demand via getDocumentsByCaseId usually or we expose a load function
-    // For now, we'll keep the state empty until requested.
-    // However, the original context loaded from localStorage on mount.
-    // We can't fetch ALL documents on mount.
-    // We'll rely on components calling refresh or we just expose the fetcher.
+    // Fetch documents for a specific case - triggers React Query refetch
+    const fetchDocuments = useCallback(async (caseId: string) => {
+        setCurrentCaseId(caseId);
+        // Invalidate and refetch
+        await queryClient.invalidateQueries({ queryKey: documentKeys.byCase(caseId) });
+    }, [queryClient]);
 
     // ============================================================================
     // DOCUMENT OPERATIONS
@@ -68,97 +60,43 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
     const addDocument = useCallback(async (doc: Omit<CaseDocument, 'documentId' | 'uploadedAt'> & { file?: File, fileData?: any }): Promise<{ success: boolean; message: string }> => {
         try {
-            const formData = new FormData();
-            if (doc.file) {
-                formData.append('file', doc.file);
-            } else if (doc.fileData) {
-                // If it's a blob/file object passed as fileData
-                formData.append('file', doc.fileData);
-            } else {
+            if (!doc.file && !doc.fileData) {
                 return { success: false, message: 'No file provided' };
             }
 
-            const metadata = {
+            const file = doc.file || doc.fileData;
+
+            await uploadMutation.mutateAsync({
+                file,
                 caseId: doc.caseId,
                 documentType: doc.documentType,
-                notes: '' // Add notes if needed
-            };
-            formData.append('metadata', JSON.stringify(metadata));
-
-            const res = await fetch('/api/documents', {
-                method: 'POST',
-                body: formData,
+                notes: doc.notes,
             });
-
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Upload failed');
-            }
-
-            const data = await res.json();
-
-            // Optimistic update or refetch
-            // For now, simple refetch or append
-            const newDoc: CaseDocument = {
-                documentId: data.document.id,
-                caseId: data.document.caseId,
-                documentType: data.document.documentType,
-                fileName: data.document.fileName,
-                fileSize: data.document.fileSize,
-                mimeType: data.document.mimeType,
-                uploadedBy: 'Me', // Should come from user context or response
-                uploadedAt: data.document.createdAt,
-                status: data.document.status,
-                filePath: data.document.previewUrl
-            };
-
-            setDocuments(prev => [newDoc, ...prev]);
 
             return { success: true, message: 'Document uploaded successfully' };
         } catch (error: any) {
             console.error('Add document error:', error);
-            return { success: false, message: error.message };
+            return { success: false, message: error.message || 'Upload failed' };
         }
-    }, []);
+    }, [uploadMutation]);
 
     const updateDocument = useCallback(async (documentId: string, updates: Partial<CaseDocument>): Promise<{ success: boolean; message: string }> => {
         try {
-            // Only support status update for now via PATCH
-            // If strictly updating local state:
-            // But we want to call API.
-
-            const res = await fetch(`/api/documents/${documentId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updates),
-            });
-
-            if (!res.ok) throw new Error('Update failed');
-
-            setDocuments(prev => prev.map(d =>
-                d.documentId === documentId ? { ...d, ...updates } : d
-            ));
-
+            await updateMutation.mutateAsync({ documentId, updates });
             return { success: true, message: 'Document updated successfully' };
         } catch (error: any) {
-            return { success: false, message: error.message };
+            return { success: false, message: error.message || 'Update failed' };
         }
-    }, []);
+    }, [updateMutation]);
 
     const deleteDocument = useCallback(async (documentId: string): Promise<{ success: boolean; message: string }> => {
         try {
-            const res = await fetch(`/api/documents/${documentId}`, {
-                method: 'DELETE',
-            });
-
-            if (!res.ok) throw new Error('Delete failed');
-
-            setDocuments(prev => prev.filter(d => d.documentId !== documentId));
+            await deleteMutation.mutateAsync(documentId);
             return { success: true, message: 'Document deleted successfully' };
         } catch (error: any) {
-            return { success: false, message: error.message };
+            return { success: false, message: error.message || 'Delete failed' };
         }
-    }, []);
+    }, [deleteMutation]);
 
     // ============================================================================
     // STATUS OPERATIONS
@@ -166,57 +104,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
     const verifyDocument = useCallback(async (documentId: string, userId: string): Promise<{ success: boolean; message: string }> => {
         try {
-            const res = await fetch(`/api/documents/${documentId}/verify`, {
-                method: 'POST',
-            });
-
-            if (!res.ok) throw new Error('Verification failed');
-
-            setDocuments(prev => prev.map(d =>
-                d.documentId === documentId
-                    ? { ...d, status: 'VERIFIED', verifiedAt: new Date().toISOString(), verifiedBy: userId }
-                    : d
-            ));
-
+            await verifyMutation.mutateAsync(documentId);
             return { success: true, message: 'Document verified successfully' };
         } catch (error: any) {
-            return { success: false, message: error.message };
+            return { success: false, message: error.message || 'Verification failed' };
         }
-    }, []);
+    }, [verifyMutation]);
 
     const rejectDocument = useCallback(async (documentId: string, userId: string, reason: string): Promise<{ success: boolean; message: string }> => {
         try {
-            const res = await fetch(`/api/documents/${documentId}/reject`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reason }),
-            });
-
-            if (!res.ok) throw new Error('Rejection failed');
-
-            setDocuments(prev => prev.map(d =>
-                d.documentId === documentId
-                    ? { ...d, status: 'REJECTED', verifiedAt: new Date().toISOString(), verifiedBy: userId, rejectionReason: reason }
-                    : d
-            ));
-
+            await rejectMutation.mutateAsync({ documentId, reason });
             return { success: true, message: 'Document rejected' };
         } catch (error: any) {
-            return { success: false, message: error.message };
+            return { success: false, message: error.message || 'Rejection failed' };
         }
-    }, []);
+    }, [rejectMutation]);
 
     // ============================================================================
     // QUERIES
     // ============================================================================
 
     const getDocumentsByCaseId = useCallback((caseId: string): CaseDocument[] => {
-        // Trigger fetch if empty or we want fresh? 
-        // For now just return what we have. 
-        // Ideally we should have a `loadDocuments(caseId)` function.
-        // We'll trust that the component calls fetchDocuments when mounting.
+        // If we have loaded documents for this case, return them
+        // Otherwise, trigger a fetch and return empty array
+        if (caseId !== currentCaseId) {
+            // Trigger fetch for new case
+            setCurrentCaseId(caseId);
+        }
         return documents.filter(d => d.caseId === caseId);
-    }, [documents]);
+    }, [documents, currentCaseId]);
 
     const getDocumentsByStatus = useCallback((caseId: string, status: DocumentStatus): CaseDocument[] => {
         return documents.filter(d => d.caseId === caseId && d.status === status);

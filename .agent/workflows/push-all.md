@@ -1,11 +1,11 @@
 ---
-description: Push all changes to the Bugs Fixing repository
+description: Push all changes to the Sales-Funnel-3.1 repository
 ---
 
 # Push All Changes to Git
 
 This workflow pushes all committed changes to the designated repository:
-**https://github.com/Harmitpatel428/Sales-Funnel-2.1--Bugs-Fixing-and-Process-department.git**
+**https://github.com/Harmitpatel428/Sales-Funnel-3.1-Process-department---Flexible.git**
 
 ## Steps
 
@@ -19,13 +19,13 @@ git add -A
 git commit -m "Your commit message here"
 ```
 
-3. Push to the bugs-fixing remote (PRIMARY REPOSITORY):
+3. Push to the origin remote:
 // turbo
 ```bash
-git push bugs-fixing main
+git push origin main
 ```
 
 ## Notes
-- The primary repository for this project is: `bugs-fixing` remote
-- URL: https://github.com/Harmitpatel428/Sales-Funnel-2.1--Bugs-Fixing-and-Process-department.git
+- The primary repository for this project is: `origin` remote
+- URL: https://github.com/Harmitpatel428/Sales-Funnel-3.1-Process-department---Flexible.git
 - Always push to this repository when the user says "commit and push" or "push to git"
