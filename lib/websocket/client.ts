@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient, QueryClient } from '@tanstack/react-query';
 import { isDuplicate } from './deduplication';
+import { leadKeys } from '@/app/hooks/queries/useLeadsQuery';
+import { caseKeys } from '@/app/hooks/queries/useCasesQuery';
+import { documentKeys } from '@/app/hooks/queries/useDocumentsQuery';
 
 export interface WebSocketMessage {
     id: string;
@@ -106,22 +109,37 @@ function handleMessage(message: WebSocketMessage, queryClient: QueryClient) {
         case 'lead_created':
         case 'lead_updated':
         case 'lead_deleted':
-            queryClient.invalidateQueries({ queryKey: ['leads'] });
-            if (payload.id) queryClient.invalidateQueries({ queryKey: ['lead', payload.id] });
+            queryClient.invalidateQueries({ queryKey: leadKeys.lists() });
+            if (payload.id) {
+                queryClient.invalidateQueries({ queryKey: leadKeys.detail(payload.id) });
+                if (eventType === 'lead_updated') {
+                    queryClient.setQueryData(leadKeys.detail(payload.id), { success: true, data: payload });
+                }
+            }
             break;
 
         case 'case_created':
         case 'case_updated':
         case 'case_deleted':
-            queryClient.invalidateQueries({ queryKey: ['cases'] });
-            if (payload.caseId) queryClient.invalidateQueries({ queryKey: ['case', payload.caseId] });
+            queryClient.invalidateQueries({ queryKey: caseKeys.lists() });
+            if (payload.caseId) {
+                queryClient.invalidateQueries({ queryKey: caseKeys.detail(payload.caseId) });
+                if (eventType === 'case_updated') {
+                    queryClient.setQueryData(caseKeys.detail(payload.caseId), { success: true, data: payload });
+                }
+            }
             break;
 
         case 'document_created':
         case 'document_updated':
         case 'document_deleted':
-            queryClient.invalidateQueries({ queryKey: ['documents'] });
-            if (payload.documentId) queryClient.invalidateQueries({ queryKey: ['document', payload.documentId] });
+            queryClient.invalidateQueries({ queryKey: documentKeys.lists() });
+            if (payload.documentId) {
+                queryClient.invalidateQueries({ queryKey: documentKeys.detail(payload.documentId) });
+                if (eventType === 'document_updated') {
+                    queryClient.setQueryData(documentKeys.detail(payload.documentId), { success: true, document: payload });
+                }
+            }
             break;
     }
 }

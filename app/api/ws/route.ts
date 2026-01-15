@@ -1,96 +1,21 @@
 import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { registerClient, unregisterClient, broadcastToTenant } from '@/lib/websocket/server';
-import { storeEvent, getEventsSince, getNextSequenceNumber } from '@/lib/websocket/eventLog';
+import { registerClient, unregisterClient, emitPresenceUpdate } from '@/lib/websocket/server';
+import { getEventsSince } from '@/lib/websocket/eventLog';
 import { trackPresence, removePresence } from '@/lib/websocket/presence';
-import { v4 as uuidv4 } from 'uuid';
-
-// Map to track WebSocket connections with metadata
-const connections = new Map<any, {
-    tenantId: string;
-    userId: string;
-    lastEventId: number;
-    heartbeatInterval: NodeJS.Timeout;
-}>();
 
 export async function GET(req: NextRequest) {
-    // Check for WebSocket upgrade
-    const upgrade = req.headers.get('upgrade');
-    if (upgrade !== 'websocket') {
+    if (req.headers.get('upgrade') !== 'websocket') {
         return new Response('Expected WebSocket', { status: 400 });
     }
 
     try {
-        // Authenticate
         const session = await getSession();
         if (!session) {
             return new Response('Unauthorized', { status: 401 });
         }
 
-        // Get WebSocket from request (Next.js 15+ support)
-        // Note: The actual implementation of upgradeWebSocket depends on the environment
-        const { socket, response } = await upgradeWebSocket(req);
-
-        const tenantId = session.tenantId;
-        const userId = session.userId;
-        let lastEventId = 0;
-
-        // Register client
-        registerClient(tenantId, userId, socket);
-        connections.set(socket, {
-            tenantId,
-            userId,
-            lastEventId,
-            heartbeatInterval: setInterval(() => {
-                if (socket.readyState === 1) { // WebSocket.OPEN
-                    socket.send(JSON.stringify({ type: 'ping' }));
-                }
-            }, 30000), // Heartbeat every 30 seconds
-        });
-
-        // Handle messages
-        socket.onmessage = async (event: any) => {
-            try {
-                const message = JSON.parse(event.data);
-
-                if (message.action === 'sync') {
-                    // Client requesting missed events
-                    lastEventId = message.lastEventId || 0;
-                    const missedEvents = await getEventsSince(tenantId, lastEventId, 100);
-
-                    socket.send(JSON.stringify({
-                        type: 'sync_response',
-                        events: missedEvents,
-                    }));
-                } else if (message.action === 'presence') {
-                    // Track user presence
-                    await trackPresence(tenantId, userId, message.entityType, message.entityId, message.action);
-                } else if (message.type === 'pong') {
-                    // Heartbeat response
-                    const conn = connections.get(socket);
-                    if (conn) conn.lastEventId = message.lastEventId || conn.lastEventId;
-                }
-            } catch (error) {
-                console.error('WebSocket message error:', error);
-            }
-        };
-
-        // Handle close
-        socket.onclose = async () => {
-            const conn = connections.get(socket);
-            if (conn) {
-                clearInterval(conn.heartbeatInterval);
-                unregisterClient(tenantId, socket);
-                await removePresence(tenantId, userId);
-                connections.delete(socket);
-            }
-        };
-
-        // Handle errors
-        socket.onerror = (error: any) => {
-            console.error('WebSocket error:', error);
-        };
-
+        const { socket, response } = await upgradeWebSocket(req, session);
         return response;
     } catch (error) {
         console.error('WebSocket upgrade error:', error);
@@ -99,15 +24,79 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Upgrade HTTP connection to WebSocket
- * This is a simplified version - actual implementation depends on Next.js version
+ * Upgrade HTTP connection to WebSocket (Edge Runtime compatible)
  */
-async function upgradeWebSocket(req: NextRequest): Promise<{ socket: any, response: Response }> {
-    // Implementation varies by Next.js version
-    // For Next.js 15+, use native WebSocket support if available in the runtime
+async function upgradeWebSocket(req: NextRequest, session: any): Promise<{ socket: any, response: Response }> {
+    // @ts-ignore - WebSocketPair is available in Edge Runtime / Miniflare / Workerd
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [any, any];
 
-    // NOTE: In many Next.js environments, this still needs to be handled at the server level (e.g., custom server)
-    // or via a specialized runtime like Vercel's edge with WebSockets.
-    // For standard Node.js runtime in Next.js, this is a placeholder.
-    throw new Error('WebSocket upgrade not yet implemented for this Next.js version. Requires custom server or specific runtime support.');
+    server.accept();
+
+    const tenantId = session.tenantId;
+    const userId = session.userId;
+    const userName = session.name || session.username || 'Unknown User';
+    let lastEventId = 0;
+
+    // Register client
+    registerClient(tenantId, userId, server);
+
+    // Heartbeat setup
+    const heartbeatInterval = setInterval(() => {
+        if (server.readyState === 1) { // WebSocket.OPEN
+            server.send(JSON.stringify({ type: 'ping' }));
+        }
+    }, 30000);
+
+    // Track state for this specific connection
+    let currentEntity: { type: string, id: string } | null = null;
+
+    server.onmessage = async (event: any) => {
+        try {
+            const message = JSON.parse(event.data);
+
+            if (message.action === 'sync') {
+                lastEventId = message.lastEventId || 0;
+                const missedEvents = await getEventsSince(tenantId, lastEventId, 100);
+                server.send(JSON.stringify({
+                    type: 'sync_response',
+                    events: missedEvents,
+                }));
+            } else if (message.action === 'presence') {
+                const { entityType, entityId, action } = message;
+                currentEntity = { type: entityType, id: entityId };
+                await trackPresence(tenantId, userId, userName, entityType, entityId, action);
+                await emitPresenceUpdate(tenantId, entityType, entityId);
+            } else if (message.type === 'pong') {
+                // Heartbeat response (optional: track latency)
+            }
+        } catch (error) {
+            console.error('WebSocket message error:', error);
+        }
+    };
+
+    server.onclose = async () => {
+        clearInterval(heartbeatInterval);
+        unregisterClient(tenantId, server);
+
+        if (currentEntity) {
+            await removePresence(tenantId, userId, currentEntity.type, currentEntity.id);
+            await emitPresenceUpdate(tenantId, currentEntity.type, currentEntity.id);
+        } else {
+            await removePresence(tenantId, userId);
+        }
+    };
+
+    server.onerror = (error: any) => {
+        console.error('WebSocket socket error:', error);
+    };
+
+    // Return the response for Next.js to finalize the upgrade
+    const response = new Response(null, {
+        status: 101,
+        // @ts-ignore - webSocket property is recognized by Edge Runtime
+        webSocket: client,
+    });
+
+    return { socket: server, response };
 }

@@ -1,4 +1,5 @@
 import { getNextSequenceNumber, storeEvent, WebSocketEvent } from './eventLog';
+import { getPresence } from './presence';
 
 // Connected clients by tenant
 const clients: Map<string, Set<any>> = new Map();
@@ -173,4 +174,19 @@ export async function emitDocumentDeleted(tenantId: string, documentId: string):
 
     await storeEvent(event);
     broadcastToTenant(tenantId, event);
+}
+
+/**
+ * Broadcast presence state for an entity
+ */
+export async function emitPresenceUpdate(tenantId: string, entityType: string, entityId: string): Promise<void> {
+    const users = await getPresence(tenantId, entityType, entityId);
+    broadcastToTenant(tenantId, {
+        type: 'presence_update',
+        payload: {
+            entityType,
+            entityId,
+            users,
+        },
+    });
 }

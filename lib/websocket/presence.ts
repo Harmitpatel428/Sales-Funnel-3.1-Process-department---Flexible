@@ -17,6 +17,7 @@ export interface PresenceState {
 export async function trackPresence(
     tenantId: string,
     userId: string,
+    userName: string,
     entityType: string,
     entityId: string,
     action: string
@@ -25,6 +26,7 @@ export async function trackPresence(
         const key = `presence:${tenantId}:${entityType}:${entityId}`;
         const presenceData = JSON.stringify({
             userId,
+            userName,
             action,
             timestamp: new Date().toISOString(),
         });

@@ -14,6 +14,7 @@ import { FieldPermissionGuard } from './FieldPermissionGuard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ActivityTimeline from './ActivityTimeline';
 import CalendarIntegration from './CalendarIntegration';
+import { PresenceIndicator } from './PresenceIndicator';
 
 
 interface LeadDetailModalProps {
@@ -350,7 +351,10 @@ export default React.memo(function LeadDetailModal({
         <div className="mt-1">
           {/* Modal Header */}
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-medium text-black">Lead Details</h3>
+            <div className="flex items-center gap-4">
+              <h3 className="text-xs font-medium text-black">Lead Details</h3>
+              <PresenceIndicator entityType="lead" entityId={lead.id} />
+            </div>
             <button
               type="button"
               onClick={onClose}

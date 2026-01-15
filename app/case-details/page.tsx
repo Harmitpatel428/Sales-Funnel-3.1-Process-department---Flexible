@@ -15,6 +15,7 @@ import RejectionModal from '../components/RejectionModal';
 import ApprovalModal from '../components/ApprovalModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import { PresenceIndicator } from '../components/PresenceIndicator';
 import { ProcessStatus, CaseDocument, UserRole } from '../types/processTypes';
 
 function CaseDetailContent() {
@@ -440,6 +441,7 @@ function CaseDetailContent() {
                             </div>
 
                             <div className="flex items-center gap-3">
+                                <PresenceIndicator entityType="case" entityId={caseId} />
                                 <CaseStatusBadge status={caseData.processStatus} size="lg" />
 
                                 {/* Status Change Dropdown (Only for process roles) */}

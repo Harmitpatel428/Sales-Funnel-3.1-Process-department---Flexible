@@ -14,7 +14,7 @@ import { getQueryClient } from '../lib/queryClient';
 import { initializeOfflineQueueListeners, processQueue, hasPendingItems } from '../utils/offlineQueue';
 
 import { useTenant } from '../context/TenantContext';
-import { useWebSocket } from '@/lib/websocket/client';
+import { RealtimeSyncProvider } from './RealtimeSyncProvider';
 
 interface QueryProviderProps {
     children: ReactNode;
@@ -22,10 +22,6 @@ interface QueryProviderProps {
 
 export function QueryProvider({ children }: QueryProviderProps) {
     const queryClient = getQueryClient();
-    const { currentTenant } = useTenant();
-
-    // Initialize global WebSocket connection
-    useWebSocket(currentTenant?.id);
 
     // Initialize offline queue listeners
     useEffect(() => {
@@ -67,7 +63,9 @@ export function QueryProvider({ children }: QueryProviderProps) {
 
     return (
         <QueryClientProvider client={queryClient}>
-            {children}
+            <RealtimeSyncProvider>
+                {children}
+            </RealtimeSyncProvider>
             <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
     );
