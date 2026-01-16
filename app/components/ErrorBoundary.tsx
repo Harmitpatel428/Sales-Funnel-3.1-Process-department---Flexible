@@ -2,10 +2,13 @@
 
 import React, { Component, ReactNode } from 'react';
 import { debugLogger, DebugCategory } from '../utils/debugLogger';
+import { captureError } from '../utils/errorTelemetry';
+import { classifyError, ClassifiedError } from '../utils/errorHandling';
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  classifiedError: ClassifiedError | null;
   errorInfo: React.ErrorInfo | null;
   errorId: string;
 }
@@ -24,58 +27,59 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     this.state = {
       hasError: false,
       error: null,
+      classifiedError: null,
       errorInfo: null,
       errorId: ''
     };
   }
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    // Generate unique error ID
     const errorId = `ERR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+    const classifiedError = classifyError(error, { requestId: errorId });
+
     return {
       hasError: true,
       error,
+      classifiedError,
       errorId
     };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     const { onError, level = 'component' } = this.props;
-    
-    // Update state with error info
-    this.setState({
-      errorInfo
+    const { errorId } = this.state;
+
+    this.setState({ errorInfo });
+
+    // 1. Capture Telemetry
+    captureError(error, {
+      componentStack: errorInfo.componentStack,
+      errorId,
+      level,
+      userAgent: navigator.userAgent,
+      url: window.location.href
     });
 
-    // Log error to debug logger
+    // 2. Log to debug logger
     try {
       debugLogger.error(DebugCategory.GENERAL, error.message, {
         stack: error.stack,
         componentStack: errorInfo.componentStack,
         level,
-        errorId: this.state.errorId,
+        errorId,
         timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
       });
     } catch (logError) {
       console.error('Failed to log error to debug logger:', logError);
     }
 
-    // Call custom error handler if provided
+    // 3. Custom Handler
     if (onError) {
       try {
         onError(error, errorInfo);
       } catch (handlerError) {
         console.error('Error in custom error handler:', handlerError);
       }
-    }
-
-    // Log to console in development
-    if (process.env.NODE_ENV === 'development') {
-      console.error('Error Boundary caught an error:', error);
-      console.error('Error Info:', errorInfo);
     }
   }
 
@@ -91,18 +95,20 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     this.setState({
       hasError: false,
       error: null,
+      classifiedError: null,
       errorInfo: null,
       errorId: ''
     });
   };
 
   handleCopyErrorDetails = async () => {
-    const { error, errorInfo, errorId } = this.state;
+    const { error, errorInfo, errorId, classifiedError } = this.state;
     const errorDetails = {
       errorId,
+      code: classifiedError?.code,
+      type: classifiedError?.type,
       timestamp: new Date().toISOString(),
       message: error?.message,
-      stack: error?.stack,
       componentStack: errorInfo?.componentStack,
       userAgent: navigator.userAgent,
       url: window.location.href
@@ -110,7 +116,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
     try {
       await navigator.clipboard.writeText(JSON.stringify(errorDetails, null, 2));
-      // You could show a toast notification here if available
+      // Could show toast here but logic is self-contained
       console.log('Error details copied to clipboard');
     } catch (err) {
       console.error('Failed to copy error details:', err);
@@ -118,16 +124,33 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   };
 
   render() {
-    const { hasError, error, errorId } = this.state;
-    const { children, fallback, showDetails = process.env.NODE_ENV === 'development' } = this.props;
+    const { hasError, error, errorId, classifiedError } = this.state;
+    const { children, fallback, level = 'component', showDetails = process.env.NODE_ENV === 'development' } = this.props;
 
     if (hasError) {
-      // Use custom fallback if provided
       if (fallback) {
         return fallback;
       }
 
-      // Default fallback UI
+      // Compact fallback for component level
+      if (level === 'component') {
+        return (
+          <div className="p-4 border border-red-200 bg-red-50 rounded-lg text-sm text-red-800 flex flex-col gap-2">
+            <div className="font-semibold flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              Component Error
+            </div>
+            <div>{error?.message || 'Something went wrong'}</div>
+            <button onClick={this.handleReset} className="text-blue-600 hover:text-blue-800 underline self-start text-xs">
+              Try Again
+            </button>
+          </div>
+        );
+      }
+
+      // Full page fallback
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
@@ -139,26 +162,29 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
               </div>
               <div className="ml-3">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Something went wrong
+                  {classifiedError?.type === 'NETWORK' ? 'Connection Error' : 'System Error'}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Error ID: {errorId}
+                  Ref: {errorId}
                 </p>
               </div>
             </div>
 
+            <div className="mb-4">
+              <p className="text-gray-700">{classifiedError?.message || error?.message}</p>
+              {classifiedError?.type === 'NETWORK' && (
+                <p className="text-sm text-gray-500 mt-2">Please check your internet connection.</p>
+              )}
+            </div>
+
             {showDetails && error && (
               <div className="mb-4 p-3 bg-gray-100 rounded-md">
-                <p className="text-sm font-medium text-gray-700 mb-2">Error Details:</p>
-                <p className="text-sm text-gray-600 mb-2">{error.message}</p>
-                {error.stack && (
-                  <details className="text-xs text-gray-500">
-                    <summary className="cursor-pointer hover:text-gray-700">Stack Trace</summary>
-                    <pre className="mt-2 whitespace-pre-wrap overflow-auto max-h-32">
-                      {error.stack}
-                    </pre>
-                  </details>
-                )}
+                <details className="text-xs text-gray-500">
+                  <summary className="cursor-pointer hover:text-gray-700 font-medium">Technical Details</summary>
+                  <pre className="mt-2 whitespace-pre-wrap overflow-auto max-h-32 p-2">
+                    {error.stack}
+                  </pre>
+                </details>
               </div>
             )}
 
@@ -169,31 +195,20 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
               >
                 Reload Page
               </button>
-              
+
               <button
                 onClick={this.handleGoHome}
                 className="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
               >
                 Go to Dashboard
               </button>
-              
-              <button
-                onClick={this.handleReset}
-                className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
-              >
-                Try Again
-              </button>
-              
+
               <button
                 onClick={this.handleCopyErrorDetails}
-                className="w-full bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors"
+                className="w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 transition-colors"
               >
                 Copy Error Details
               </button>
-            </div>
-
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              If this problem persists, please contact support with the error ID above.
             </div>
           </div>
         </div>

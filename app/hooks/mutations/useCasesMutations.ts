@@ -12,6 +12,7 @@
 
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { handleError } from '../../utils/errorPipeline';
 import { apiClient } from '../../lib/apiClient';
 import { Case, ProcessStatus, UserRole, BulkAssignmentResult } from '../../types/processTypes';
 import { caseKeys } from '../queries/useCasesQuery';
@@ -298,8 +299,8 @@ export function useUpdateCaseMutation() {
                     lastKnownGood: context?.lastKnownGood
                 } as any);
             }
-        },
-    });
+            handleError(err, { requestPayload: { caseId, updates } });
+        });
 }
 
 /**
@@ -353,6 +354,7 @@ export function useDeleteCaseMutation() {
                     method: 'DELETE',
                 });
             }
+            handleError(err, { requestPayload: { caseId } });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
@@ -430,6 +432,7 @@ export function useUpdateCaseStatusMutation() {
                     method: 'PATCH',
                 });
             }
+            handleError(err, { requestPayload: { caseId, newStatus } });
         },
         onSuccess: (_, { caseId }) => {
             queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
@@ -509,6 +512,7 @@ export function useAssignCaseMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: variables });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });
@@ -576,7 +580,7 @@ export function useBulkAssignCasesMutation() {
 
             return { previousListCaches };
         },
-        onError: (_, __, context) => {
+        onError: (err, { caseIds, userId, roleId }, context) => {
             if (context?.previousListCaches) {
                 context.previousListCaches.forEach(([queryKey, data]) => {
                     if (data) {
@@ -584,6 +588,16 @@ export function useBulkAssignCasesMutation() {
                     }
                 });
             }
+
+            if (isNetworkError(err) && !isOnline()) {
+                addToQueue({
+                    type: 'BULK_ASSIGN_CASES',
+                    payload: { caseIds, userId, roleId },
+                    endpoint: '/api/cases/bulk-assign',
+                    method: 'POST',
+                });
+            }
+            handleError(err, { requestPayload: { caseIds, userId, roleId } });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: caseKeys.lists(), exact: false });

@@ -12,6 +12,7 @@
 
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { handleError } from '../../utils/errorPipeline';
 import { apiClient } from '../../lib/apiClient';
 import { Lead, ColumnConfig } from '../../types/shared';
 import { leadKeys } from '../queries/useLeadsQuery';
@@ -141,6 +142,7 @@ export function useCreateLeadMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: newLead });
         },
         onSuccess: () => {
             // Invalidate all lead list queries to refetch with new data
@@ -298,13 +300,6 @@ export function useUpdateLeadMutation() {
                     }
                 });
             }
-            if (context?.previousDetail) {
-                queryClient.setQueryData(
-                    leadKeys.detail(updatedLead.id),
-                    context.previousDetail
-                );
-            }
-
             if (isNetworkError(err) && !isOnline()) {
                 addToQueue({
                     type: 'UPDATE_LEAD',
@@ -315,6 +310,7 @@ export function useUpdateLeadMutation() {
                     lastKnownGood: context?.lastKnownGood
                 } as any);
             }
+            handleError(err, { requestPayload: updatedLead });
         },
     });
 }
@@ -367,7 +363,6 @@ export function useDeleteLeadMutation() {
                 });
             }
 
-            // Queue for offline if network error
             if (isNetworkError(err) && !isOnline()) {
                 addToQueue({
                     type: 'DELETE_LEAD',
@@ -376,6 +371,7 @@ export function useDeleteLeadMutation() {
                     method: 'DELETE',
                 });
             }
+            handleError(err, { requestPayload: { leadId } });
         },
         onSuccess: () => {
             // Invalidate all lead list queries
@@ -455,6 +451,7 @@ export function useAssignLeadMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: variables });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });

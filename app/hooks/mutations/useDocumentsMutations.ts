@@ -12,6 +12,7 @@
 
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { handleError } from '../../utils/errorPipeline';
 import { apiClient } from '../../lib/apiClient';
 import { CaseDocument, DocumentStatus } from '../../types/processTypes';
 import { documentKeys } from '../queries/useDocumentsQuery';
@@ -156,6 +157,7 @@ export function useUploadDocumentMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: { ...variables, file: undefined, fileName: variables.file.name } });
         },
         onSuccess: (data) => {
             // Invalidate documents for this case and all document lists
@@ -323,6 +325,7 @@ export function useUpdateDocumentMutation() {
                     lastKnownGood: context?.lastKnownGood
                 } as any);
             }
+            handleError(err, { requestPayload: { documentId, updates } });
         },
     });
 }
@@ -375,6 +378,7 @@ export function useDeleteDocumentMutation() {
                     method: 'DELETE',
                 });
             }
+            handleError(err, { requestPayload: { documentId } });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: documentKeys.lists(), exact: false });
@@ -438,6 +442,7 @@ export function useVerifyDocumentMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: { documentId } });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: documentKeys.lists(), exact: false });
@@ -510,6 +515,7 @@ export function useRejectDocumentMutation() {
                     method: 'POST',
                 });
             }
+            handleError(err, { requestPayload: { documentId, reason } });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: documentKeys.lists(), exact: false });
