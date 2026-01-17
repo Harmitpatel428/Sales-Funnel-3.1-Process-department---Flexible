@@ -19,6 +19,8 @@ import { useWebSocketConflicts } from '../hooks/useWebSocketConflicts';
 import ConflictResolutionModal from '../components/ConflictResolutionModal';
 import { applyResolution } from '../utils/optimistic';
 import { useUpdateLeadMutation } from '../hooks/mutations/useLeadsMutations';
+import { useBulkImportMutation } from '@/app/hooks/mutations';
+
 
 const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
@@ -117,6 +119,7 @@ export default function AllLeadsPage() {
   const conflictFilter = useCallback((c: any) => c.entityType === 'lead', []);
   const { conflictState, cancelConflict } = useWebSocketConflicts(conflictFilter);
   const updateLeadMutation = useUpdateLeadMutation();
+  const bulkImportMutation = useBulkImportMutation();
 
   const handleConflictResolve = async (resolution: any) => {
     if (!conflictState) return;
@@ -1188,7 +1191,7 @@ export default function AllLeadsPage() {
   };
 
   // Map header to lead field - enhanced to support custom headers
-   
+
   const mapHeaderToField = (lead: Partial<Lead>, header: string, value: any) => {
     const headerLower = header.toLowerCase().trim();
     if (process.env.NODE_ENV === 'development') {
@@ -2437,31 +2440,66 @@ export default function AllLeadsPage() {
         }
       });
 
-      // Add new leads to state
+      // Add new leads to state -> NOW using Server Mutation
       if (leadsToCreate.length > 0) {
-        startTransition(() => {
-          setLeads(prev => [...prev, ...leadsToCreate]);
-        });
-      }
+        setIsImporting(true);
+        setImportProgress({ current: 0, total: leadsToCreate.length }); // Indeterminate state really
 
-      // Show toast notification
-      setShowToast(true);
-      if (leadsToCreate.length > 0 || skippedDuplicateCount > 0) {
-        let message = `Imported ${leadsToCreate.length} leads.`;
-        if (skippedDuplicateCount > 0) {
-          message += ` Skipped ${skippedDuplicateCount} duplicates.`;
-        }
-        setToastMessage(message);
-        setToastType('success');
+        bulkImportMutation.mutate(
+          { records: leadsToCreate, entityType: 'leads' },
+          {
+            onSuccess: (response) => {
+              setIsImporting(false);
+              const results = response.data;
+
+              // Show success notification
+              setShowToast(true);
+              let message = `Import complete: ${results.successful} created.`;
+              if (skippedDuplicateCount > 0) {
+                message += ` ${skippedDuplicateCount} duplicates skipped locally.`;
+              }
+              if (results.failed > 0) {
+                message += ` ${results.failed} failed on server.`;
+              }
+              if (results.skipped > 0) {
+                message += ` ${results.skipped} skipped on server.`;
+              }
+
+              setToastMessage(message);
+              setToastType('success');
+
+              // Auto-hide toast
+              setTimeout(() => {
+                setShowToast(false);
+              }, 5000);
+            },
+            onError: (error) => {
+              setIsImporting(false);
+              console.error('Bulk import mutation failed:', error);
+              setShowToast(true);
+              setToastMessage(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              setToastType('error');
+              setTimeout(() => {
+                setShowToast(false);
+              }, 5000);
+            }
+          }
+        );
       } else {
-        setToastMessage('No new data to import.');
+        // Show toast notification for no data
+        setShowToast(true);
+        if (skippedDuplicateCount > 0) {
+          setToastMessage(`No new leads to import. ${skippedDuplicateCount} duplicates skipped.`);
+        } else {
+          setToastMessage('No new data to import.');
+        }
         setToastType('info');
-      }
 
-      // Auto-hide toast after 5 seconds
-      setTimeout(() => {
-        setShowToast(false);
-      }, 5000);
+        // Auto-hide toast after 5 seconds
+        setTimeout(() => {
+          setShowToast(false);
+        }, 5000);
+      }
 
       // Clear the file input
       event.target.value = '';

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionByToken } from '@/lib/auth';
 import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
+import { emitBulkImportCompleted } from '@/lib/websocket/server';
+
 import { generateBypassToken, validateBypassToken } from '@/lib/middleware/validation';
 
 // GET /api/bulk/import - Generate bypass token (Admin only)
@@ -159,6 +161,9 @@ export async function POST(req: NextRequest) {
                             customFields: record.customFields ? JSON.stringify(record.customFields) : '{}',
                             tenantId: session.tenantId,
                             createdById: session.userId,
+                            assignedToId: session.userId,
+                            isDone: false,
+                            isDeleted: false,
                         },
                     });
                     results.created.push(lead.id);
@@ -172,6 +177,36 @@ export async function POST(req: NextRequest) {
                     errors: [error.message || 'Unknown error creating record'],
                 });
             }
+        }
+
+        // 2. Emit WebSocket event (Secondary notification)
+        try {
+            await emitBulkImportCompleted(session.tenantId, {
+                successful: results.successful,
+                failed: results.failed,
+                skipped: results.skipped
+            });
+        } catch (error) {
+            console.error('[WebSocket] Bulk import notification failed:', error);
+        }
+
+        // 7. Add Audit Logging
+        try {
+            // Convert plural entityType (leads/cases) to singular for audit log
+            const auditEntity = entityType.endsWith('s') ? entityType.slice(0, -1) : entityType;
+
+            await prisma.auditLog.create({
+                data: {
+                    actionType: 'BULK_IMPORT',
+                    entityType: auditEntity,
+                    description: `Import complete: ${results.successful} created, ${results.failed} failed, ${results.skipped} skipped`,
+                    performedById: session.userId,
+                    tenantId: session.tenantId,
+                    metadata: JSON.stringify({ results }),
+                }
+            });
+        } catch (error) {
+            console.error('[Audit] Failed to log bulk import:', error);
         }
 
         return NextResponse.json({

@@ -11,6 +11,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
 import { useDebouncedValue } from '../utils/debounce';
 import * as XLSX from 'xlsx';
+import { useQueryClient } from '@tanstack/react-query';
 
 const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
@@ -58,6 +59,8 @@ export default function DashboardPage() {
   const [validationErrors, setValidationErrors] = useState<Record<string, Record<string, string>>>({});
   const [columnCount, setColumnCount] = useState(0);
   const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
   // Drag and drop state for status buttons
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
@@ -740,6 +743,20 @@ export default function DashboardPage() {
     }
   };
 
+  // Manual refresh handler
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['leads'] });
+      showToastNotification('Dashboard refreshed', 'success');
+    } catch (error) {
+      console.error('Refresh failed:', error);
+      showToastNotification('Refresh failed', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Search functionality
   const handleSearch = () => {
     // Debouncing handles filter updates automatically
@@ -1306,6 +1323,22 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
+
+            <button
+              onClick={handleManualRefresh}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs flex items-center gap-1"
+              disabled={isRefreshing}
+            >
+              <svg
+                className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
 
             <button
               onClick={() => handleSelectAll(!selectAll)}

@@ -566,3 +566,27 @@ export function useMarkLeadDoneMutation() {
         },
     });
 }
+
+/**
+ * Bulk import leads
+ */
+export function useBulkImportMutation() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: { records: any[], entityType: string, options?: any }) => {
+            const response = await apiClient.post<{ success: boolean; data: any; message: string }>('/api/bulk/import', data);
+
+            if (!response.success) {
+                throw new Error(response.message || 'Import failed');
+            }
+            return response;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });
+        },
+        onError: (err) => {
+            handleError(err, { context: 'Bulk Import' });
+        }
+    });
+}

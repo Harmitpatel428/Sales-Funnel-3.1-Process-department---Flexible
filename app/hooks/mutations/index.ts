@@ -14,6 +14,7 @@ export {
     useForwardLeadMutation,
     useAddLeadActivityMutation,
     useMarkLeadDoneMutation,
+    useBulkImportMutation,
 } from './useLeadsMutations';
 
 // Cases

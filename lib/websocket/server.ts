@@ -191,6 +191,24 @@ export async function emitPresenceUpdate(tenantId: string, entityType: string, e
     });
 }
 
+export async function emitBulkImportCompleted(
+    tenantId: string,
+    stats: { successful: number; failed: number; skipped: number }
+): Promise<void> {
+    const sequenceNumber = await getNextSequenceNumber(tenantId);
+    const event: WebSocketEvent = {
+        id: crypto.randomUUID(),
+        sequenceNumber,
+        eventType: 'bulkImported',
+        tenantId,
+        payload: stats,
+        timestamp: new Date().toISOString(),
+    };
+
+    await storeEvent(event);
+    broadcastToTenant(tenantId, event);
+}
+
 // Session Lifecycle Emitters
 
 export async function emitSessionInvalidated(tenantId: string, userId: string, reason: string): Promise<void> {
