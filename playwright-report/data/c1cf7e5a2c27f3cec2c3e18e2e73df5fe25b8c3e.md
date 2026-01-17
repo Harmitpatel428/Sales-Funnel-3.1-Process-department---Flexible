@@ -1,0 +1,69 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e6]: Checking...
+    - generic:
+      - generic: Real-time updates active
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - heading "Welcome! Let's set up your work tracker" [level=2] [ref=e10]
+      - paragraph [ref=e11]: Enter your name to start tracking your work. This will be used to identify your activities and work sessions.
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: Your Name
+        - textbox "Employee name" [active] [ref=e15]:
+          - /placeholder: Enter your full name
+      - button "Start Tracking" [disabled] [ref=e16]
+  - generic [ref=e17]:
+    - navigation [ref=e18]:
+      - generic [ref=e20]:
+        - generic [ref=e22]: CRM
+        - generic [ref=e23]:
+          - button "Sign In" [ref=e24]
+          - generic [ref=e26]:
+            - generic [ref=e27]: 03:33 PM
+            - generic [ref=e28]: Fri, Jan 16
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - img [ref=e33]
+        - heading "Welcome Back" [level=2] [ref=e35]
+        - paragraph [ref=e36]: Sign in to continue to CRM
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39]: Username
+          - generic [ref=e40]:
+            - generic:
+              - img
+            - textbox "Username" [ref=e41]:
+              - /placeholder: Enter username
+        - generic [ref=e42]:
+          - generic [ref=e43]: Password
+          - generic [ref=e44]:
+            - generic:
+              - img
+            - textbox "Password" [ref=e45]:
+              - /placeholder: Enter password
+            - button [ref=e46]:
+              - img [ref=e47]
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - checkbox "Remember me" [ref=e52]
+            - generic [ref=e53]: Remember me
+          - link "Forgot password?" [ref=e55] [cursor=pointer]:
+            - /url: /forgot-password
+        - button "Sign In" [ref=e56]
+        - paragraph [ref=e58]: Your session is protected with secure, server-validated authentication.
+    - main [ref=e59]:
+      - generic [ref=e61]:
+        - heading "404" [level=1] [ref=e62]
+        - heading "This page could not be found." [level=2] [ref=e64]
+  - generic [ref=e65]:
+    - img [ref=e67]
+    - button "Open Tanstack query devtools" [ref=e115] [cursor=pointer]:
+      - img [ref=e116]
+  - button "Open Next.js Dev Tools" [ref=e169] [cursor=pointer]:
+    - img [ref=e170]
+  - alert [ref=e173]
+```

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { registerClient, unregisterClient, emitPresenceUpdate } from '@/lib/websocket/server';
 import { getEventsSince } from '@/lib/websocket/eventLog';
 import { trackPresence, removePresence } from '@/lib/websocket/presence';
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return new Response('Unauthorized', { status: 401 });
         }

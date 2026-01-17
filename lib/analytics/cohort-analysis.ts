@@ -84,7 +84,7 @@ export function calculateRFMScores(leads: any[]): RFMScore[] {
         const monScore = Math.min(5, Math.max(1, Math.ceil(monetary / 200000)));
 
         const avgScore = (recency + freqScore + monScore) / 3;
-        let segment = avgScore >= 4 ? 'Champions' : avgScore >= 3 ? 'Loyal' : avgScore >= 2 ? 'Developing' : 'Hibernating';
+        const segment = avgScore >= 4 ? 'Champions' : avgScore >= 3 ? 'Loyal' : avgScore >= 2 ? 'Developing' : 'Hibernating';
 
         return { id: lead.id, recency, frequency: freqScore, monetary: monScore, segment };
     });

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
 import { verifyTOTP, decryptSecret, encryptSecret } from '@/lib/mfa/totp';
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         // Allow if session exists (even if partial/mfaVerified=false)
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

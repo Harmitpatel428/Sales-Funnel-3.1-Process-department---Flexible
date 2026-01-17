@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
 import { PermissionKey, PERMISSIONS, SENSITIVE_FIELDS } from '@/app/types/permissions';
 import { emitPermissionsChanged } from '@/lib/websocket/server';
@@ -110,7 +111,8 @@ export function requirePermissions(
     requireAll: boolean = true
 ) {
     return async (req: NextRequest): Promise<NextResponse | null> => {
-        const session = await getSession();
+        const token = req.cookies.get(SESSION_COOKIE_NAME)?.value || null;
+        const session = await getSessionByToken(token);
 
         if (!session) {
             return NextResponse.json(

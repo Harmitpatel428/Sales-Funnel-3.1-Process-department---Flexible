@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { revokeApiKey, rotateApiKey, getApiKeyUsageStats, API_SCOPES } from '@/lib/api-keys';
 import { prisma } from '@/lib/db';
 
@@ -9,7 +10,7 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
@@ -79,7 +80,7 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
@@ -194,7 +195,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { generateApiKey, API_SCOPES, SCOPE_DESCRIPTIONS } from '@/lib/api-keys';
 import { prisma } from '@/lib/db';
 
 // GET /api/api-keys - List all API keys for the tenant
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
 // POST /api/api-keys - Create a new API key
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }

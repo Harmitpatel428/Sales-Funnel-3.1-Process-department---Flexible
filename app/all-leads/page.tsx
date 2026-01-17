@@ -1188,7 +1188,7 @@ export default function AllLeadsPage() {
   };
 
   // Map header to lead field - enhanced to support custom headers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const mapHeaderToField = (lead: Partial<Lead>, header: string, value: any) => {
     const headerLower = header.toLowerCase().trim();
     if (process.env.NODE_ENV === 'development') {

@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         // const hasPerm = await checkPermission(session.user.id, PERMISSIONS.EMAIL_SEND);
         // if (!hasPerm) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-        let trackingPixelId = uuidv4();
+        const trackingPixelId = uuidv4();
         let finalHtml = injectTrackingPixel(data.htmlBody, trackingPixelId);
 
         // Create preliminary email record

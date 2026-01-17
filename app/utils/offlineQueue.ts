@@ -44,9 +44,9 @@ export interface OfflineQueueItem {
 type QueueEventCallback = (item: OfflineQueueItem) => void;
 type QueueProcessCallback = (results: { success: OfflineQueueItem[]; failed: OfflineQueueItem[] }) => void;
 
-let onItemAddedCallback: QueueEventCallback | null = null;
-let onItemProcessedCallback: QueueEventCallback | null = null;
-let onQueueProcessedCallback: QueueProcessCallback | null = null;
+const onItemAddedCallback: QueueEventCallback | null = null;
+const onItemProcessedCallback: QueueEventCallback | null = null;
+const onQueueProcessedCallback: QueueProcessCallback | null = null;
 
 function generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -60,6 +60,10 @@ export function getQueue(): OfflineQueueItem[] {
     } catch {
         return [];
     }
+}
+
+export function hasPendingItems(): boolean {
+    return getQueue().length > 0;
 }
 
 export function getFailedQueue(): OfflineQueueItem[] {

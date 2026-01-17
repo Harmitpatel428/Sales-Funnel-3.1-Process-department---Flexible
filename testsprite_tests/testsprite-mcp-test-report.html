@@ -1213,7 +1213,7 @@ body {
         </div>
         <div class="metadata-row">
           <div class="metadata-label text-body-medium">Date</div>
-          <div class="metadata-value text-body">13/1/2026</div>
+          <div class="metadata-value text-body">16/1/2026</div>
         </div>
         <div class="metadata-row">
           <div class="metadata-label text-body-medium">Prepared by</div>
@@ -1234,14 +1234,14 @@ body {
         
         <div class="coverage-summary">
           <ul class="coverage-list text-body">
-            <li><span class="coverage-highlight">0/0</span> of tests passed</li>
+            <li><span class="coverage-highlight">0/4</span> of tests passed</li>
             <li><span class="coverage-highlight">Key gaps / risks:</span>
             
-              <ul>
-<li>Resolved</li>
-<li><strong>Critical Authentication Failure:</strong> Resolved by implementing the missing API layer.</li>
-<li><strong>Server Instability:</strong> specific 500 errors in Email Parse resolved by fixing library usage.</li>
-</ul>
+              <ol>
+<li><strong>Environment Connectivity</strong>: 75% of the tests (3 out of 4) failed due to infrastructure issues (tunnel timeouts) rather than application logic failures. This blocks verified testing of the actual API endpoints.</li>
+<li><strong>Test Data Mismatch</strong>: The authentication failure points to a discrepancy between the test suite's assumptions and the actual database state. This prevents any authenticated tests from running successfully.</li>
+<li><strong>Partial Execution</strong>: The original test plan included 19 test cases, but only 4 were executed and reported. This indicates a significant gap in coverage execution.</li>
+</ol>
 
             </li>
 </ul>
@@ -1265,6 +1265,29 @@ body {
           </div>
           <div class="table-rows">
             
+            <div class="table-row">
+              <div class="table-cell"><span class="text-body">Authentication & Session Management</span></div>
+              <div class="table-cell"><span class="text-body">1</span></div>
+              <div class="table-cell"><span class="text-body">0</span></div>
+              <div class="table-cell"><span class="text-body">1</span></div>
+            </div>
+        
+
+            <div class="table-row">
+              <div class="table-cell"><span class="text-body">Email Integration</span></div>
+              <div class="table-cell"><span class="text-body">2</span></div>
+              <div class="table-cell"><span class="text-body">0</span></div>
+              <div class="table-cell"><span class="text-body">2</span></div>
+            </div>
+        
+
+            <div class="table-row">
+              <div class="table-cell"><span class="text-body">Leads Management</span></div>
+              <div class="table-cell"><span class="text-body">1</span></div>
+              <div class="table-cell"><span class="text-body">0</span></div>
+              <div class="table-cell"><span class="text-body">1</span></div>
+            </div>
+        
           </div>
         </div>
       </div>
@@ -1281,6 +1304,281 @@ body {
         <div class="accordion-container">
 
         
+                <div class="requirement-wrapper accordion-item active">
+          <div class="accordion-header" onclick="toggleAccordion(this)">
+            <div class="requirement-content">
+                                          <div class="requirement-title-row">
+              <h3 class="title-requirement">Authentication & Session Management</h3>
+                <div class="requirement-status-tag status-error">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+                <path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>0/1</span>
+            </div>
+              </div>
+              <p class="text-body-medium requirement-description">Proper error handling for API calls and invalid data scenarios.</p>
+            </div>
+            <div class="accordion-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.4276 6C11.9145 6 12.1687 6.61626 11.875 7.01439L11.8316 7.06689L8.40295 10.817C8.30455 10.9246 8.17364 10.9892 8.03476 10.9988C7.89589 11.0083 7.7586 10.9621 7.64865 10.8688L7.59493 10.817L4.16629 7.06689L4.11886 7.00814L4.088 6.96002L4.05714 6.90002L4.04743 6.87752L4.032 6.83564L4.01371 6.76814L4.008 6.73501L4.00229 6.69751L4 6.66189V6.58814L4.00286 6.55188L4.008 6.51438L4.01371 6.48188L4.032 6.41438L4.04743 6.37251L4.08743 6.29L4.12457 6.23375L4.16629 6.18313L4.22 6.13125L4.26401 6.0975L4.31886 6.06375L4.33944 6.05313L4.37772 6.03625L4.43944 6.01625L4.46972 6.01L4.50401 6.00375L4.53658 6.00125L11.4276 6Z" fill="var(--fg-secondary)"/>
+              </svg>
+            </div>
+          </div>
+
+            <div class="accordion-content">
+            <div class="test-wrapper">
+<div class="test-card">
+                <div class="test-header">
+                  <h4 class="text-body-medium">TC001: Authentication Session Management</h4>
+                </div>
+                <div class="test-content">
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Code</div>
+                    <div class="test-field-value text-body">
+                      <a href="./TC001_authentication_session_management.py" class="text-link">TC001_authentication_session_management.py</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Error</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Visualization and Result</div>
+                    <div class="test-field-value text-body">
+                      <a href="null" class="text-link">View Results</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Status</div>
+                    <div class="test-field-value">
+                      
+            <div class="status-wrapper">
+                <div class="status-icon">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+<path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+                </div>
+                <span class="text-body status-fail">Failed</span>
+            </div>
+            
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Severity</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Analysis / Findings</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+                <div class="requirement-wrapper accordion-item active">
+          <div class="accordion-header" onclick="toggleAccordion(this)">
+            <div class="requirement-content">
+                                          <div class="requirement-title-row">
+              <h3 class="title-requirement">Email Integration</h3>
+                <div class="requirement-status-tag status-error">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+                <path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>0/2</span>
+            </div>
+              </div>
+              <p class="text-body-medium requirement-description">Proper error handling for API calls and invalid data scenarios.</p>
+            </div>
+            <div class="accordion-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.4276 6C11.9145 6 12.1687 6.61626 11.875 7.01439L11.8316 7.06689L8.40295 10.817C8.30455 10.9246 8.17364 10.9892 8.03476 10.9988C7.89589 11.0083 7.7586 10.9621 7.64865 10.8688L7.59493 10.817L4.16629 7.06689L4.11886 7.00814L4.088 6.96002L4.05714 6.90002L4.04743 6.87752L4.032 6.83564L4.01371 6.76814L4.008 6.73501L4.00229 6.69751L4 6.66189V6.58814L4.00286 6.55188L4.008 6.51438L4.01371 6.48188L4.032 6.41438L4.04743 6.37251L4.08743 6.29L4.12457 6.23375L4.16629 6.18313L4.22 6.13125L4.26401 6.0975L4.31886 6.06375L4.33944 6.05313L4.37772 6.03625L4.43944 6.01625L4.46972 6.01L4.50401 6.00375L4.53658 6.00125L11.4276 6Z" fill="var(--fg-secondary)"/>
+              </svg>
+            </div>
+          </div>
+
+            <div class="accordion-content">
+            <div class="test-wrapper">
+<div class="test-card">
+                <div class="test-header">
+                  <h4 class="text-body-medium">TC002: Email Synchronization Trigger</h4>
+                </div>
+                <div class="test-content">
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Code</div>
+                    <div class="test-field-value text-body">
+                      <a href="./TC002_email_synchronization_trigger.py" class="text-link">TC002_email_synchronization_trigger.py</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Error</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Visualization and Result</div>
+                    <div class="test-field-value text-body">
+                      <a href="null" class="text-link">View Results</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Status</div>
+                    <div class="test-field-value">
+                      
+            <div class="status-wrapper">
+                <div class="status-icon">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+<path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+                </div>
+                <span class="text-body status-fail">Failed</span>
+            </div>
+            
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Severity</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Analysis / Findings</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                </div>
+              </div>
+<div class="test-card">
+                <div class="test-header">
+                  <h4 class="text-body-medium">TC003: Email Parsing Functionality</h4>
+                </div>
+                <div class="test-content">
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Code</div>
+                    <div class="test-field-value text-body">
+                      <a href="./TC003_email_parsing_functionality.py" class="text-link">TC003_email_parsing_functionality.py</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Error</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Visualization and Result</div>
+                    <div class="test-field-value text-body">
+                      <a href="null" class="text-link">View Results</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Status</div>
+                    <div class="test-field-value">
+                      
+            <div class="status-wrapper">
+                <div class="status-icon">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+<path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+                </div>
+                <span class="text-body status-fail">Failed</span>
+            </div>
+            
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Severity</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Analysis / Findings</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+                <div class="requirement-wrapper accordion-item active">
+          <div class="accordion-header" onclick="toggleAccordion(this)">
+            <div class="requirement-content">
+                                          <div class="requirement-title-row">
+              <h3 class="title-requirement">Leads Management</h3>
+                <div class="requirement-status-tag status-error">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+                <path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>0/1</span>
+            </div>
+              </div>
+              <p class="text-body-medium requirement-description">Proper error handling for API calls and invalid data scenarios.</p>
+            </div>
+            <div class="accordion-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.4276 6C11.9145 6 12.1687 6.61626 11.875 7.01439L11.8316 7.06689L8.40295 10.817C8.30455 10.9246 8.17364 10.9892 8.03476 10.9988C7.89589 11.0083 7.7586 10.9621 7.64865 10.8688L7.59493 10.817L4.16629 7.06689L4.11886 7.00814L4.088 6.96002L4.05714 6.90002L4.04743 6.87752L4.032 6.83564L4.01371 6.76814L4.008 6.73501L4.00229 6.69751L4 6.66189V6.58814L4.00286 6.55188L4.008 6.51438L4.01371 6.48188L4.032 6.41438L4.04743 6.37251L4.08743 6.29L4.12457 6.23375L4.16629 6.18313L4.22 6.13125L4.26401 6.0975L4.31886 6.06375L4.33944 6.05313L4.37772 6.03625L4.43944 6.01625L4.46972 6.01L4.50401 6.00375L4.53658 6.00125L11.4276 6Z" fill="var(--fg-secondary)"/>
+              </svg>
+            </div>
+          </div>
+
+            <div class="accordion-content">
+            <div class="test-wrapper">
+<div class="test-card">
+                <div class="test-header">
+                  <h4 class="text-body-medium">TC004: Leads Management CRUD Operations</h4>
+                </div>
+                <div class="test-content">
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Code</div>
+                    <div class="test-field-value text-body">
+                      <a href="./TC004_leads_management_crud_operations.py" class="text-link">TC004_leads_management_crud_operations.py</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Error</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Test Visualization and Result</div>
+                    <div class="test-field-value text-body">
+                      <a href="null" class="text-link">View Results</a>
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Status</div>
+                    <div class="test-field-value">
+                      
+            <div class="status-wrapper">
+                <div class="status-icon">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="7.99961" cy="7.99998" r="6.4" fill="#C23539" fill-opacity="0.2"/>
+<path d="M8 5.59998V7.99698" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 10.394V10.3995" stroke="#EF4146" stroke-width="1.38478" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+                </div>
+                <span class="text-body status-fail">Failed</span>
+            </div>
+            
+                    </div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Severity</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                  <div class="test-field">
+                    <div class="test-field-label text-body-medium">Analysis / Findings</div>
+                    <div class="test-field-value text-body">N/A</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
           
         </div>
       </div>

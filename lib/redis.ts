@@ -58,7 +58,7 @@ class InMemoryRedis implements RedisClient {
     }
 
     async lrange(key: string, start: number, stop: number): Promise<string[]> {
-        let list = this.store.get(key) || [];
+        const list = this.store.get(key) || [];
         if (!Array.isArray(list)) return [];
         // Handle negative indices if needed, but simple slice for now
         const end = stop < 0 ? list.length + stop + 1 : stop + 1;
@@ -66,7 +66,7 @@ class InMemoryRedis implements RedisClient {
     }
 
     async ltrim(key: string, start: number, stop: number): Promise<string> {
-        let list = this.store.get(key) || [];
+        const list = this.store.get(key) || [];
         if (!Array.isArray(list)) return 'OK';
         const end = stop < 0 ? list.length + stop + 1 : stop + 1;
         this.store.set(key, list.slice(start, end));
@@ -88,7 +88,7 @@ class InMemoryRedis implements RedisClient {
     }
 
     async srem(key: string, ...members: string[]): Promise<number> {
-        let set = this.store.get(key);
+        const set = this.store.get(key);
         if (!(set instanceof Set)) return 0;
         let removed = 0;
         for (const m of members) {
@@ -100,7 +100,7 @@ class InMemoryRedis implements RedisClient {
     }
 
     async smembers(key: string): Promise<string[]> {
-        let set = this.store.get(key);
+        const set = this.store.get(key);
         if (!(set instanceof Set)) return [];
         return Array.from(set);
     }

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { validateOAuthClient, generateAuthorizationCode, OAUTH_SCOPES, OAUTH_SCOPE_DESCRIPTIONS } from '@/lib/oauth/server';
 
 // GET /api/oauth/authorize - Authorization endpoint
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         const { searchParams } = new URL(req.url);
 
         const clientId = searchParams.get('client_id');
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
 // POST /api/oauth/authorize - User approves authorization
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json(
                 { error: 'access_denied', error_description: 'User not authenticated' },

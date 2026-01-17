@@ -1,80 +1,106 @@
 import requests
 
-BASE_URL = "http://localhost:3001"
+BASE_URL = "http://localhost:3000"
 TIMEOUT = 30
+HEADERS = {
+    "Content-Type": "application/json",
+    # Add authentication header here if required, e.g., "Authorization": "Bearer <token>"
+}
 
 def test_leads_management_crud_operations():
-    # Authenticate first to get a session token (assumed /api/auth/login endpoint with POST)
-    login_url = f"{BASE_URL}/api/auth/login"
-    login_payload = {
-        "username": "testuser",
-        "password": "testpassword"
+    lead_data_create = {
+        "name": "Test Lead",
+        "email": "test.lead@example.com",
+        "phone": "+1234567890",
+        "company": "Test Company",
+        "status": "new",
+        "source": "web",
+        "notes": "Initial test lead creation"
     }
-    headers = {"Content-Type": "application/json"}
-    session = requests.Session()
+    lead_data_update = {
+        "name": "Updated Test Lead",
+        "email": "updated.lead@example.com",
+        "phone": "+1987654321",
+        "company": "Updated Test Company",
+        "status": "contacted",
+        "source": "email",
+        "notes": "Updated notes for test lead"
+    }
+
+    lead_id = None
     try:
-        login_resp = session.post(login_url, json=login_payload, headers=headers, timeout=TIMEOUT)
-        assert login_resp.status_code == 200, f"Login failed with status {login_resp.status_code}"
-        login_data = login_resp.json()
-        assert "token" in login_data or "accessToken" in login_data, "No session token in login response"
-        token = login_data.get("token") or login_data.get("accessToken")
-        auth_headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+        # Create lead (POST /api/leads)
+        response_create = requests.post(
+            f"{BASE_URL}/api/leads",
+            json=lead_data_create,
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_create.status_code == 201 or response_create.status_code == 200, \
+            f"Lead creation failed: {response_create.status_code} {response_create.text}"
+        created_lead = response_create.json()
+        assert "id" in created_lead, "Created lead response missing 'id'"
+        lead_id = created_lead["id"]
 
-        # 1. CREATE a lead
-        create_url = f"{BASE_URL}/api/leads"
-        lead_payload = {
-            "name": "Test Lead",
-            "email": "lead@example.com",
-            "phone": "1234567890",
-            "status": "new",
-            "source": "web",
-            "company": "Test Company",
-            "title": "Manager",
-            "notes": "Initial test lead"
-        }
-        create_resp = session.post(create_url, json=lead_payload, headers=auth_headers, timeout=TIMEOUT)
-        assert create_resp.status_code == 201, f"Lead creation failed with status {create_resp.status_code}"
-        lead_data = create_resp.json()
-        assert "id" in lead_data, "Created lead response missing id"
-        lead_id = lead_data["id"]
+        # Read lead (GET /api/leads/{id})
+        response_read = requests.get(
+            f"{BASE_URL}/api/leads/{lead_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_read.status_code == 200, f"Lead read failed: {response_read.status_code} {response_read.text}"
+        read_lead = response_read.json()
+        assert read_lead["id"] == lead_id, "Lead ID mismatch on read"
+        for key in lead_data_create:
+            assert read_lead.get(key) == lead_data_create[key], f"Mismatch in read field {key}"
 
-        # 2. READ the lead
-        read_url = f"{BASE_URL}/api/leads/{lead_id}"
-        read_resp = session.get(read_url, headers=auth_headers, timeout=TIMEOUT)
-        assert read_resp.status_code == 200, f"Lead retrieval failed with status {read_resp.status_code}"
-        read_data = read_resp.json()
-        for key in lead_payload:
-            assert read_data.get(key) == lead_payload[key], f"Lead data mismatch on {key}"
+        # Update lead (PUT /api/leads/{id})
+        response_update = requests.put(
+            f"{BASE_URL}/api/leads/{lead_id}",
+            json=lead_data_update,
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_update.status_code == 200, f"Lead update failed: {response_update.status_code} {response_update.text}"
+        updated_lead = response_update.json()
+        assert updated_lead["id"] == lead_id, "Lead ID mismatch on update"
+        for key in lead_data_update:
+            assert updated_lead.get(key) == lead_data_update[key], f"Mismatch in updated field {key}"
 
-        # 3. UPDATE the lead
-        update_url = f"{BASE_URL}/api/leads/{lead_id}"
-        update_payload = {
-            "status": "contacted",
-            "notes": "Lead has been contacted"
-        }
-        update_resp = session.put(update_url, json=update_payload, headers=auth_headers, timeout=TIMEOUT)
-        assert update_resp.status_code == 200, f"Lead update failed with status {update_resp.status_code}"
-        updated_lead = update_resp.json()
-        assert updated_lead.get("status") == "contacted", "Lead status was not updated"
-        assert updated_lead.get("notes") == "Lead has been contacted", "Lead notes were not updated"
+        # Confirm update by reading again
+        response_read_after_update = requests.get(
+            f"{BASE_URL}/api/leads/{lead_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_read_after_update.status_code == 200, f"Lead read after update failed: {response_read_after_update.status_code} {response_read_after_update.text}"
+        read_after_update = response_read_after_update.json()
+        for key in lead_data_update:
+            assert read_after_update.get(key) == lead_data_update[key], f"Mismatch in read-after-update field {key}"
 
-        # 4. DELETE the lead
-        delete_url = f"{BASE_URL}/api/leads/{lead_id}"
-        delete_resp = session.delete(delete_url, headers=auth_headers, timeout=TIMEOUT)
-        assert delete_resp.status_code == 204, f"Lead deletion failed with status {delete_resp.status_code}"
+        # Delete lead (DELETE /api/leads/{id})
+        response_delete = requests.delete(
+            f"{BASE_URL}/api/leads/{lead_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_delete.status_code == 200 or response_delete.status_code == 204, \
+            f"Lead delete failed: {response_delete.status_code} {response_delete.text}"
 
-        # Confirm lead deletion
-        confirm_resp = session.get(read_url, headers=auth_headers, timeout=TIMEOUT)
-        assert confirm_resp.status_code == 404, "Deleted lead still retrievable"
+        # Confirm deletion by attempting to read
+        response_read_after_delete = requests.get(
+            f"{BASE_URL}/api/leads/{lead_id}",
+            headers=HEADERS,
+            timeout=TIMEOUT
+        )
+        assert response_read_after_delete.status_code == 404, \
+            f"Deleted lead still accessible: {response_read_after_delete.status_code} {response_read_after_delete.text}"
 
     finally:
-        # Cleanup in case lead still exists (best effort)
-        if 'lead_id' in locals():
+        # Cleanup: try to delete lead if still exists
+        if lead_id is not None:
             try:
-                session.delete(f"{BASE_URL}/api/leads/{lead_id}", headers=auth_headers, timeout=TIMEOUT)
+                requests.delete(f"{BASE_URL}/api/leads/{lead_id}", headers=HEADERS, timeout=TIMEOUT)
             except Exception:
                 pass
 

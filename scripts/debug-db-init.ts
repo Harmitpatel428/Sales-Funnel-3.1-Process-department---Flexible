@@ -1,6 +1,6 @@
 
 import { prisma, checkDatabaseHealth } from '../lib/db';
-import { getSession } from '../lib/auth';
+// getSession removed
 import { requirePermissions } from '../lib/middleware/permissions';
 import { TriggerManager } from '../lib/workflows/triggers';
 import { rateLimitMiddleware } from '../lib/middleware/rate-limiter';

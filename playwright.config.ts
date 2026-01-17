@@ -2,16 +2,19 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
     testDir: './e2e',
-    fullyParallel: false,
+    fullyParallel: true,
     forbidOnly: !!process.env.CI,
-    retries: process.env.CI ? 2 : 0,
-    workers: 1,
-    reporter: 'html',
+    retries: 2, // Retry flaky tests 2 times
+    workers: 2, // Use 2 workers for stability as per plan
+    reporter: [['html'], ['json', { outputFile: 'test-results/report.json' }]], // Add JSON reporter for TestSprite
+
+    timeout: 60000, // 60s default timeout
 
     use: {
         baseURL: 'http://localhost:3000',
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
+        video: 'on-first-retry',
     },
 
     projects: [
@@ -26,5 +29,6 @@ export default defineConfig({
         command: 'npm run dev',
         url: 'http://localhost:3000',
         reuseExistingServer: true,
+        timeout: 120000,
     },
 });

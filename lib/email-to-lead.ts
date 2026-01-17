@@ -39,7 +39,7 @@ export async function convertEmailToLead(emailData: EmailConvertData) {
     // or use exact match on mobileNumber column if available.
 
     // Strategy: Find candidates by simple fields first.
-    let caseCandidates = await prisma.case.findMany({
+    const caseCandidates = await prisma.case.findMany({
         where: {
             tenantId: emailData.tenantId,
             processStatus: { not: 'CLOSED' }, // Only active cases

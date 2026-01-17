@@ -17,6 +17,7 @@ import { useTenant } from '../context/TenantContext';
 import { RealtimeSyncProvider } from './RealtimeSyncProvider';
 import { useWebSocketConflicts } from '../hooks/useWebSocketConflicts';
 import { NotificationToast } from './NotificationToast';
+import { SystemHealthMonitor } from './SystemHealthMonitor';
 
 interface QueryProviderProps {
     children: ReactNode;
@@ -64,12 +65,12 @@ export function QueryProvider({ children }: QueryProviderProps) {
         return cleanup;
     }, [queryClient]);
 
+
+
+    // ... (inside component)
     return (
         <QueryClientProvider client={queryClient}>
-            <RealtimeSyncProvider>
-                {children}
-                <NotificationToast />
-            </RealtimeSyncProvider>
+            {children}
             <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
     );

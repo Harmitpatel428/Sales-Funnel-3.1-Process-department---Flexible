@@ -1,6 +1,4 @@
 import { NextRequest } from 'next/server';
-import { getSession } from '@/lib/auth';
-import { prisma } from '@/lib/db';
 
 const sessionActivityCache = new Map<string, number>();
 
@@ -14,21 +12,29 @@ export async function updateSessionActivity(req: NextRequest): Promise<void> {
         return;
     }
 
-    const session = await getSession();
-    if (!session) return;
+    const token = req.cookies.get('session_token')?.value;
+    if (!token) return;
 
-    // Throttle updates to once per minute to reduce DB writes
-    const lastUpdate = sessionActivityCache.get(session.sessionId);
+    // Throttle updates to once per minute to reduce API calls
+    const lastUpdate = sessionActivityCache.get(token);
     if (lastUpdate && Date.now() - lastUpdate < 60000) return;
 
     try {
-        await prisma.session.update({
-            where: { id: session.sessionId },
-            data: { lastActivityAt: new Date() }
-        });
-        sessionActivityCache.set(session.sessionId, Date.now());
+        sessionActivityCache.set(token, Date.now());
 
-        // Cleanup cache occasionally to prevent memory leak (though Map limits are high)
+        // Fire and forget fetch to internal API
+        // We use absolute URL needed for server-side fetches
+        const url = req.nextUrl.clone();
+        url.pathname = '/api/session/activity';
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Cookie': req.headers.get('cookie') || '',
+            },
+        }).catch(err => console.error('Background session tracking failed', err));
+
+        // Cleanup cache occasionally
         if (sessionActivityCache.size > 10000) {
             sessionActivityCache.clear();
         }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { getSessionTokenFromCookie } from '@/lib/authCookies';
 import { getUserPermissions } from '@/lib/middleware/permissions';
 import { prisma } from '@/lib/db';
 import crypto from 'crypto';
@@ -8,7 +9,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
     try {
-        const session = await getSession();
+        const token = await getSessionTokenFromCookie();
+        const session = await getSessionByToken(token);
 
         if (!session) {
             return NextResponse.json({ valid: false }, { status: 401 });

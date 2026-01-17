@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { LeadUpdateSchema, validateRequest } from '@/lib/validation/schemas';
 import { validateLeadCrossFields } from '@/lib/validation/cross-field-rules';
@@ -21,7 +22,7 @@ async function getParams(context: { params: Promise<{ id: string }> }) {
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await getParams(context);
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) return unauthorizedResponse();
 
         return await withTenant(session.tenantId, async () => {
@@ -54,7 +55,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
         const rateLimitError = await rateLimitMiddleware(req, 30);
         if (rateLimitError) return rateLimitError;
 
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 
@@ -169,7 +170,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
 export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await getParams(context);
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 

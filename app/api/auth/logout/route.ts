@@ -1,38 +1,29 @@
 import { NextResponse } from 'next/server';
-import { getSession, invalidateSession } from '@/lib/auth';
-import { emitSessionInvalidated } from '@/lib/websocket/server';
-import { clearPermissionCache } from '@/lib/middleware/permissions';
+import { invalidateSessionByToken } from '@/lib/auth';
+import { getSessionTokenFromCookie } from '@/lib/authCookies';
 
+/**
+ * POST /api/auth/logout
+ * 
+ * Logout endpoint. Invalidates the session and deletes the session cookie.
+ * 
+ * ARCHITECTURAL RULE: This is the ONLY place where session_token cookie is deleted.
+ * Server actions must never delete authentication cookies.
+ */
 export async function POST(req: Request) {
     try {
-        const session = await getSession();
+        const token = await getSessionTokenFromCookie();
 
-        if (session) {
-            // Invalidate session in database
-            await invalidateSession();
+        // Invalidate session in database (pure domain function)
+        await invalidateSessionByToken(token);
 
-            try {
-                // Broadcast to all user's connected clients
-                await emitSessionInvalidated(
-                    session.tenantId,
-                    session.userId,
-                    'user_logout'
-                );
+        // Delete the cookie (API-layer responsibility)
+        const response = NextResponse.json({ success: true });
+        response.cookies.delete('session_token');
 
-                // Clear permission cache
-                clearPermissionCache(session.userId);
-            } catch (wsError) {
-                // Don't fail the HTTP logout if WS fails, but log it
-                console.error("Failed to broadcast logout event:", wsError);
-            }
-        } else {
-            // Even if getSession returns null, we should ensure cookie is cleared which invalidateSession does
-            await invalidateSession();
-        }
-
-        return NextResponse.json({ success: true });
+        return response;
     } catch (error) {
-        console.error("Logout error:", error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+        console.error('Logout error:', error);
+        return NextResponse.json({ success: false }, { status: 500 });
     }
 }

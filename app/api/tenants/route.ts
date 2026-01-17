@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { addServerAuditLog } from '@/app/actions/audit';
 import type { ListTenantsResponse, TenantOperationResponse, TenantResponse, CreateTenantRequest } from './types';
 
@@ -8,7 +9,7 @@ import type { ListTenantsResponse, TenantOperationResponse, TenantResponse, Crea
  * Helper to check if user is SUPER_ADMIN
  */
 async function requireSuperAdmin() {
-    const session = await getSession();
+    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
     if (!session) {
         return { authorized: false, error: 'Unauthorized', status: 401 };
     }

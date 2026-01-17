@@ -160,7 +160,7 @@ function getMasterKey(): Buffer {
     const config = getMasterKeyConfig();
 
     if (config.provider === 'local') {
-        let keyStr = config.localKey || process.env.DOCUMENT_MASTER_KEY;
+        const keyStr = config.localKey || process.env.DOCUMENT_MASTER_KEY;
         if (!keyStr) {
             // Generate a development key if not set
             console.warn('WARNING: Using generated master key. Set DOCUMENT_MASTER_KEY in production.');

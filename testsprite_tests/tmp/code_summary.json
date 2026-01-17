@@ -1,40 +1,53 @@
 {
     "tech_stack": [
-        "TypeScript",
         "Next.js",
+        "React",
+        "TypeScript",
         "Prisma",
-        "PostgreSQL",
-        "TailwindCSS"
+        "TailwindCSS",
+        "NextAuth",
+        "Electron",
+        "SQLite",
+        "React Query"
     ],
     "features": [
         {
-            "name": "Authentication",
-            "description": "User authentication and session management",
+            "name": "Auth API",
+            "description": "Authentication endpoints including NextAuth integration, login, logout, and password management.",
             "files": [
-                "lib/auth.ts",
-                "app/api/auth/[...nextauth]/route.ts"
+                "app/api/auth/[...nextauth]/route.ts",
+                "app/api/auth/login/route.ts",
+                "app/api/auth/logout/route.ts",
+                "app/api/auth/forgot-password/route.ts"
             ]
         },
         {
-            "name": "Start Email Sync",
-            "description": "Trigger email synchronization",
-            "files": [
-                "app/api/email/sync/route.ts"
-            ]
-        },
-        {
-            "name": "Parse Email",
-            "description": "Parse incoming emails",
-            "files": [
-                "app/api/email/parse/route.ts"
-            ]
-        },
-        {
-            "name": "Leads Management",
-            "description": "CRUD operations for sales leads",
+            "name": "Leads API",
+            "description": "API for managing sales leads, including creation, listing, and updates.",
             "files": [
                 "app/api/leads/route.ts",
                 "app/api/leads/[id]/route.ts"
+            ]
+        },
+        {
+            "name": "Cases API",
+            "description": "API for managing cases.",
+            "files": [
+                "app/api/cases/route.ts"
+            ]
+        },
+        {
+            "name": "Documents API",
+            "description": "API for document management.",
+            "files": [
+                "app/api/documents/route.ts"
+            ]
+        },
+        {
+            "name": "Dashboard",
+            "description": "Dashboard data and analytics.",
+            "files": [
+                "app/dashboard/page.tsx"
             ]
         }
     ]

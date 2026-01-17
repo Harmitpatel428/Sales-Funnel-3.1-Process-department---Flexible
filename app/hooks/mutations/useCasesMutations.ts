@@ -300,7 +300,8 @@ export function useUpdateCaseMutation() {
                 } as any);
             }
             handleError(err, { requestPayload: { caseId, updates } });
-        });
+        },
+    });
 }
 
 /**

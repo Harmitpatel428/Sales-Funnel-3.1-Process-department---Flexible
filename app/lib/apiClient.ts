@@ -158,11 +158,18 @@ async function baseFetch<T>(
 
             if (!response.ok) {
                 const error = await parseErrorResponse(response);
-                // Attach correlation ID to error
+                // Attach correlation ID and context to error
+                const context = {
+                    requestId,
+                    endpoint: url,
+                    method,
+                    requestPayload: sanitizePayload(body)
+                };
+
                 if (error.details) {
-                    error.details.requestId = requestId;
+                    error.details = { ...error.details, ...context };
                 } else {
-                    error.details = { requestId };
+                    error.details = context;
                 }
                 throw error;
             }
@@ -209,20 +216,45 @@ async function baseFetch<T>(
                 success: false,
                 message: error.message || 'An unexpected error occurred',
                 code: 'UNKNOWN',
-                details: { requestId, duration }
+                details: {
+                    requestId,
+                    duration,
+                    endpoint: url,
+                    method,
+                    requestPayload: sanitizePayload(body)
+                }
             } as ApiError;
         }
     };
 
     // 3. Circuit Breaker Execution
     if (!skipCircuitBreaker) {
-        // Use URL as endpoint key (simplified)
-        // Ideally we'd normalize /leads/123 to /leads/:id but for now full URL or base path
         const endpointKey = url.split('?')[0];
         return executeWithCircuitBreaker(endpointKey, performRequest);
     }
 
     return performRequest();
+}
+
+/**
+ * Sanitize sensitive data from payload
+ */
+function sanitizePayload(data: any): any {
+    if (!data || typeof data !== 'object') return data;
+    if (data instanceof FormData) return '[FormData]';
+
+    const sanitized = Array.isArray(data) ? [...data] : { ...data };
+    const sensitiveKeys = ['password', 'token', 'secret', 'auth', 'key', 'ssn'];
+
+    Object.keys(sanitized).forEach(key => {
+        if (sensitiveKeys.some(s => key.toLowerCase().includes(s))) {
+            sanitized[key] = '***REDACTED***';
+        } else if (typeof sanitized[key] === 'object') {
+            sanitized[key] = sanitizePayload(sanitized[key]);
+        }
+    });
+
+    return sanitized;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
 import { sendSMSCode } from '@/lib/mfa/sms';
 import { sendEmailCode } from '@/lib/mfa/email-code';
@@ -7,7 +8,7 @@ import { randomInt } from 'crypto';
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { method } = await req.json(); // 'SMS' or 'EMAIL'

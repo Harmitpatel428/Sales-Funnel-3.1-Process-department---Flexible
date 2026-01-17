@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { validateRequest, ProcessStatusEnum } from '@/lib/validation/schemas';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
         if (rateLimitError) return rateLimitError;
 
         const { id } = await getParams(context);
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 

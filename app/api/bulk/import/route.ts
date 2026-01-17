@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
 import { generateBypassToken, validateBypassToken } from '@/lib/middleware/validation';
 
 // GET /api/bulk/import - Generate bypass token (Admin only)
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         // Assume role check or similar permission check
         // If role doesn't exist on session.user, we might need a DB lookup or assume specific permission
         if (!session) {
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
 // POST /api/bulk/import - Bulk data import with optional bypass
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }

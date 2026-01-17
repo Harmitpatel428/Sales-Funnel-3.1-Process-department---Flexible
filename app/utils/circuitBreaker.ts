@@ -118,22 +118,41 @@ export async function executeWithCircuitBreaker<T>(
         }
 
         return result;
-    } catch (error) {
+    } catch (error: any) {
         // Failure handling
         circuit.lastFailureTime = Date.now();
 
-        // Determine if error should trip the circuit (e.g. 500s trip, 400s don't)
-        // We assume caller handles specific logic, but generically:
-        circuit.failureCount++;
+        // Check if error should trip the circuit
+        // Only trip on 5xx (Server) or Network/Timeout errors.
+        // Ignore 4xx (Client) errors like Validation, Auth, etc.
+        const shouldTrip = () => {
+            // If marked as network/timeout/transient by classifier or code
+            if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT' || error.code === 'CIRCUIT_OPEN') return true;
 
-        if (circuit.state === 'HALF_OPEN') {
-            // If failed in HALF_OPEN, go back to OPEN immediately
-            circuit.state = 'OPEN';
-            notifyListeners(endpoint, 'OPEN');
-        } else if (circuit.state === 'CLOSED') {
-            if (circuit.failureCount >= config.failureThreshold) {
+            // Check HTTP status if available
+            const status = parseInt(error.code || error.status);
+            if (!isNaN(status)) {
+                return status >= 500 || status === 429; // 5xx or Rate Limit
+            }
+
+            return true; // Default to trip for unknown errors to be safe? Or false? 
+            // Requirement: "only count category === 'TRANSIENT' or 5xx"
+            // If we can't determine, maybe we shouldn't trip? 
+            // Let's assume unknown errors might be critical, but strict reading suggests 4xx shouldn't.
+        };
+
+        if (shouldTrip()) {
+            circuit.failureCount++;
+
+            if (circuit.state === 'HALF_OPEN') {
+                // If failed in HALF_OPEN, go back to OPEN immediately
                 circuit.state = 'OPEN';
                 notifyListeners(endpoint, 'OPEN');
+            } else if (circuit.state === 'CLOSED') {
+                if (circuit.failureCount >= config.failureThreshold) {
+                    circuit.state = 'OPEN';
+                    notifyListeners(endpoint, 'OPEN');
+                }
             }
         }
 

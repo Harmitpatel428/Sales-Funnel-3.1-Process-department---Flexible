@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { ActivitySchema, validateRequest } from '@/lib/validation/schemas';
 import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
@@ -15,7 +16,7 @@ async function getParams(context: { params: Promise<{ id: string }> }) {
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await getParams(context);
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) return unauthorizedResponse();
 
         return await withTenant(session.tenantId, async () => {
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         if (rateLimitError) return rateLimitError;
 
         const { id } = await getParams(context);
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 

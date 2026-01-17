@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestSprite Execution Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
+        .stat-card { padding: 20px; background: #f8f9fa; border-radius: 6px; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; display: block; }
+        .stat-label { color: #666; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; }
+        .status-pass { color: green; font-weight: bold; }
+        .status-fail { color: red; font-weight: bold; }
+        .status-skip { color: orange; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TestSprite Execution Dashboard</h1>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-value" id="total-tests">-</span>
+                <span class="stat-label">Total Tests</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value status-pass" id="passed-tests">-</span>
+                <span class="stat-label">Passed</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value status-fail" id="failed-tests">-</span>
+                <span class="stat-label">Failed</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="duration">-</span>
+                <span class="stat-label">Duration</span>
+            </div>
+        </div>
+
+        <h2>Detailed Results</h2>
+        <table id="results-table">
+            <thead>
+                <tr>
+                    <th>Test ID</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Load test-results/report.json if available
+        fetch('../test-results/report.json')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('total-tests').textContent = data.stats.expected;
+                document.getElementById('passed-tests').textContent = data.stats.expected - data.stats.unexpected;
+                document.getElementById('failed-tests').textContent = data.stats.unexpected;
+                document.getElementById('duration').textContent = Math.round(data.stats.duration / 1000) + 's';
+
+                const tbody = document.querySelector('#results-table tbody');
+                
+                function processSpecs(specs) {
+                    specs.forEach(spec => {
+                        const tr = document.createElement('tr');
+                        const status = spec.ok ? 'PASS' : 'FAIL';
+                        const statusClass = spec.ok ? 'status-pass' : 'status-fail';
+                        const idMatch = spec.title.match(/TC\d+/);
+                        const id = idMatch ? idMatch[0] : '-';
+                        
+                        tr.innerHTML = `
+                            <td>${id}</td>
+                            <td>${spec.title}</td>
+                            <td class="${statusClass}">${status}</td>
+                            <td>${spec.tests[0].results[0].duration}ms</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+
+                function traverse(node) {
+                    if (node.specs) processSpecs(node.specs);
+                    if (node.suites) node.suites.forEach(traverse);
+                }
+
+                traverse(data);
+            })
+            .catch(e => {
+                console.error('Failed to load report data', e);
+                document.querySelector('.container').insertAdjacentHTML('beforeend', '<p style="color:red">Error loading report.json. Make sure tests have been run.</p>');
+            });
+    </script>
+</body>
+</html>

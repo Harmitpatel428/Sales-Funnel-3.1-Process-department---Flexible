@@ -100,6 +100,25 @@ async function executeRecoveryAction(action: RecoveryAction, context?: any) {
                 window.location.reload();
             }
             break;
+        case 'DISCARD':
+            if (confirm('Are you sure you want to discard your changes? This action cannot be undone.')) {
+                window.location.reload();
+            }
+            break;
+        case 'SAVE_LATER':
+            if (context?.requestPayload && context?.endpoint) {
+                const { addToQueue } = await import('./offlineQueue');
+                addToQueue({
+                    type: 'UPDATE_LEAD', // Fallback type, ideally should be dynamic or generic
+                    payload: context.requestPayload,
+                    endpoint: context.endpoint,
+                    method: context.method || 'POST'
+                } as any);
+                alert('Changes saved to offline queue. They will be synced when connection is restored.');
+            } else {
+                alert('Unable to save changes: missing request context.');
+            }
+            break;
         case 'LOGIN':
             window.location.href = '/login';
             break;

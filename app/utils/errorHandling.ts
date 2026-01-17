@@ -136,10 +136,18 @@ export function classifyError(error: unknown, context?: Partial<ErrorContext>): 
             type = 'TIMEOUT';
             category = 'TRANSIENT';
             severity = 'MEDIUM';
-        } else if (message.includes('Circuit breaker open')) {
-            type = 'CIRCUIT_OPEN';
-            category = 'TRANSIENT';
-            severity = 'CRITICAL';
+        } else if (message.includes('Circuit breaker open') || error.name === 'CircuitOpenError') {
+            const type = 'CIRCUIT_OPEN';
+            return {
+                type,
+                message: 'System unavailable. Please try again later.',
+                code: 'CIRCUIT_OPEN',
+                isRetryable: true,
+                category: 'TRANSIENT',
+                severity: 'CRITICAL',
+                fingerprint: generateErrorFingerprint(type, 'CIRCUIT_OPEN', 'System unavailable'),
+                originalError: error
+            };
         }
     }
 

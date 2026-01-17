@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { LeadSchema, LeadFiltersSchema } from '@/lib/validation/schemas';
 import { validateLeadCrossFields } from '@/lib/validation/cross-field-rules'; // Prepare import, might need file creation check? it exists.
@@ -23,7 +24,7 @@ export const GET = withValidation(LeadFiltersSchema)(async (req: ValidatedReques
 
 
         // 2. Authentication
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
 
         logRequest(req, session);
 
@@ -110,7 +111,7 @@ export const POST = withValidation(LeadSchema)(async (req: ValidatedRequest<type
         if (rateLimitError) return rateLimitError;
 
         // 2. Auth
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
 
         if (!session) return unauthorizedResponse();

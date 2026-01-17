@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { CaseSchema, CaseFiltersSchema } from '@/lib/validation/schemas';
 import { validateCaseCrossFields } from '@/lib/validation/cross-field-rules';
@@ -20,7 +21,7 @@ export const GET = withValidation(CaseFiltersSchema)(async (req: ValidatedReques
         const rateLimitError = await rateLimitMiddleware(req, 100);
         if (rateLimitError) return rateLimitError;
 
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 
@@ -98,7 +99,7 @@ export const POST = withValidation(CaseSchema)(async (req: ValidatedRequest<z.in
         const rateLimitError = await rateLimitMiddleware(req, 30);
         if (rateLimitError) return rateLimitError;
 
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         logRequest(req, session);
         if (!session) return unauthorizedResponse();
 

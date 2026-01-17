@@ -2,9 +2,10 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { User, UserRole, UserSession } from '../types/processTypes';
-import { loginAction, logoutAction, getCurrentUser } from '../actions/auth';
+// DELETE THIS LINE:
+// import { logoutAction } from '../actions/auth';
 import { getUsers, createUserAction, updateUserAction, deleteUserAction, resetUserPasswordAction } from '../actions/user';
-import { useSession } from '@/app/hooks/useSession';
+import { useSession, AuthState } from '@/app/hooks/useSession';
 import { useMultiTabSync } from '@/app/hooks/useMultiTabSync';
 import SessionExpiryWarning from '../components/SessionExpiryWarning';
 
@@ -72,9 +73,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
 
     // Session Management Integration
-    const { sessionState, refreshSession: extendSession, refetch: refetchSession } = useSession();
+    const { sessionState, authState, refreshSession: extendSession, refetch: refetchSession, isLoading: sessionLoading } = useSession();
     const { broadcastLogout, broadcastRefresh } = useMultiTabSync();
     const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+
+    // Sync currentUser with sessionState (Source of Truth) via AuthState
+    useEffect(() => {
+        if (authState === AuthState.INIT || authState === AuthState.CHECKING) {
+            return;
+        }
+
+        if (authState === AuthState.AUTHENTICATED) {
+            setCurrentUser(sessionState.user);
+        } else {
+            // UNAUTHENTICATED or EXPIRED
+            setCurrentUser(null);
+        }
+        setIsLoading(false);
+    }, [authState, sessionState.user]);
 
     // Listen for session events
     useEffect(() => {
@@ -83,14 +99,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
         };
 
         const handleAccountLocked = (e: any) => {
-            // alert('Your account has been locked. Please contact administrator.');
             logout(); // Force logout
         };
 
         const handlePermissionChanged = () => {
             refreshUser();
-            // Also invalidate queries if queryClient available here, but useMultiTabSync handles query invalidation.
-            // But we need to refresh local user object to update permissions provided by this context.
         };
 
         const handleSessionLogout = () => {
@@ -114,7 +127,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             window.removeEventListener('session-logout-requested', handleSessionLogout);
             window.removeEventListener('session-invalidated', handleSessionInvalidated);
         };
-    }, []); // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);  
 
 
 
@@ -138,42 +151,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return success;
     };
 
-    // Fetch current user from server on mount
+    // Refresh user calls refetchSession ensures we get latest from /api/auth/me
     const refreshUser = useCallback(async () => {
-        try {
-            const user = await getCurrentUser();
-            if (user) {
-                // If user has a custom role, use its permissions. 
-                // Note: getCurrentUser already merges/returns permissions in 'permissions' field 
-                // if we updated it to do so. Let's verify.
-                // In app/actions/auth.ts getCurrentUser, we call getUserPermissions(user.id).
-                // getUserPermissions logic (lib/middleware/permissions.ts) should handle the merging.
-                // So 'user.permissions' here should be correct.
-
-                setCurrentUser({
-                    userId: user.userId,
-                    username: user.username,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role as UserRole,
-                    permissions: user.permissions,
-                    mfaEnabled: user.mfaEnabled,
-                    ssoProvider: user.ssoProvider as any,
-                    roleId: user.roleId,
-                    customRole: user.customRole,
-                    loginAt: user.lastLoginAt || new Date().toISOString()
-                });
-                return user as any; // Cast to satisfy callback type, though we might need to fix return type of getCurrentUser or refreshUser signature
-            } else {
-                setCurrentUser(null);
-                return null;
-            }
-        } catch (error) {
-            console.error('Failed to fetch current user:', error);
+        const { data } = await refetchSession();
+        if (data?.user) {
+            setCurrentUser(data.user);
+            return data.user as any;
+        } else {
             setCurrentUser(null);
             return null;
         }
-    }, []);
+    }, [refetchSession]);
 
     // Fetch all users (for admin)
     const refreshUsers = useCallback(async () => {
@@ -212,16 +200,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        const init = async () => {
-            const user = await refreshUser();
-            // Only fetch users list if we have a logged in user who might be admin
-            if (user) {
-                await refreshUsers();
-            }
-            setIsLoading(false);
-        };
-        init();
-    }, [refreshUser, refreshUsers]);
+        // Init happens via useSession now
+        if (currentUser) {
+            refreshUsers();
+        }
+    }, [currentUser, refreshUsers]);
 
     // ============================================================================
     // AUTH OPERATIONS
@@ -230,27 +213,35 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const login = useCallback(async (username: string, password: string, rememberMe: boolean = false): Promise<{ success: boolean; message: string; mfaRequired?: boolean }> => {
         setIsLoading(true);
         try {
-            const result = await loginAction(username, password, rememberMe);
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',  // CRITICAL: Ensures cookies are sent/received
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    rememberMe: rememberMe
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                return {
+                    success: false,
+                    message: result.message || 'Login failed'
+                };
+            }
+
             if (result.success && result.user) {
                 // If MFA not required, complete login updates locally
                 if (!result.mfaRequired) {
-                    setCurrentUser({
-                        userId: result.user.userId,
-                        username: result.user.username,
-                        name: result.user.name,
-                        email: result.user.email,
-                        role: result.user.role as UserRole,
-                        permissions: result.user.permissions,
-                        mfaEnabled: result.user.mfaEnabled,
-                        ssoProvider: result.user.ssoProvider as any,
-                        roleId: result.user.roleId,
-                        customRole: result.user.customRole,
-                        loginAt: result.user.lastLoginAt || new Date().toISOString()
-                    });
-                    // Refresh users list after login (if admin)
+                    // Update source of truth
+                    await refetchSession();
+                    // Local updates
                     await refreshUsers();
-                    // Restart session polling (since it stops on invalid session)
-                    refetchSession();
                 }
             }
             return result;
@@ -260,17 +251,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
         } finally {
             setIsLoading(false);
         }
-    }, [refreshUsers]);
+    }, [refreshUsers, refetchSession]);
 
     const logout = useCallback(async (skipBroadcast: boolean = false) => {
         try {
-            await logoutAction();
+            const response = await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'include',  // Ensure cookie is sent to API route
+            });
+
+            if (!response.ok) {
+                console.error('Logout API returned error:', response.status);
+            }
+
             setCurrentUser(null);
             setUsers([]);
+
             if (!skipBroadcast) {
                 broadcastLogout();
             }
-            // Redirect usually handled by button or component
+
             if (typeof window !== 'undefined') {
                 window.location.href = '/';
             }
@@ -598,11 +598,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Handle invalid session (Comment 1) - Placed after logout definition
     useEffect(() => {
         // If session is explicitly invalid (not just loading or initial state), logout
-        if (!isLoading && sessionState.valid === false && currentUser) {
+        if (authState === AuthState.UNAUTHENTICATED && currentUser) {
             console.log("Session detected as invalid, logging out...");
             logout(true); // Skip broadcast to avoid loops if other tabs are also detecting
         }
-    }, [sessionState.valid, isLoading, currentUser, logout]);
+    }, [authState, currentUser, logout]);
 
     // Show loading state
     if (isLoading) {

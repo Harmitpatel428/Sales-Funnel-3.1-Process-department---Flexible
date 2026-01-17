@@ -63,7 +63,7 @@ export async function captureError(error: unknown, context?: Partial<ErrorContex
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const index = store.index('by-timestamp');
-            let cursor = await index.openCursor(null, 'next');
+            const cursor = await index.openCursor(null, 'next');
             if (cursor) {
                 await cursor.delete();
             }

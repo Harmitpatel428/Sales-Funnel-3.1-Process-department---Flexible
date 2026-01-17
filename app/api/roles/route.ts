@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { requirePermissions } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 
 export async function GET(req: NextRequest) {
-    const session = await getSession();
+    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const permError = await requirePermissions([PERMISSIONS.USERS_MANAGE_ROLES])(req);
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    const session = await getSession();
+    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const permError = await requirePermissions([PERMISSIONS.USERS_MANAGE_ROLES])(req);

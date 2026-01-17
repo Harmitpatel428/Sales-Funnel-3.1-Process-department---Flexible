@@ -10,8 +10,12 @@ const TENANT_COOKIE_NAME = 'active_tenant_id';
 // Get tenant for current user
 export async function getTenantForUser() {
     try {
-        const { getSession } = await import('@/lib/auth');
-        const session = await getSession();
+        const { getSessionByToken } = await import('@/lib/auth');
+        const { SESSION_COOKIE_NAME } = await import('@/lib/authConfig');
+        const { cookies } = await import('next/headers');
+        const cookieStore = await cookies();
+        const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+        const session = await getSessionByToken(token);
 
         if (!session) {
             return { success: false, message: 'Not authenticated' };

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { WebhookManager, WEBHOOK_EVENTS } from '@/lib/webhooks/manager';
 import { prisma } from '@/lib/db';
 
 // GET /api/webhooks/outgoing - List webhook subscriptions
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
 // POST /api/webhooks/outgoing - Create webhook subscription
 export async function POST(req: NextRequest) {
     try {
-        const session = await getSession();
+        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
         if (!session) {
             return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
         }

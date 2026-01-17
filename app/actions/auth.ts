@@ -5,15 +5,16 @@ import {
     hashPassword,
     verifyPassword,
     createSession,
-    invalidateSession,
-    getSession,
+    invalidateSessionByToken,
+    getSessionByToken,
     isAccountLocked,
     recordFailedLoginAttempt,
     resetFailedLoginAttempts,
 } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { getUserPermissions } from '@/lib/middleware/permissions';
 import { addServerAuditLog } from './audit';
-import { headers } from 'next/headers';
+import { headers, cookies } from 'next/headers';
 
 // ============================================================================
 // AUTH SERVER ACTIONS
@@ -40,6 +41,27 @@ export interface AuthResult {
 
 /**
  * Server action to log in a user.
+ * 
+ * @deprecated CRITICAL: This server action MUST NOT be used for browser-based login.
+ * Browser login MUST use POST /api/auth/login API route.
+ * 
+ * This function is retained ONLY for:
+ * - Server-side authentication flows (non-browser)
+ * - CLI tools, background jobs, server-to-server auth
+ * - Backward compatibility with legacy integrations
+ * 
+ * ARCHITECTURAL RULE: Server actions cannot set HTTP-only cookies in browser
+ * contexts. Only API routes using NextResponse.cookies.set() can.
+ * 
+ * Server actions may READ cookies but must NEVER mutate authentication cookies.
+ * 
+ * @see /app/api/auth/login/route.ts for the correct browser login implementation
+ * @see /lib/auth.ts for architectural rules
+ * @see /lib/authCookies.ts for API-layer cookie helpers
+ *
+ * @param username - Username or email
+ * @param password - User password
+ * @param rememberMe - Whether to extend session duration
  */
 export async function loginAction(username: string, password: string, rememberMe: boolean = false): Promise<AuthResult> {
     try {
@@ -116,10 +138,28 @@ export async function loginAction(username: string, password: string, rememberMe
 
 /**
  * Server action to log out the current user.
+ *
+ * @deprecated CRITICAL: This server action MUST NOT be used for browser-based logout.
+ * Browser logout MUST use POST /api/auth/logout API route.
+ * 
+ * This function is retained ONLY for:
+ * - Server-side logout flows (non-browser)
+ * - CLI tools, background jobs, server-to-server auth
+ * - Backward compatibility with legacy integrations
+ * 
+ * ARCHITECTURAL RULE: Server actions cannot delete HTTP-only cookies in browser
+ * contexts. Only API routes using NextResponse.cookies.delete() can.
+ * 
+ * Server actions may READ cookies but must NEVER mutate authentication cookies.
+ * 
+ * @see /app/api/auth/logout/route.ts for the correct browser logout implementation
+ * @see /lib/auth.ts for architectural rules
  */
 export async function logoutAction(): Promise<{ success: boolean }> {
     try {
-        const session = await getSession();
+        const cookieStore = await cookies();
+        const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+        const session = await getSessionByToken(token);
 
         if (session) {
             const user = await prisma.user.findUnique({ where: { id: session.userId } });
@@ -138,7 +178,7 @@ export async function logoutAction(): Promise<{ success: boolean }> {
             });
         }
 
-        await invalidateSession();
+        await invalidateSessionByToken(token);
         return { success: true };
     } catch (error) {
         console.error('Logout error:', error);
@@ -151,7 +191,10 @@ export async function logoutAction(): Promise<{ success: boolean }> {
  */
 export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
     try {
-        const session = await getSession();
+        const cookieStore = await cookies();
+        const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+        const session = await getSessionByToken(token);
+
         if (!session) {
             return null;
         }
@@ -207,7 +250,10 @@ export async function getCurrentUser(): Promise<AuthResult['user'] | null> {
  * Check if the current user has any of the specified roles.
  */
 export async function checkRole(allowedRoles: string[]): Promise<boolean> {
-    const session = await getSession();
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const session = await getSessionByToken(token);
+
     if (!session) {
         return false;
     }
@@ -218,7 +264,10 @@ export async function checkRole(allowedRoles: string[]): Promise<boolean> {
  * Require authentication - throws if not authenticated.
  */
 export async function requireAuth(): Promise<{ userId: string; role: string; sessionId: string }> {
-    const session = await getSession();
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const session = await getSessionByToken(token);
+
     if (!session) {
         throw new Error('Unauthorized: You must be logged in to perform this action');
     }

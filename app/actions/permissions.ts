@@ -4,13 +4,17 @@ import {
     getFieldPermissions,
     getUserPermissions
 } from '@/lib/middleware/permissions';
-import { getSession } from '@/lib/auth';
+import { getSessionByToken } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
+import { cookies } from 'next/headers';
 
 /**
  * Server action to get field-level permissions for a specific resource
  */
 export async function getFieldPermissionsAction(resource: string) {
-    const session = await getSession();
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const session = await getSessionByToken(token);
     if (!session) {
         return { canView: [], canEdit: [] };
     }
@@ -23,7 +27,9 @@ export async function getFieldPermissionsAction(resource: string) {
  * Useful if we need to refresh permissions without full re-login
  */
 export async function getUserPermissionsAction() {
-    const session = await getSession();
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const session = await getSessionByToken(token);
     if (!session) {
         return [];
     }

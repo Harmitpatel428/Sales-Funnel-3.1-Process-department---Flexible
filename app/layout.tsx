@@ -15,6 +15,9 @@ import { DocumentProvider } from "./context/DocumentContext";
 import { TimelineProvider } from "./context/TimelineContext";
 import NavigationWrapper from "./components/NavigationWrapper";
 import EmployeeSetupWrapper from "./components/EmployeeSetupWrapper";
+import { RealtimeSyncProvider } from "./components/RealtimeSyncProvider";
+import { SystemHealthMonitor } from "./components/SystemHealthMonitor";
+import { NotificationToast } from "./components/NotificationToast";
 
 
 const geistSans = Geist({
@@ -130,36 +133,40 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansGujarati.variable} antialiased bg-gray-50`}
       >
         <TenantProvider>
-          <UserProvider>
-            <QueryProvider>
-              <LeadProvider>
-                <ImpersonationProvider>
-                  <CaseProvider>
-                    <DocumentProvider>
-                      <TimelineProvider>
-                        <PasswordProvider>
-                          <ColumnProvider>
-                            <HeaderProvider>
-                              <NavigationProvider>
-                                <EmployeeSetupWrapper>
-                                  <div className="flex flex-col h-screen">
-                                    <NavigationWrapper />
-                                    <main className="flex-1 overflow-y-auto p-0">
-                                      {children}
-                                    </main>
-                                  </div>
-                                </EmployeeSetupWrapper>
-                              </NavigationProvider>
-                            </HeaderProvider>
-                          </ColumnProvider>
-                        </PasswordProvider>
-                      </TimelineProvider>
-                    </DocumentProvider>
-                  </CaseProvider>
-                </ImpersonationProvider>
-              </LeadProvider>
-            </QueryProvider>
-          </UserProvider>
+          <QueryProvider>
+            <UserProvider>
+              <RealtimeSyncProvider>
+                <SystemHealthMonitor />
+                <LeadProvider>
+                  <ImpersonationProvider>
+                    <CaseProvider>
+                      <DocumentProvider>
+                        <TimelineProvider>
+                          <PasswordProvider>
+                            <ColumnProvider>
+                              <HeaderProvider>
+                                <NavigationProvider>
+                                  <EmployeeSetupWrapper>
+                                    <div className="flex flex-col h-screen">
+                                      <NavigationWrapper />
+                                      <main className="flex-1 overflow-y-auto p-0">
+                                        {children}
+                                      </main>
+                                    </div>
+                                    <NotificationToast />
+                                  </EmployeeSetupWrapper>
+                                </NavigationProvider>
+                              </HeaderProvider>
+                            </ColumnProvider>
+                          </PasswordProvider>
+                        </TimelineProvider>
+                      </DocumentProvider>
+                    </CaseProvider>
+                  </ImpersonationProvider>
+                </LeadProvider>
+              </RealtimeSyncProvider>
+            </UserProvider>
+          </QueryProvider>
         </TenantProvider>
       </body>
     </html>

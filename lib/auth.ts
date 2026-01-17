@@ -1,20 +1,26 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
+// Removed: cookies() is only used in getSession() and invalidateSession() for reading tokens.
+// Cookie mutations are handled exclusively by API routes in lib/authCookies.ts
 import { prisma } from './db';
+import {
+    BCRYPT_SALT_ROUNDS,
+    SESSION_COOKIE_NAME,
+    SESSION_EXPIRY_DAYS,
+    JWT_SECRET,
+    PASSWORD_MIN_LENGTH,
+    PASSWORD_EXPIRY_DAYS,
+    PASSWORD_HISTORY_COUNT,
+    REMEMBER_ME_EXPIRY_DAYS
+} from './authConfig';
+
+// Re-export constants for backward compatibility if needed, 
+// though direct import from authConfig is preferred.
+export { SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS, REMEMBER_ME_EXPIRY_DAYS };
 
 // ============================================================================
-// CONSTANTS
+// PASSWORD UTILITIES
 // ============================================================================
-
-const BCRYPT_SALT_ROUNDS = 12;
-const SESSION_COOKIE_NAME = 'session_token';
-const SESSION_EXPIRY_DAYS = 7;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-change-in-production';
-const PASSWORD_MIN_LENGTH = parseInt(process.env.PASSWORD_MIN_LENGTH || '12');
-const PASSWORD_EXPIRY_DAYS = parseInt(process.env.PASSWORD_EXPIRY_DAYS || '90');
-const PASSWORD_HISTORY_COUNT = parseInt(process.env.PASSWORD_HISTORY_COUNT || '5');
-const REMEMBER_ME_EXPIRY_DAYS = parseInt(process.env.REMEMBER_ME_EXPIRY_DAYS || '30');
 
 // ============================================================================
 // PASSWORD UTILITIES
@@ -85,6 +91,38 @@ export function validatePasswordStrength(password: string): { valid: boolean; me
 // ============================================================================
 // SESSION MANAGEMENT
 // ============================================================================
+//
+// This module contains PURE DOMAIN FUNCTIONS only.
+// 
+// INVARIANTS (ENFORCED BY ESLINT):
+//   1. lib/auth.ts MUST NOT import 'next/headers' or 'next/server'
+//   2. lib/auth.ts MUST NOT import lib/authCookies
+//   3. Domain functions NEVER mutate cookies
+//   4. Domain functions return tokens for callers to manage
+//
+// DOMAIN FUNCTIONS (this file):
+//   - createSession(): Creates session record, returns token
+//   - invalidateSessionByToken(): Marks session invalid in DB
+//   - rotateSessionTokenByToken(): Creates new session, returns token
+//   - getSessionByToken(): Validates session from token string
+//
+// COOKIE MANAGEMENT (API routes only):
+//   - POST /api/auth/login: Calls createSession(), sets cookie via NextResponse
+//   - POST /api/auth/logout: Calls invalidateSessionByToken(), deletes cookie via NextResponse
+//   - GET /api/auth/me: Retrieves token, calls getSessionByToken() to validate
+//
+// API-LAYER HELPERS (lib/authCookies.ts):
+//   - getSessionCookieOptions(): Configuration for NextResponse.cookies.set()
+//   - calculateSessionExpiry(): Expiry date calculation
+//   - getSessionTokenFromCookie(): Read-only token retrieval from cookie store
+//
+// RATIONALE:
+//   - Separation of concerns: Domain logic is independent of HTTP mechanics
+//   - Testability: Domain functions can be tested without Next.js context
+//   - Clarity: Cookie ownership is explicit and centralized in API routes
+//   - Safety: ESLint rules prevent regression at build time
+//
+// ============================================================================
 
 /**
  * Generate a secure session token using JWT.
@@ -120,7 +158,19 @@ export async function verifySessionToken(token: string): Promise<{ userId: strin
 
 
 /**
- * Create a new session in the database and set the cookie.
+ * Create a new session in the database and return the session token.
+ * 
+ * PURE DOMAIN FUNCTION: This function manages database state only.
+ * It does NOT import or call cookies() or any Next.js server APIs.
+ * Cookie management is the exclusive responsibility of API routes.
+ * 
+ * @param userId - User ID
+ * @param role - User role
+ * @param tenantId - Tenant ID
+ * @param userAgent - Optional user agent string
+ * @param ipAddress - Optional IP address
+ * @param rememberMe - Whether to extend session duration
+ * @returns The session token (to be set as a cookie by the caller)
  */
 export async function createSession(
     userId: string,
@@ -148,31 +198,23 @@ export async function createSession(
         },
     });
 
-    // Set HTTP-only cookie
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        expires: expiresAt,
-        path: '/',
-    });
-
     return token;
 }
 
 /**
- * Get the current session from the cookie and validate it.
+ * Get the current session by validating the provided token.
+ * 
+ * PURE DOMAIN FUNCTION. Does NOT read cookies.
+ * Callers must retrieve the token from their execution context (cookies, headers, etc.).
+ * 
+ * @param token - Session token string
  */
-export async function getSession(): Promise<{
+export async function getSessionByToken(token: string | null | undefined): Promise<{
     userId: string;
     role: string;
     sessionId: string;
     tenantId: string;
 } | null> {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-
     if (!token) {
         return null;
     }
@@ -208,33 +250,35 @@ export async function getSession(): Promise<{
 }
 
 /**
- * Invalidate the current session (logout).
+ * Invalidate the session associated with the provided token.
+ * 
+ * PURE DOMAIN FUNCTION. Does NOT delete cookies.
+ * Callers must handle cookie deletion.
+ * 
+ * @param token - Session token string
  */
-export async function invalidateSession(): Promise<void> {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-
+export async function invalidateSessionByToken(token: string | null | undefined): Promise<void> {
     if (token) {
         // Mark session as invalid in database
         await prisma.session.updateMany({
             where: { token },
             data: { isValid: false },
         });
-
-        // Remove cookie
-        cookieStore.delete(SESSION_COOKIE_NAME);
     }
 }
 
 /**
- * Rotate session token (for security after privilege changes).
+ * Rotate the session token for security (e.g., after privilege changes).
+ * 
+ * PURE DOMAIN FUNCTION. Does NOT read or write cookies.
+ * returns the new token for the caller to set as a cookie.
+ * 
+ * @param oldToken - Previous session token
+ * @param userId - User ID
+ * @returns The new session token (to be set as a cookie by the caller), or null if rotation failed
  */
-export async function rotateSessionToken(userId: string): Promise<void> {
-    const cookieStore = await cookies();
-    const oldToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-
+export async function rotateSessionTokenByToken(oldToken: string | null | undefined, userId: string): Promise<string | null> {
     if (oldToken) {
-        // Get user to get role and tenantId
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (user) {
             // Invalidate old session
@@ -243,10 +287,12 @@ export async function rotateSessionToken(userId: string): Promise<void> {
                 data: { isValid: false },
             });
 
-            // Create new session with tenantId
-            await createSession(userId, user.role, user.tenantId);
+            // Create new session and return token
+            const newToken = await createSession(userId, user.role, user.tenantId);
+            return newToken;
         }
     }
+    return null;
 }
 
 // ============================================================================

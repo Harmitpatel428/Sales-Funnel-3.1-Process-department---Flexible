@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // Mock Auth
 vi.mock('../../lib/auth', () => ({
-    getSession: vi.fn(),
+    getSessionByToken: vi.fn(),
 }));
 
 // Mock DB (hoisted)
@@ -67,7 +67,7 @@ import { GET, POST } from '../../app/api/leads/route';
 import { prisma } from '../../lib/db';
 const mockPrisma = prisma as any;
 
-import { getSession } from '../../lib/auth';
+import { getSessionByToken } from '../../lib/auth';
 import { POST as POST_ACTIVITY } from '../../app/api/leads/[id]/activities/route';
 
 describe('Leads API', () => {
@@ -78,14 +78,14 @@ describe('Leads API', () => {
 
     describe('GET /api/leads', () => {
         it('should return 401 if not authenticated', async () => {
-            (getSession as any).mockResolvedValue(null);
+            (getSessionByToken as any).mockResolvedValue(null);
             const req = new NextRequest('http://localhost:3000/api/leads');
             const res = await GET(req);
             expect(res.status).toBe(401);
         });
 
         it('should return leads if authenticated', async () => {
-            (getSession as any).mockResolvedValue({
+            (getSessionByToken as any).mockResolvedValue({
                 userId: 'test-user',
                 role: 'ADMIN',
                 tenantId: 'test-tenant',
@@ -106,7 +106,7 @@ describe('Leads API', () => {
 
     describe('POST /api/leads', () => {
         it('should create a lead', async () => {
-            (getSession as any).mockResolvedValue({
+            (getSessionByToken as any).mockResolvedValue({
                 userId: 'test-user',
                 role: 'ADMIN',
                 tenantId: 'test-tenant',
@@ -160,7 +160,7 @@ describe('Leads API', () => {
         });
 
         it('should add activity if allowed', async () => {
-            (getSession as any).mockResolvedValue({
+            (getSessionByToken as any).mockResolvedValue({
                 userId: 'user-1',
                 role: 'SALES_EXECUTIVE',
                 tenantId: 'tenant-1'
