@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { getRateLimitStatus, getApiKeyUsageAnalytics, getHourlyDistribution } from '@/lib/api-rate-limiter';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/analytics/rate-limits - Get rate limit status and analytics for API keys
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/analytics/rate-limits
+ * Get rate limit status and analytics for API keys
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -25,10 +34,7 @@ export async function GET(req: NextRequest) {
             });
 
             if (!apiKey) {
-                return NextResponse.json(
-                    { success: false, message: 'API key not found' },
-                    { status: 404 }
-                );
+                return notFoundResponse('API key');
             }
 
             const [rateLimitStatus, usageAnalytics, hourlyDistribution] = await Promise.all([
@@ -104,11 +110,5 @@ export async function GET(req: NextRequest) {
                 apiKeys: keysWithStatus,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching rate limit analytics:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch rate limit analytics' },
-            { status: 500 }
-        );
     }
-}
+);

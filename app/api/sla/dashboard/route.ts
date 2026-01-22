@@ -3,22 +3,28 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
 import { SLATrackerService } from '@/lib/workflows/sla-tracker';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/sla/dashboard
-export async function GET(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/sla/dashboard
+ * Get SLA dashboard data
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        const dashboard = await SLATrackerService.getDashboardData(session.user.tenantId);
+        const dashboard = await SLATrackerService.getDashboardData(session.tenantId);
 
         return NextResponse.json(dashboard);
-    } catch (error) {
-        console.error('Failed to get SLA dashboard:', error);
-        return NextResponse.json({ error: 'Failed to get SLA dashboard' }, { status: 500 });
     }
-}
+);

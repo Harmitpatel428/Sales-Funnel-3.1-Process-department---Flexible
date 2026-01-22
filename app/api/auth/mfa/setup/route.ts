@@ -1,63 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
-import { prisma } from '@/lib/db'; // Ensure consistent import
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
 import { generateTOTPSecret, encryptSecret } from '@/lib/mfa/totp';
+import { withApiHandler } from '@/lib/api/withApiHandler';
+import { ApiContext } from '@/lib/api/types';
+import { notFoundResponse, errorResponse } from '@/lib/api/response-helpers';
+import { addServerAuditLog } from '@/app/actions/audit';
 
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        if (!session) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+export const POST = withApiHandler({ authRequired: true }, async (context: ApiContext) => {
+    const session = context.session!;
 
-        const user = await prisma.user.findUnique({
-            where: { id: session.userId },
+    const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+    });
+
+    if (!user) return notFoundResponse('User');
+
+    // Generate TOTP secret
+    const { secret, qrCodeUrl } = await generateTOTPSecret(user.username || user.email);
+
+    // Encrypt secret
+    const encryptedSecret = encryptSecret(secret);
+
+    // Store in DB (default disabled until verified)
+    const existing = await prisma.mFASecret.findFirst({
+        where: { userId: session.userId, method: 'TOTP' }
+    });
+
+    if (existing) {
+        await prisma.mFASecret.update({
+            where: { id: existing.id },
+            data: {
+                secret: encryptedSecret,
+                isEnabled: false,
+                verifiedAt: null,
+                backupCodes: '[]', // Reset backup codes
+            }
         });
-
-        if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-        // Generate TOTP secret
-        const { secret, qrCodeUrl } = await generateTOTPSecret(user.username || user.email);
-
-        // Encrypt secret
-        const encryptedSecret = encryptSecret(secret);
-
-        // Store in DB (default disabled until verified)
-        // Check if existing secret exists, update it or create new
-        const existing = await prisma.mFASecret.findFirst({
-            where: { userId: session.userId, method: 'TOTP' }
+    } else {
+        await prisma.mFASecret.create({
+            data: {
+                userId: session.userId,
+                method: 'TOTP',
+                secret: encryptedSecret,
+                isEnabled: false,
+                backupCodes: '[]',
+            }
         });
-
-        if (existing) {
-            await prisma.mFASecret.update({
-                where: { id: existing.id },
-                data: {
-                    secret: encryptedSecret,
-                    isEnabled: false,
-                    verifiedAt: null,
-                    backupCodes: '[]', // Reset backup codes
-                }
-            });
-        } else {
-            await prisma.mFASecret.create({
-                data: {
-                    userId: session.userId,
-                    method: 'TOTP',
-                    secret: encryptedSecret,
-                    isEnabled: false,
-                    backupCodes: '[]',
-                }
-            });
-        }
-
-        return NextResponse.json({
-            qrCodeUrl,
-            secret, // Usually we don't return secret if QR is enough, but plan says "Return QR code data URL and manual entry code"
-        });
-
-    } catch (error: any) {
-        console.error("MFA Setup Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
+
+    await addServerAuditLog({
+        actionType: 'MFA_SETUP_INITIATED',
+        entityType: 'User',
+        entityId: user.id,
+        description: 'MFA setup initiated (TOTP)',
+        performedById: user.id,
+        sessionId: session.sessionId,
+        ipAddress: context.req.headers.get('x-forwarded-for') || undefined,
+        userAgent: context.req.headers.get('user-agent') || undefined
+    });
+
+    return NextResponse.json({
+        qrCodeUrl,
+        secret,
+    });
+});

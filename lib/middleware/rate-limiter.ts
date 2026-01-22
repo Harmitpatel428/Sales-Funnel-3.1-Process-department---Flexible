@@ -47,6 +47,8 @@ const limiter = rateLimit({
     uniqueTokenPerInterval: 500, // Max 500 users per second
 });
 
+import { rateLimitResponse } from '@/lib/api/response-helpers';
+
 export async function rateLimitMiddleware(req: NextRequest, limit: number = 100) {
     const ip = req.headers.get('x-forwarded-for') || 'anonymous';
     const endpoint = req.nextUrl.pathname;
@@ -56,16 +58,9 @@ export async function rateLimitMiddleware(req: NextRequest, limit: number = 100)
         await limiter.check(limit, token);
         return null; // No error
     } catch (error: any) {
-        return NextResponse.json(
-            { success: false, message: 'Too Many Requests' },
-            {
-                status: 429,
-                headers: {
-                    'X-RateLimit-Limit': limit.toString(),
-                    'X-RateLimit-Remaining': error.remaining?.toString() || '0',
-                    'X-RateLimit-Reset': error.reset || new Date().toISOString()
-                }
-            }
+        return rateLimitResponse(
+            error.remaining || 0,
+            error.reset || new Date().toISOString()
         );
     }
 }

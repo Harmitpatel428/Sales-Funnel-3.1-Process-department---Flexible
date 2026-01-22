@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from '@/lib/auth';
 import { ScheduledReportSchema, UpdateScheduledReportSchema } from '@/lib/validation/report-schemas';
 import { z } from 'zod';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
 // Simple cron expression validation
 function isValidCron(expression: string): boolean {
@@ -21,17 +27,22 @@ function calculateNextRun(cron: string): Date {
     return next;
 }
 
-// GET - Fetch scheduled reports for current tenant
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/reports/schedule
+ * Fetch scheduled reports for current tenant
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const scheduledReports = await prisma.scheduledReport.findMany({
             where: {
-                tenantId: session.user.tenantId
+                tenantId: session.tenantId
             },
             include: {
                 report: {
@@ -48,25 +59,36 @@ export async function GET(req: NextRequest) {
             success: true,
             data: { scheduledReports }
         });
-    } catch (error) {
-        console.error('Error fetching scheduled reports:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch scheduled reports' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST - Create a new scheduled report
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/reports/schedule
+ * Create a new scheduled report
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
-        const validatedData = ScheduledReportSchema.parse(body);
+        const result = ScheduledReportSchema.safeParse(body);
+
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
+
+        const validatedData = result.data;
 
         // Validate cron expression
         if (!isValidCron(validatedData.schedule)) {
@@ -80,15 +102,12 @@ export async function POST(req: NextRequest) {
         const report = await prisma.savedReport.findFirst({
             where: {
                 id: validatedData.reportId,
-                tenantId: session.user.tenantId
+                tenantId: session.tenantId
             }
         });
 
         if (!report) {
-            return NextResponse.json(
-                { success: false, message: 'Report not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Report');
         }
 
         const nextRunAt = calculateNextRun(validatedData.schedule);
@@ -96,13 +115,13 @@ export async function POST(req: NextRequest) {
         const scheduledReport = await prisma.scheduledReport.create({
             data: {
                 reportId: validatedData.reportId,
-                tenantId: session.user.tenantId,
+                tenantId: session.tenantId,
                 schedule: validatedData.schedule,
                 recipients: JSON.stringify(validatedData.recipients),
                 format: validatedData.format,
                 enabled: validatedData.enabled,
                 nextRunAt,
-                createdById: session.user.id
+                createdById: session.userId
             },
             include: {
                 report: {
@@ -119,27 +138,20 @@ export async function POST(req: NextRequest) {
             message: 'Scheduled report created successfully',
             data: { scheduledReport }
         }, { status: 201 });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json(
-                { success: false, message: 'Validation error', errors: error.errors },
-                { status: 400 }
-            );
-        }
-        console.error('Error creating scheduled report:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to create scheduled report' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// PUT - Update a scheduled report
-export async function PUT(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * PUT /api/reports/schedule
+ * Update a scheduled report
+ */
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -156,20 +168,28 @@ export async function PUT(req: NextRequest) {
         const existingSchedule = await prisma.scheduledReport.findFirst({
             where: {
                 id: scheduleId,
-                tenantId: session.user.tenantId
+                tenantId: session.tenantId
             }
         });
 
         if (!existingSchedule) {
-            return NextResponse.json(
-                { success: false, message: 'Scheduled report not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Scheduled report');
         }
 
         const body = await req.json();
-        const validatedData = UpdateScheduledReportSchema.parse(body);
+        const result = UpdateScheduledReportSchema.safeParse(body);
 
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
+
+        const validatedData = result.data;
         const updateData: any = {};
 
         if (validatedData.schedule) {
@@ -213,27 +233,20 @@ export async function PUT(req: NextRequest) {
             message: 'Scheduled report updated successfully',
             data: { scheduledReport }
         });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json(
-                { success: false, message: 'Validation error', errors: error.errors },
-                { status: 400 }
-            );
-        }
-        console.error('Error updating scheduled report:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to update scheduled report' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// DELETE - Remove a scheduled report
-export async function DELETE(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * DELETE /api/reports/schedule
+ * Remove a scheduled report
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -250,15 +263,12 @@ export async function DELETE(req: NextRequest) {
         const existingSchedule = await prisma.scheduledReport.findFirst({
             where: {
                 id: scheduleId,
-                tenantId: session.user.tenantId
+                tenantId: session.tenantId
             }
         });
 
         if (!existingSchedule) {
-            return NextResponse.json(
-                { success: false, message: 'Scheduled report not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Scheduled report');
         }
 
         await prisma.scheduledReport.delete({
@@ -269,11 +279,5 @@ export async function DELETE(req: NextRequest) {
             success: true,
             message: 'Scheduled report deleted successfully'
         });
-    } catch (error) {
-        console.error('Error deleting scheduled report:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to delete scheduled report' },
-            { status: 500 }
-        );
     }
-}
+);

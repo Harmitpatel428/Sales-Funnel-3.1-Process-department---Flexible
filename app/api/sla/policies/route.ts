@@ -3,22 +3,30 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { validateSLAPolicy } from '@/lib/validation/workflow-schemas';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+/**
+ * GET /api/sla/policies
+ * List SLA policies for tenant
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-// GET /api/sla/policies
-export async function GET(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const policies = await prisma.sLAPolicy.findMany({
-            where: { tenantId: session.user.tenantId },
+            where: { tenantId: session.tenantId },
             include: {
                 createdBy: { select: { id: true, name: true } },
                 escalationWorkflow: { select: { id: true, name: true } },
@@ -28,38 +36,43 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({ policies });
-    } catch (error) {
-        console.error('Failed to list SLA policies:', error);
-        return NextResponse.json({ error: 'Failed to list SLA policies' }, { status: 500 });
     }
-}
+);
 
-// POST /api/sla/policies
-export async function POST(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/sla/policies
+ * Create a new SLA policy
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        const body = await request.json();
+        const body = await req.json();
         const validation = validateSLAPolicy(body);
 
         if (!validation.success) {
-            return NextResponse.json({ error: 'Validation failed', details: validation.error.errors }, { status: 400 });
+            return validationErrorResponse(
+                validation.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
         }
 
         const policy = await prisma.sLAPolicy.create({
             data: {
-                tenantId: session.user.tenantId,
-                createdById: session.user.id,
+                tenantId: session.tenantId,
+                createdById: session.userId,
                 ...validation.data
             }
         });
 
         return NextResponse.json(policy, { status: 201 });
-    } catch (error) {
-        console.error('Failed to create SLA policy:', error);
-        return NextResponse.json({ error: 'Failed to create SLA policy' }, { status: 500 });
     }
-}
+);

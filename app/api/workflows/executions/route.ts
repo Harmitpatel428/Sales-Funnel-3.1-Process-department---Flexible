@@ -3,19 +3,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
 // GET /api/workflows/executions
-export async function GET(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, context) => {
         const { searchParams } = new URL(request.url);
         const workflowId = searchParams.get('workflowId');
         const status = searchParams.get('status');
@@ -25,7 +19,7 @@ export async function GET(request: NextRequest) {
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '20');
 
-        const where: Record<string, unknown> = { tenantId: session.user.tenantId };
+        const where: Record<string, unknown> = { tenantId: context.session.tenantId };
         if (workflowId) where.workflowId = workflowId;
         if (status) where.status = status;
         if (entityType) where.entityType = entityType;
@@ -52,8 +46,6 @@ export async function GET(request: NextRequest) {
             executions,
             pagination: { page, limit, total, pages: Math.ceil(total / limit) }
         });
-    } catch (error) {
-        console.error('Failed to list executions:', error);
-        return NextResponse.json({ error: 'Failed to list executions' }, { status: 500 });
     }
-}
+);
+

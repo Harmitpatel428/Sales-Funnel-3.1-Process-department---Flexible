@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { validateOAuthClient, generateAuthorizationCode, OAUTH_SCOPES, OAUTH_SCOPE_DESCRIPTIONS } from '@/lib/oauth/server';
+import {
+    withApiHandler,
+    ApiContext,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/oauth/authorize - Authorization endpoint
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/oauth/authorize
+ * Authorization endpoint - display consent screen
+ */
+export const GET = withApiHandler(
+    { authRequired: false, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
         const { searchParams } = new URL(req.url);
 
         const clientId = searchParams.get('client_id');
@@ -71,19 +77,18 @@ export async function GET(req: NextRequest) {
                 state,
             },
         });
-    } catch (error: any) {
-        console.error('OAuth authorize error:', error);
-        return NextResponse.json(
-            { error: 'server_error', error_description: 'An error occurred' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST /api/oauth/authorize - User approves authorization
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/oauth/authorize
+ * User approves authorization
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
             return NextResponse.json(
                 { error: 'access_denied', error_description: 'User not authenticated' },
@@ -136,11 +141,5 @@ export async function POST(req: NextRequest) {
             success: true,
             redirect: redirectUrl.toString(),
         });
-    } catch (error: any) {
-        console.error('OAuth authorize POST error:', error);
-        return NextResponse.json(
-            { error: 'server_error', error_description: 'An error occurred' },
-            { status: 500 }
-        );
     }
-}
+);

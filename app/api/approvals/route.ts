@@ -3,28 +3,32 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { ApprovalHandler } from '@/lib/workflows/approval-handler';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+/**
+ * GET /api/approvals
+ * List pending approvals for current user
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-// GET /api/approvals - List pending approvals for current user
-export async function GET(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const approvals = await ApprovalHandler.getPendingApprovals(
-            session.user.id,
-            session.user.tenantId
+            session.userId,
+            session.tenantId
         );
 
         return NextResponse.json({ approvals });
-    } catch (error) {
-        console.error('Failed to list approvals:', error);
-        return NextResponse.json({ error: 'Failed to list approvals' }, { status: 500 });
     }
-}
+);

@@ -1,26 +1,57 @@
 import { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 import { getSessionByToken } from '@/lib/auth';
 import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { registerClient, unregisterClient, emitPresenceUpdate } from '@/lib/websocket/server';
 import { getEventsSince } from '@/lib/websocket/eventLog';
 import { trackPresence, removePresence } from '@/lib/websocket/presence';
 
+/**
+ * GET /api/ws
+ * WebSocket upgrade endpoint
+ * 
+ * NOTE: This endpoint cannot use `withApiHandler` because:
+ * 1. WebSocket upgrade requires special Response handling (status 101)
+ * 2. The handler must return a Response with webSocket property for Edge Runtime
+ * 3. Standard Next.js response wrapping would break the WebSocket handshake
+ * 
+ * Auth is implemented manually using the same `getSessionByToken` pattern
+ * used by `withApiHandler` to maintain equivalent auth/error handling.
+ */
 export async function GET(req: NextRequest) {
+    // Note: This WebSocket implementation requires Edge Runtime (Vercel/Cloudflare Workers).
+    // WebSocketPair API (line 32) is not available in Node.js runtime.
+    // Expected behavior: Connection will fail with 500 in standard Next.js dev server.
+    // To enable: Add `export const runtime = 'edge'` or deploy to Edge-compatible platform.
+
     if (req.headers.get('upgrade') !== 'websocket') {
-        return new Response('Expected WebSocket', { status: 400 });
+        return new Response(
+            JSON.stringify({ success: false, error: 'INVALID_REQUEST', message: 'Expected WebSocket upgrade' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
     }
 
     try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+        // Auth check - same pattern as withApiHandler
+        const cookieStore = await cookies();
+        const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+        const session = await getSessionByToken(sessionToken);
+
         if (!session) {
-            return new Response('Unauthorized', { status: 401 });
+            return new Response(
+                JSON.stringify({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' }),
+                { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
         const { socket, response } = await upgradeWebSocket(req, session);
         return response;
     } catch (error) {
         console.error('WebSocket upgrade error:', error);
-        return new Response('WebSocket upgrade failed', { status: 500 });
+        return new Response(
+            JSON.stringify({ success: false, error: 'SERVER_ERROR', message: 'WebSocket upgrade failed' }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
     }
 }
 

@@ -1,36 +1,68 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    forbiddenResponse,
+    notFoundResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function GET(req: NextRequest) {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session || session.role !== 'ADMIN') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+/**
+ * GET /api/admin/sso
+ * List SSO providers (ADMIN only)
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-    try {
+        if (!session) {
+            return unauthorizedResponse();
+        }
+
+        if (session.role !== 'ADMIN') {
+            return forbiddenResponse('Admin access required');
+        }
+
         const providers = await prisma.sSOProvider.findMany({
             where: { tenantId: session.tenantId },
         });
+
         return NextResponse.json(providers);
-    } catch (error) {
-        return NextResponse.json({ error: 'Failed to fetch providers' }, { status: 500 });
     }
-}
+);
 
-export async function POST(req: NextRequest) {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session || session.role !== 'ADMIN') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+/**
+ * POST /api/admin/sso
+ * Create SSO provider (ADMIN only)
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-    try {
+        if (!session) {
+            return unauthorizedResponse();
+        }
+
+        if (session.role !== 'ADMIN') {
+            return forbiddenResponse('Admin access required');
+        }
+
         const data = await req.json();
+
         // Basic validation
-        if (!data.name || !data.type) {
-            return NextResponse.json({ error: 'Name and Type are required' }, { status: 400 });
+        const errors: { field: string; message: string; code: string }[] = [];
+        if (!data.name) {
+            errors.push({ field: 'name', message: 'Name is required', code: 'required' });
+        }
+        if (!data.type) {
+            errors.push({ field: 'type', message: 'Type is required', code: 'required' });
+        }
+        if (errors.length > 0) {
+            return validationErrorResponse(errors);
         }
 
         const provider = await prisma.sSOProvider.create({
@@ -51,21 +83,32 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json(provider);
-    } catch (error: any) {
-        console.error("Create SSO Provider Error", error);
-        return NextResponse.json({ error: 'Failed to create provider' }, { status: 500 });
     }
-}
+);
 
-export async function PUT(req: NextRequest) {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session || session.role !== 'ADMIN') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+/**
+ * PUT /api/admin/sso
+ * Update SSO provider (ADMIN only)
+ */
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-    try {
+        if (!session) {
+            return unauthorizedResponse();
+        }
+
+        if (session.role !== 'ADMIN') {
+            return forbiddenResponse('Admin access required');
+        }
+
         const data = await req.json();
-        if (!data.id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+        if (!data.id) {
+            return validationErrorResponse([
+                { field: 'id', message: 'ID is required', code: 'required' }
+            ]);
+        }
 
         // Ensure we only update if belongs to tenant
         const existing = await prisma.sSOProvider.findUnique({
@@ -73,7 +116,7 @@ export async function PUT(req: NextRequest) {
         });
 
         if (!existing || existing.tenantId !== session.tenantId) {
-            return NextResponse.json({ error: 'Provider not found' }, { status: 404 });
+            return notFoundResponse('Provider');
         }
 
         const provider = await prisma.sSOProvider.update({
@@ -94,30 +137,42 @@ export async function PUT(req: NextRequest) {
         });
 
         return NextResponse.json(provider);
-    } catch (error) {
-        return NextResponse.json({ error: 'Failed to update provider' }, { status: 500 });
     }
-}
+);
 
-export async function DELETE(req: NextRequest) {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session || session.role !== 'ADMIN') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+/**
+ * DELETE /api/admin/sso
+ * Delete SSO provider (ADMIN only)
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+        if (!session) {
+            return unauthorizedResponse();
+        }
 
-    if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+        if (session.role !== 'ADMIN') {
+            return forbiddenResponse('Admin access required');
+        }
 
-    try {
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get('id');
+
+        if (!id) {
+            return validationErrorResponse([
+                { field: 'id', message: 'ID is required', code: 'required' }
+            ]);
+        }
+
         // Ensure we only delete if belongs to tenant
         const existing = await prisma.sSOProvider.findUnique({
             where: { id }
         });
 
         if (!existing || existing.tenantId !== session.tenantId) {
-            return NextResponse.json({ error: 'Provider not found' }, { status: 404 });
+            return notFoundResponse('Provider');
         }
 
         await prisma.sSOProvider.delete({
@@ -125,7 +180,5 @@ export async function DELETE(req: NextRequest) {
         });
 
         return NextResponse.json({ success: true });
-    } catch (error) {
-        return NextResponse.json({ error: 'Failed to delete provider' }, { status: 500 });
     }
-}
+);

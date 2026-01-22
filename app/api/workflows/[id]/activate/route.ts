@@ -3,28 +3,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
-
-const prisma = new PrismaClient();
-
-interface RouteParams {
-    params: { id: string };
-}
+import { prisma } from '@/lib/db';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
 // POST /api/workflows/[id]/activate
-export async function POST(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, context) => {
         const { searchParams } = new URL(request.url);
         const action = searchParams.get('action') || 'activate';
 
         const workflow = await prisma.workflow.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId }
+            where: { id: context.params.id, tenantId: context.session.tenantId }
         });
 
         if (!workflow) {
@@ -34,7 +24,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const isActive = action === 'activate';
 
         await prisma.workflow.update({
-            where: { id: params.id },
+            where: { id: context.params.id },
             data: { isActive }
         });
 
@@ -42,16 +32,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             data: {
                 actionType: isActive ? 'WORKFLOW_ACTIVATED' : 'WORKFLOW_DEACTIVATED',
                 entityType: 'WORKFLOW',
-                entityId: params.id,
+                entityId: context.params.id,
                 description: `${isActive ? 'Activated' : 'Deactivated'} workflow "${workflow.name}"`,
-                performedById: session.user.id,
-                tenantId: session.user.tenantId
+                performedById: context.session.userId,
+                tenantId: context.session.tenantId
             }
         });
 
         return NextResponse.json({ success: true, isActive });
-    } catch (error) {
-        console.error('Failed to toggle workflow:', error);
-        return NextResponse.json({ error: 'Failed to toggle workflow' }, { status: 500 });
     }
-}
+);

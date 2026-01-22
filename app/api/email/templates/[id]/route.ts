@@ -1,70 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { EmailTemplateSchema } from '@/lib/validation/email-schemas';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { requirePermissions } from '@/lib/utils/permissions';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        const template = await prisma.emailTemplate.findFirst({
+            where: { id: context.params.id, tenantId: context.session.tenantId }
+        });
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!template) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        return NextResponse.json(template);
+    }
+);
 
-    const template = await prisma.emailTemplate.findFirst({
-        where: { id, tenantId: user.tenantId }
-    });
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        // Check existing
+        const existing = await prisma.emailTemplate.findFirst({
+            where: { id: context.params.id, tenantId: context.session.tenantId }
+        });
+        if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    if (!template) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    return NextResponse.json(template);
-}
-
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-    // Check existing
-    const existing = await prisma.emailTemplate.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    try {
         const body = await req.json();
         const data = EmailTemplateSchema.partial().parse(body);
 
         await prisma.emailTemplate.update({
-            where: { id },
+            where: { id: context.params.id },
             data: { ...data, updatedAt: new Date() }
         });
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
     }
-}
+);
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        if (!(await requirePermissions(context.session.userId, [PERMISSIONS.EMAIL_TEMPLATE_DELETE]))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-    if (!(await requirePermissions(session.user.id as string, [PERMISSIONS.EMAIL_TEMPLATE_DELETE]))) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const existing = await prisma.emailTemplate.findFirst({
+            where: { id: context.params.id, tenantId: context.session.tenantId }
+        });
+        if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+        await prisma.emailTemplate.delete({ where: { id: context.params.id } });
+        return NextResponse.json({ success: true });
     }
+);
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-    const existing = await prisma.emailTemplate.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    await prisma.emailTemplate.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-}

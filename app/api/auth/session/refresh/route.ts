@@ -1,45 +1,50 @@
 import { NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { getSessionTokenFromCookie } from '@/lib/authCookies';
 import { prisma } from '@/lib/db';
-import { SESSION_EXPIRY_DAYS } from '@/lib/authConfig';
+import { SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/authConfig';
+import { withApiHandler } from '@/lib/api/withApiHandler';
+import { ApiContext } from '@/lib/api/types';
+import { addServerAuditLog } from '@/app/actions/audit';
+import { errorResponse } from '@/lib/api/response-helpers';
+import { getSessionCookieOptions } from '@/lib/authCookies';
 
-export async function POST() {
-    try {
-        const token = await getSessionTokenFromCookie();
-        const session = await getSessionByToken(token); // this validates the session first
+export const POST = withApiHandler({ authRequired: true }, async (context: ApiContext) => {
+    const session = context.session!;
+    const token = context.req.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-        if (!session) {
-            return NextResponse.json({ error: 'No active session' }, { status: 401 });
+    // Extend session expiry
+    const newExpiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+    await prisma.session.update({
+        where: { id: session.sessionId },
+        data: {
+            expiresAt: newExpiresAt,
+            lastActivityAt: new Date()
         }
+    });
 
-        // Extend session expiry
-        const newExpiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    await addServerAuditLog({
+        actionType: 'SESSION_REFRESH',
+        entityType: 'User',
+        entityId: session.userId,
+        description: 'Session refreshed',
+        performedById: session.userId,
+        sessionId: session.sessionId,
+        ipAddress: context.req.headers.get('x-forwarded-for') || undefined,
+        userAgent: context.req.headers.get('user-agent') || undefined
+    });
 
-        await prisma.session.update({
-            where: { id: session.sessionId },
-            data: {
-                expiresAt: newExpiresAt,
-                lastActivityAt: new Date()
-            }
-        });
+    const response = NextResponse.json({
+        success: true,
+        expiresAt: newExpiresAt
+    });
 
-        const response = NextResponse.json({
-            success: true,
-            expiresAt: newExpiresAt
-        });
+    // Set the cookie on the response
+    const cookieOptions = getSessionCookieOptions(newExpiresAt);
 
-        // Set the cookie on the response using shared helper options
-        const { getSessionCookieOptions } = await import('@/lib/authCookies');
-        const cookieOptions = getSessionCookieOptions(newExpiresAt);
-
-        if (token) {
-            response.cookies.set(cookieOptions.name, token, cookieOptions);
-        }
-
-        return response;
-    } catch (error) {
-        console.error("Session refresh error:", error);
-        return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    if (token) {
+        // Fix: Use 'session_token' usually defined in default constant but plan says use 'session_token' manually or SESSION_COOKIE_NAME
+        response.cookies.set(SESSION_COOKIE_NAME, token, cookieOptions);
     }
-}
+
+    return response;
+});

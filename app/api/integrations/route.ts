@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/integrations - List available integrations
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/integrations
+ * List available integrations
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -66,21 +74,20 @@ export async function GET(req: NextRequest) {
                 })),
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching integrations:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch integrations' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST /api/integrations - Seed official integrations (admin only)
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/integrations
+ * Seed official integrations (admin only)
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         // Seed official integrations
@@ -225,11 +232,5 @@ export async function POST(req: NextRequest) {
             message: 'Official integrations seeded successfully',
             data: { count: officialIntegrations.length },
         });
-    } catch (error: any) {
-        console.error('Error seeding integrations:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to seed integrations' },
-            { status: 500 }
-        );
     }
-}
+);

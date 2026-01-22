@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 
-// POST /api/integrations/[slug]/install - Install integration
-export async function POST(
-    req: NextRequest,
-    { params }: { params: Promise<{ slug: string }> }
-) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/integrations/[slug]/install
+ * Install integration
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { slug } = await params;
@@ -24,10 +30,7 @@ export async function POST(
         });
 
         if (!integration || !integration.isActive) {
-            return NextResponse.json(
-                { success: false, message: 'Integration not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Integration');
         }
 
         // Check if already installed
@@ -76,24 +79,20 @@ export async function POST(
             },
             message: `${integration.name} installed successfully`,
         }, { status: 201 });
-    } catch (error: any) {
-        console.error('Error installing integration:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to install integration' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// DELETE /api/integrations/[slug]/install - Uninstall integration
-export async function DELETE(
-    req: NextRequest,
-    { params }: { params: Promise<{ slug: string }> }
-) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * DELETE /api/integrations/[slug]/install
+ * Uninstall integration
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { slug } = await params;
@@ -104,10 +103,7 @@ export async function DELETE(
         });
 
         if (!integration) {
-            return NextResponse.json(
-                { success: false, message: 'Integration not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Integration');
         }
 
         // Find installation
@@ -131,11 +127,5 @@ export async function DELETE(
             success: true,
             message: `${integration.name} uninstalled successfully`,
         });
-    } catch (error: any) {
-        console.error('Error uninstalling integration:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to uninstall integration' },
-            { status: 500 }
-        );
     }
-}
+);

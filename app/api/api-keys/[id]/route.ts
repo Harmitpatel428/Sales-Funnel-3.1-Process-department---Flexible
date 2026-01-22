@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { revokeApiKey, rotateApiKey, getApiKeyUsageStats, API_SCOPES } from '@/lib/api-keys';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/api-keys/[id] - Get a specific API key
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/api-keys/[id]
+ * Get a specific API key
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { id } = await params;
@@ -46,10 +52,7 @@ export async function GET(
         });
 
         if (!apiKey) {
-            return NextResponse.json(
-                { success: false, message: 'API key not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('API key');
         }
 
         let stats = null;
@@ -65,24 +68,20 @@ export async function GET(
                 stats,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching API key:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch API key' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// PATCH /api/api-keys/[id] - Update an API key
-export async function PATCH(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * PATCH /api/api-keys/[id]
+ * Update an API key
+ */
+export const PATCH = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { id } = await params;
@@ -95,10 +94,7 @@ export async function PATCH(
         });
 
         if (!existingKey) {
-            return NextResponse.json(
-                { success: false, message: 'API key not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('API key');
         }
 
         // Build update data
@@ -180,24 +176,20 @@ export async function PATCH(
             },
             message: 'API key updated successfully',
         });
-    } catch (error: any) {
-        console.error('Error updating API key:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to update API key' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// DELETE /api/api-keys/[id] - Revoke/delete an API key
-export async function DELETE(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * DELETE /api/api-keys/[id]
+ * Revoke/delete an API key
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { id } = await params;
@@ -210,10 +202,7 @@ export async function DELETE(
         });
 
         if (!existingKey) {
-            return NextResponse.json(
-                { success: false, message: 'API key not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('API key');
         }
 
         if (hardDelete) {
@@ -239,11 +228,5 @@ export async function DELETE(
                 message: 'API key revoked successfully',
             });
         }
-    } catch (error: any) {
-        console.error('Error deleting API key:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to delete API key' },
-            { status: 500 }
-        );
     }
-}
+);

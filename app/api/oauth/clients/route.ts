@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { createOAuthClient, OAUTH_SCOPES, OAUTH_SCOPE_DESCRIPTIONS } from '@/lib/oauth/server';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/oauth/clients - List OAuth clients
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/oauth/clients
+ * List OAuth clients
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const clients = await prisma.oAuthClient.findMany({
@@ -49,68 +58,58 @@ export async function GET(req: NextRequest) {
                 scopeDescriptions: OAUTH_SCOPE_DESCRIPTIONS,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching OAuth clients:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch OAuth clients' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST /api/oauth/clients - Create OAuth client
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/oauth/clients
+ * Create OAuth client
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
         const { name, redirectUris, scopes, description, logoUrl, websiteUrl, privacyUrl, termsUrl, isPublic } = body;
 
         // Validate required fields
+        const errors: { field: string; message: string; code: string }[] = [];
+
         if (!name || typeof name !== 'string') {
-            return NextResponse.json(
-                { success: false, message: 'Name is required' },
-                { status: 400 }
-            );
+            errors.push({ field: 'name', message: 'Name is required', code: 'required' });
         }
 
         if (!redirectUris || !Array.isArray(redirectUris) || redirectUris.length === 0) {
-            return NextResponse.json(
-                { success: false, message: 'At least one redirect URI is required' },
-                { status: 400 }
-            );
-        }
-
-        // Validate redirect URIs
-        for (const uri of redirectUris) {
-            try {
-                new URL(uri);
-            } catch {
-                return NextResponse.json(
-                    { success: false, message: `Invalid redirect URI: ${uri}` },
-                    { status: 400 }
-                );
+            errors.push({ field: 'redirectUris', message: 'At least one redirect URI is required', code: 'required' });
+        } else {
+            // Validate redirect URIs
+            for (let i = 0; i < redirectUris.length; i++) {
+                try {
+                    new URL(redirectUris[i]);
+                } catch {
+                    errors.push({ field: `redirectUris[${i}]`, message: `Invalid redirect URI: ${redirectUris[i]}`, code: 'invalid_url' });
+                }
             }
         }
 
         if (!scopes || !Array.isArray(scopes) || scopes.length === 0) {
-            return NextResponse.json(
-                { success: false, message: 'At least one scope is required' },
-                { status: 400 }
-            );
+            errors.push({ field: 'scopes', message: 'At least one scope is required', code: 'required' });
+        } else {
+            // Validate scopes
+            const validScopes = Object.values(OAUTH_SCOPES);
+            const invalidScopes = scopes.filter((s: string) => !validScopes.includes(s as any));
+            if (invalidScopes.length > 0) {
+                errors.push({ field: 'scopes', message: `Invalid scopes: ${invalidScopes.join(', ')}`, code: 'invalid_value' });
+            }
         }
 
-        // Validate scopes
-        const validScopes = Object.values(OAUTH_SCOPES);
-        const invalidScopes = scopes.filter((s: string) => !validScopes.includes(s as any));
-        if (invalidScopes.length > 0) {
-            return NextResponse.json(
-                { success: false, message: `Invalid scopes: ${invalidScopes.join(', ')}` },
-                { status: 400 }
-            );
+        if (errors.length > 0) {
+            return validationErrorResponse(errors);
         }
 
         const result = await createOAuthClient(
@@ -129,11 +128,5 @@ export async function POST(req: NextRequest) {
             },
             message: 'OAuth client created. Save the client secret now - you won\'t be able to see it again!',
         }, { status: 201 });
-    } catch (error: any) {
-        console.error('Error creating OAuth client:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to create OAuth client' },
-            { status: 500 }
-        );
     }
-}
+);

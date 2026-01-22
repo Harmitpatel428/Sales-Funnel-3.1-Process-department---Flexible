@@ -3,26 +3,33 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { validateSLAPolicy } from '@/lib/validation/workflow-schemas';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+/**
+ * GET /api/sla/policies/[id]
+ * Get a specific SLA policy
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
 
-interface RouteParams {
-    params: { id: string };
-}
-
-// GET /api/sla/policies/[id]
-export async function GET(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            return unauthorizedResponse();
         }
 
+        const { id } = await params;
+
         const policy = await prisma.sLAPolicy.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId },
+            where: { id, tenantId: session.tenantId },
             include: {
                 createdBy: { select: { id: true, name: true } },
                 escalationWorkflow: { select: { id: true, name: true } }
@@ -30,72 +37,83 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         });
 
         if (!policy) {
-            return NextResponse.json({ error: 'Policy not found' }, { status: 404 });
+            return notFoundResponse('Policy');
         }
 
         return NextResponse.json(policy);
-    } catch (error) {
-        console.error('Failed to get SLA policy:', error);
-        return NextResponse.json({ error: 'Failed to get SLA policy' }, { status: 500 });
     }
-}
+);
 
-// PUT /api/sla/policies/[id]
-export async function PUT(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * PUT /api/sla/policies/[id]
+ * Update an SLA policy
+ */
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
+        const { id } = await params;
+
         const existing = await prisma.sLAPolicy.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId }
+            where: { id, tenantId: session.tenantId }
         });
 
         if (!existing) {
-            return NextResponse.json({ error: 'Policy not found' }, { status: 404 });
+            return notFoundResponse('Policy');
         }
 
-        const body = await request.json();
+        const body = await req.json();
         const validation = validateSLAPolicy(body);
 
         if (!validation.success) {
-            return NextResponse.json({ error: 'Validation failed' }, { status: 400 });
+            return validationErrorResponse(
+                validation.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
         }
 
         const policy = await prisma.sLAPolicy.update({
-            where: { id: params.id },
+            where: { id },
             data: validation.data
         });
 
         return NextResponse.json(policy);
-    } catch (error) {
-        console.error('Failed to update SLA policy:', error);
-        return NextResponse.json({ error: 'Failed to update SLA policy' }, { status: 500 });
     }
-}
+);
 
-// DELETE /api/sla/policies/[id]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * DELETE /api/sla/policies/[id]
+ * Delete an SLA policy
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
+        const { id } = await params;
+
         const existing = await prisma.sLAPolicy.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId }
+            where: { id, tenantId: session.tenantId }
         });
 
         if (!existing) {
-            return NextResponse.json({ error: 'Policy not found' }, { status: 404 });
+            return notFoundResponse('Policy');
         }
 
-        await prisma.sLAPolicy.delete({ where: { id: params.id } });
+        await prisma.sLAPolicy.delete({ where: { id } });
 
         return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Failed to delete SLA policy:', error);
-        return NextResponse.json({ error: 'Failed to delete SLA policy' }, { status: 500 });
     }
-}
+);

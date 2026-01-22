@@ -1,85 +1,118 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { ActivitySchema, validateRequest } from '@/lib/validation/schemas';
-import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
-import { handleApiError } from '@/lib/middleware/error-handler';
-import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse } from '@/lib/api/response-helpers';
-import { logRequest } from '@/lib/middleware/request-logger';
+import { successResponse, notFoundResponse, validationErrorResponse } from '@/lib/api/response-helpers';
+import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
+import { requirePermissions, getRecordLevelFilter } from '@/lib/middleware/permissions';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { emitLeadUpdated } from '@/lib/websocket/server';
 
+// Helper to get params
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-    try {
-        const { id } = await getParams(context);
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        if (!session) return unauthorizedResponse();
+const getHandler = async (req: NextRequest, context: ApiContext, id: string) => {
+    const session = context.session!;
 
-        return await withTenant(session.tenantId, async () => {
-            const lead = await prisma.lead.findFirst({
-                where: { id, tenantId: session.tenantId },
-                select: { activities: true }
-            });
+    // Permission check
+    const permissionError = await requirePermissions(
+        [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
+        false
+    )(req);
+    if (permissionError) return permissionError;
 
-            if (!lead) return notFoundResponse('Lead');
+    // Record level filter
+    const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'view');
 
-            const activities = lead.activities ? JSON.parse(lead.activities) : [];
-            return successResponse(activities);
+    return await withTenant(session.tenantId, async () => {
+        const lead = await prisma.lead.findFirst({
+            where: {
+                id,
+                tenantId: session.tenantId,
+                ...recordFilter
+            },
+            select: { activities: true }
         });
-    } catch (error) {
-        return handleApiError(error);
-    }
+
+        if (!lead) return notFoundResponse('Lead');
+
+        const activities = lead.activities ? JSON.parse(lead.activities) : [];
+        return successResponse(activities);
+    });
+};
+
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await getParams(context);
+    return withApiHandler(
+        { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+        (req, ctx) => getHandler(req, ctx, id)
+    )(req);
 }
 
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-    try {
-        const rateLimitError = await rateLimitMiddleware(req, 30);
-        if (rateLimitError) return rateLimitError;
+const postHandler = async (req: NextRequest, context: ApiContext, id: string) => {
+    const session = context.session!;
 
-        const { id } = await getParams(context);
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        logRequest(req, session);
-        if (!session) return unauthorizedResponse();
+    // Permission check
+    const permissionError = await requirePermissions(
+        [PERMISSIONS.LEADS_EDIT_OWN, PERMISSIONS.LEADS_EDIT_ASSIGNED, PERMISSIONS.LEADS_EDIT_ALL],
+        false
+    )(req);
+    if (permissionError) return permissionError;
 
-        const body = await req.json();
-        // Activity payload might be just the activity object, but we need to ensure structure
-        // Use ActivitySchema, but maybe relax ID as we generate it?
+    // Record level filter for edit permissions
+    const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'edit');
 
-        const activityData = {
-            ...body,
-            id: body.id || `act_${Date.now()}`,
-            timestamp: body.timestamp || new Date(),
-            performedBy: body.performedBy || session.userId // fallback to current user
-        };
+    const body = await req.json();
 
-        // Simple validation for required fields if needed, relying on frontend or Schema
-        // const validation = validateRequest(ActivitySchema, activityData); -- ActivitySchema is strict, might need partial handling or construction
+    const activityData = {
+        ...body,
+        id: body.id || `act_${Date.now()}`,
+        timestamp: body.timestamp || new Date(),
+        performedBy: body.performedBy || session.userId // fallback to current user
+    };
 
-        return await withTenant(session.tenantId, async () => {
-            const lead = await prisma.lead.findFirst({
-                where: { id, tenantId: session.tenantId }
-            });
+    // Optional: Validate activityData pattern if Schema allows partial
+    // const validation = validateRequest(ActivitySchema, activityData);
 
-            if (!lead) return notFoundResponse('Lead');
-
-            const currentActivities = lead.activities ? JSON.parse(lead.activities) : [];
-            const newActivities = [activityData, ...currentActivities]; // Prepend newest
-
-            await prisma.lead.update({
-                where: { id },
-                data: {
-                    activities: JSON.stringify(newActivities),
-                    lastActivityDate: new Date(activityData.timestamp)
-                }
-            });
-
-            return successResponse(activityData, "Activity added");
+    return await withTenant(session.tenantId, async () => {
+        const lead = await prisma.lead.findFirst({
+            where: {
+                id,
+                tenantId: session.tenantId,
+                ...recordFilter
+            }
         });
-    } catch (error) {
-        return handleApiError(error);
-    }
+
+        if (!lead) return notFoundResponse('Lead');
+
+        const currentActivities = lead.activities ? JSON.parse(lead.activities) : [];
+        const newActivities = [activityData, ...currentActivities]; // Prepend newest
+
+        const updatedLead = await prisma.lead.update({
+            where: { id },
+            data: {
+                activities: JSON.stringify(newActivities),
+                lastActivityDate: new Date(activityData.timestamp)
+            }
+        });
+
+        // WebSocket Broadcast for Lead Update (since activities changed)
+        try {
+            await emitLeadUpdated(session.tenantId, updatedLead);
+        } catch (wsError) {
+            console.error('[WebSocket] Lead update broadcast for activity failed:', wsError);
+        }
+
+        return successResponse(activityData, "Activity added");
+    });
+};
+
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await getParams(context);
+    return withApiHandler(
+        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        (req, ctx) => postHandler(req, ctx, id)
+    )(req);
 }

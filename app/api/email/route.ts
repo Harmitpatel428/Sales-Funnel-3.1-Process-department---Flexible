@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { EmailService } from '@/lib/email-service';
 import { injectTrackingPixel, wrapLinksWithTracking } from '@/lib/email-tracking';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,53 +7,54 @@ import { z } from 'zod';
 import { sendEmail } from '@/lib/email';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { requirePermissions } from '@/lib/utils/permissions';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
 const emailService = new EmailService();
 
-export async function GET(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        if (!(await requirePermissions(context.session.userId, [PERMISSIONS.EMAIL_VIEW]))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-    if (!(await requirePermissions(session.user.id as string, [PERMISSIONS.EMAIL_VIEW]))) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const { searchParams } = new URL(req.url);
+        const leadId = searchParams.get('leadId');
+        const caseId = searchParams.get('caseId');
+        const threadId = searchParams.get('threadId');
+        const page = parseInt(searchParams.get('page') || '1');
+        const limit = parseInt(searchParams.get('limit') || '20');
+
+        const where: any = {
+            tenantId: context.session.tenantId
+        };
+
+        if (leadId) where.leadId = leadId;
+        if (caseId) where.caseId = caseId;
+        if (threadId) where.threadId = threadId;
+
+        const emails = await prisma.email.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+            include: { attachments: true }
+        });
+
+        return NextResponse.json(emails);
     }
+);
 
-    const { searchParams } = new URL(req.url);
-    const leadId = searchParams.get('leadId');
-    const caseId = searchParams.get('caseId');
-    const threadId = searchParams.get('threadId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        if (!(await requirePermissions(context.session.userId, [PERMISSIONS.EMAIL_SEND]))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-    const where: any = {
-        tenantId: (await prisma.user.findUnique({ where: { id: session.user.id as string } }))?.tenantId
-    };
+        const user = await prisma.user.findUnique({ where: { id: context.session.userId } });
+        const userEmail = user?.email || 'noreply';
 
-    if (leadId) where.leadId = leadId;
-    if (caseId) where.caseId = caseId;
-    if (threadId) where.threadId = threadId;
-
-    const emails = await prisma.email.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { attachments: true }
-    });
-
-    return NextResponse.json(emails);
-}
-
-export async function POST(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    if (!(await requirePermissions(session.user.id as string, [PERMISSIONS.EMAIL_SEND]))) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    try {
         const body = await req.json();
         const schema = z.object({
             to: z.union([z.string(), z.array(z.string())]),
@@ -75,13 +75,7 @@ export async function POST(req: NextRequest) {
         const ccList = Array.isArray(data.cc) ? data.cc : (data.cc ? [data.cc] : []);
         const bccList = Array.isArray(data.bcc) ? data.bcc : (data.bcc ? [data.bcc] : []);
 
-        const tenantId = (await prisma.user.findUnique({ where: { id: session.user.id as string } }))?.tenantId!;
-
-        // Check Permissions if using a provider (implied advanced feature)
-        // Or generally for sending emails
-        // For now, let's assume basic robust check:
-        // const hasPerm = await checkPermission(session.user.id, PERMISSIONS.EMAIL_SEND);
-        // if (!hasPerm) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const tenantId = context.session.tenantId;
 
         const trackingPixelId = uuidv4();
         let finalHtml = injectTrackingPixel(data.htmlBody, trackingPixelId);
@@ -94,14 +88,14 @@ export async function POST(req: NextRequest) {
                 to: JSON.stringify(toList),
                 cc: JSON.stringify(ccList),
                 bcc: JSON.stringify(bccList),
-                from: session.user.email,
+                from: context.session.email || userEmail,
                 direction: 'OUTBOUND',
                 status: 'SENDING',
                 htmlBody: finalHtml,
                 leadId: data.leadId,
                 caseId: data.caseId,
                 trackingPixelId,
-                sentById: session.user.id as string,
+                sentById: context.session.userId,
                 providerId: data.providerId,
                 messageId: uuidv4(), // Temporary
             }
@@ -144,9 +138,6 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json(email);
-
-    } catch (error: any) {
-        console.error(error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
+);
+

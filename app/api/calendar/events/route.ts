@@ -1,66 +1,107 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import ical from 'ical-generator';
 import { z } from 'zod';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+const createEventSchema = z.object({
+    title: z.string(),
+    startTime: z.string(),
+    endTime: z.string(),
+    attendees: z.array(z.string()).optional(), // Emails
+    leadId: z.string().optional(),
+    caseId: z.string().optional(),
+    description: z.string().optional(),
+    location: z.string().optional()
+});
 
-export async function GET(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/calendar/events
+ * List calendar events
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { nextAuthSession } = context;
 
-    const { searchParams } = new URL(req.url);
-    const startStr = searchParams.get('startDate');
-    const endStr = searchParams.get('endDate');
-    const leadId = searchParams.get('leadId');
-    const caseId = searchParams.get('caseId');
+        if (!nextAuthSession?.user?.id) {
+            return unauthorizedResponse();
+        }
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    const where: any = { tenantId: user!.tenantId };
+        const { searchParams } = new URL(req.url);
+        const startStr = searchParams.get('startDate');
+        const endStr = searchParams.get('endDate');
+        const leadId = searchParams.get('leadId');
+        const caseId = searchParams.get('caseId');
 
-    if (startStr && endStr) {
-        where.startTime = { gte: new Date(startStr), lte: new Date(endStr) };
+        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
+        if (!user) {
+            return unauthorizedResponse();
+        }
+
+        const where: any = { tenantId: user.tenantId };
+
+        if (startStr && endStr) {
+            where.startTime = { gte: new Date(startStr), lte: new Date(endStr) };
+        }
+        if (leadId) where.leadId = leadId;
+        if (caseId) where.caseId = caseId;
+
+        const events = await prisma.calendarEvent.findMany({
+            where,
+            orderBy: { startTime: 'asc' },
+            include: { organizer: { select: { name: true, email: true } } }
+        });
+
+        return NextResponse.json(events);
     }
-    if (leadId) where.leadId = leadId;
-    if (caseId) where.caseId = caseId;
+);
 
-    const events = await prisma.calendarEvent.findMany({
-        where,
-        orderBy: { startTime: 'asc' },
-        include: { organizer: { select: { name: true, email: true } } }
-    });
+/**
+ * POST /api/calendar/events
+ * Create a calendar event
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { nextAuthSession } = context;
 
-    return NextResponse.json(events);
-}
+        if (!nextAuthSession?.user?.id) {
+            return unauthorizedResponse();
+        }
 
-export async function POST(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const body = await req.json();
+        const result = createEventSchema.safeParse(body);
 
-    const body = await req.json();
-    const schema = z.object({
-        title: z.string(),
-        startTime: z.string(),
-        endTime: z.string(),
-        attendees: z.array(z.string()).optional(), // Emails
-        leadId: z.string().optional(),
-        caseId: z.string().optional(),
-        description: z.string().optional(),
-        location: z.string().optional()
-    });
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
 
-    try {
-        const data = schema.parse(body);
-        const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
+        const data = result.data;
+        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
+
+        if (!user) {
+            return unauthorizedResponse();
+        }
 
         const event = await prisma.calendarEvent.create({
             data: {
                 title: data.title,
                 startTime: new Date(data.startTime),
                 endTime: new Date(data.endTime),
-                organizerId: session.user.id as string,
-                tenantId: user!.tenantId,
+                organizerId: nextAuthSession.user.id as string,
+                tenantId: user.tenantId,
                 leadId: data.leadId,
                 caseId: data.caseId,
                 description: data.description,
@@ -69,13 +110,11 @@ export async function POST(req: NextRequest) {
             }
         });
 
-        // Generate iCal (logic only, not sending here to save space/complexity for this step, but plan mentions it)
+        // Generate iCal (logic only, not sending here to save space/complexity for this step)
         // const calendar = ical({ name: 'Meeting' });
         // calendar.createEvent({ start: event.startTime, end: event.endTime, summary: event.title });
         // In real app, we'd email this ical content or sync to provider.
 
         return NextResponse.json(event);
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
     }
-}
+);

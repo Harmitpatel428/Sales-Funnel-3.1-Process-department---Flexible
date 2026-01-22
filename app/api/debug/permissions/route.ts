@@ -1,23 +1,34 @@
-import { NextRequest } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
+import { NextRequest, NextResponse } from 'next/server';
 import { getUserPermissions } from '@/lib/middleware/permissions';
-import { successResponse, unauthorizedResponse, handleApiError } from '@/lib/api/response-helpers';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        if (!session) return unauthorizedResponse();
+/**
+ * GET /api/debug/permissions
+ * Debug endpoint to view current user permissions
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
+        }
 
         const permissions = await getUserPermissions(session.userId);
 
-        return successResponse({
-            userId: session.userId,
-            username: session.username,
-            role: session.role,
-            permissions
+        return NextResponse.json({
+            success: true,
+            data: {
+                userId: session.userId,
+                username: session.username,
+                role: session.role,
+                permissions
+            }
         });
-    } catch (error) {
-        return handleApiError(error);
     }
-}
+);

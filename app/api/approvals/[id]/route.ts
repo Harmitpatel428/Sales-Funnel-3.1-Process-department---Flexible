@@ -3,26 +3,32 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { ApprovalHandler } from '@/lib/workflows/approval-handler';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+/**
+ * GET /api/approvals/[id]
+ * Get a specific approval request
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
 
-interface RouteParams {
-    params: { id: string };
-}
-
-// GET /api/approvals/[id]
-export async function GET(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            return unauthorizedResponse();
         }
 
+        const { id } = await params;
+
         const approval = await prisma.approvalRequest.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId },
+            where: { id, tenantId: session.tenantId },
             include: {
                 requestedBy: { select: { id: true, name: true, email: true } },
                 workflowExecution: { include: { workflow: true } }
@@ -30,7 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         });
 
         if (!approval) {
-            return NextResponse.json({ error: 'Approval not found' }, { status: 404 });
+            return notFoundResponse('Approval');
         }
 
         return NextResponse.json({
@@ -39,21 +45,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             approvedBy: JSON.parse(approval.approvedBy),
             metadata: JSON.parse(approval.metadata)
         });
-    } catch (error) {
-        console.error('Failed to get approval:', error);
-        return NextResponse.json({ error: 'Failed to get approval' }, { status: 500 });
     }
-}
+);
 
-// POST /api/approvals/[id]/approve or /api/approvals/[id]/reject
-export async function POST(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/approvals/[id]
+ * Approve or reject an approval request
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        const body = await request.json();
+        const { id } = await params;
+        const body = await req.json();
         const { action, comments } = body;
 
         if (!['approve', 'reject'].includes(action)) {
@@ -61,36 +70,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
 
         const result = await ApprovalHandler.submitApproval(
-            params.id,
-            session.user.id,
+            id,
+            session.userId,
             action === 'approve' ? 'APPROVE' : 'REJECT',
             comments
         );
 
         return NextResponse.json(result);
-    } catch (error) {
-        console.error('Failed to process approval:', error);
-        return NextResponse.json({
-            error: (error as Error).message || 'Failed to process approval'
-        }, { status: 500 });
     }
-}
+);
 
-// DELETE /api/approvals/[id] - Cancel approval
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * DELETE /api/approvals/[id]
+ * Cancel an approval request
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        await ApprovalHandler.cancelApproval(params.id, session.user.id);
+        const { id } = await params;
+
+        await ApprovalHandler.cancelApproval(id, session.userId);
 
         return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Failed to cancel approval:', error);
-        return NextResponse.json({
-            error: (error as Error).message || 'Failed to cancel approval'
-        }, { status: 500 });
     }
-}
+);

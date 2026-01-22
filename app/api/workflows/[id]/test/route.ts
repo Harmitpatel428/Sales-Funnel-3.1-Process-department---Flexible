@@ -4,27 +4,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { ConditionEvaluator } from '@/lib/workflows/conditions';
-import { ActionType } from '@/lib/workflows/actions';
-
-const prisma = new PrismaClient();
-
-interface RouteParams {
-    params: { id: string };
-}
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
 // POST /api/workflows/[id]/test
-export async function POST(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, apiContext) => {
+        const user = await prisma.user.findUnique({ where: { id: apiContext.session.userId } });
 
         const workflow = await prisma.workflow.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId },
+            where: { id: apiContext.params.id, tenantId: apiContext.session.tenantId },
             include: { steps: { orderBy: { stepOrder: 'asc' } } }
         });
 
@@ -39,8 +30,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const context = ConditionEvaluator.buildContext(
             entityData || {},
             triggerData?.oldData,
-            { id: session.user.id, name: session.user.name },
-            { id: session.user.tenantId }
+            { id: apiContext.session.userId, name: user?.name || 'Test User' },
+            { id: apiContext.session.tenantId }
         );
 
         // Simulate execution
@@ -89,8 +80,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 triggerData: triggerData || {}
             }
         });
-    } catch (error) {
-        console.error('Failed to test workflow:', error);
-        return NextResponse.json({ error: 'Failed to test workflow' }, { status: 500 });
     }
-}
+);
+

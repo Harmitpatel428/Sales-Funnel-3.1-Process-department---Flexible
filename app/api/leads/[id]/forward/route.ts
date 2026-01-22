@@ -1,54 +1,57 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
-import { ForwardToProcessSchema } from '@/lib/validation/schemas';
-import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
-import { handleApiError } from '@/lib/middleware/error-handler';
-import { successResponse, unauthorizedResponse, notFoundResponse, errorResponse } from '@/lib/api/response-helpers';
-import { logRequest } from '@/lib/middleware/request-logger';
+import { ForwardToProcessSchema, validateRequest } from '@/lib/validation/schemas';
+import { successResponse, notFoundResponse, errorResponse, validationErrorResponse } from '@/lib/api/response-helpers';
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitLeadUpdated, emitCaseCreated } from '@/lib/websocket/server';
-import { withValidation, ValidatedRequest } from '@/lib/middleware/validation';
-import { z } from 'zod';
-
-async function getParams(context: { params: Promise<{ id: string }> }) {
-    return await context.params;
-}
+import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
+import { requirePermissions } from '@/lib/middleware/permissions';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 
 // Omit leadId from body schema since it's in the URL params
 const ForwardSchema = ForwardToProcessSchema.omit({ leadId: true });
 
-export const POST = withValidation(ForwardSchema)(async (req: ValidatedRequest<z.infer<typeof ForwardSchema>>, context: { params: Promise<{ id: string }> }) => {
-    try {
-        const rateLimitError = await rateLimitMiddleware(req, 30);
-        if (rateLimitError) return rateLimitError;
+// Helper to get params
+async function getParams(context: { params: Promise<{ id: string }> }) {
+    return await context.params;
+}
 
-        const { id } = await getParams(context);
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        logRequest(req, session);
-        if (!session) return unauthorizedResponse();
+const postHandler = async (req: NextRequest, context: ApiContext, id: string) => {
+    const session = context.session!;
 
-        // Check idempotency
-        const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
-        if (idempotencyError) return idempotencyError;
+    // Permission check
+    const permissionError = await requirePermissions([PERMISSIONS.LEADS_FORWARD])(req);
+    if (permissionError) return permissionError;
 
-        // Validation Middleware Output
-        const { benefitTypes, reason } = req.validatedData;
+    // Check idempotency
+    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    if (idempotencyError) return idempotencyError;
 
-        return await withTenant(session.tenantId, async () => {
-            const lead = await prisma.lead.findFirst({
-                where: { id, tenantId: session.tenantId }
-            });
+    // Validation
+    const body = await req.json();
+    const validation = validateRequest(ForwardSchema, body);
+    if (!validation.success) return validationErrorResponse(validation.errors!);
 
-            if (!lead) return notFoundResponse('Lead');
-            if (lead.convertedToCaseId) return errorResponse("Lead already converted", undefined, 400);
+    const { benefitTypes, reason } = validation.data!;
 
-            // Create cases in transaction
-            const caseIds: string[] = [];
-            const now = new Date();
+    return await withTenant(session.tenantId, async () => {
+        const lead = await prisma.lead.findFirst({
+            where: { id, tenantId: session.tenantId }
+        });
 
+        if (!lead) return notFoundResponse('Lead');
+        if (lead.convertedToCaseId) return errorResponse("Lead already converted", undefined, 400);
+
+        // Capture old data
+        const oldData = lead as unknown as Record<string, unknown>;
+
+        // Create cases in transaction
+        const caseIds: string[] = [];
+        const now = new Date();
+
+        try {
             await prisma.$transaction(async (tx) => {
                 for (let i = 0; i < benefitTypes.length; i++) {
                     const type = benefitTypes[i];
@@ -115,6 +118,25 @@ export const POST = withValidation(ForwardSchema)(async (req: ValidatedRequest<z
                 });
             });
 
+            // Trigger workflows
+            try {
+                // Must fetch updated lead to be safe, or construct it
+                const updatedLead = await prisma.lead.findUnique({ where: { id: lead.id } });
+                if (updatedLead) {
+                    await TriggerManager.triggerWorkflows(
+                        EntityType.LEAD,
+                        updatedLead.id,
+                        'UPDATE', // Conversion is an update in status
+                        oldData,
+                        updatedLead as unknown as Record<string, unknown>,
+                        session.tenantId,
+                        session.userId
+                    );
+                }
+            } catch (workflowError) {
+                console.error('Failed to trigger workflows for lead conversion:', workflowError);
+            }
+
             // WebSocket Broadcast
             try {
                 const [updatedLead, createdCases] = await Promise.all([
@@ -136,8 +158,18 @@ export const POST = withValidation(ForwardSchema)(async (req: ValidatedRequest<z
             const response = successResponse({ caseIds }, "Lead converted to process successfully");
             await storeIdempotencyResult(req, response);
             return response;
-        });
-    } catch (error) {
-        return handleApiError(error);
-    }
-});
+
+        } catch (error) {
+            // Transaction failed
+            throw error;
+        }
+    });
+};
+
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await getParams(context);
+    return withApiHandler(
+        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        (req, ctx) => postHandler(req, ctx, id)
+    )(req);
+}

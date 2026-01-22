@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/analytics/usage - API usage analytics
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/analytics/usage
+ * API usage analytics
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -100,11 +108,5 @@ export async function GET(req: NextRequest) {
                 statusDistribution,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching usage analytics:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch usage analytics' },
-            { status: 500 }
-        );
     }
-}
+);

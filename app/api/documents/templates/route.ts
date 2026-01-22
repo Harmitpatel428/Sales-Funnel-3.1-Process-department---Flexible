@@ -4,8 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { withApiHandler } from '@/lib/api/withApiHandler';
+import { ApiHandler, ApiContext } from '@/lib/api/types';
 
 // Static template definitions for now
 // In future, these could be stored in DB per Tenant
@@ -36,26 +36,18 @@ const DOCUMENT_TEMPLATES = {
     ]
 };
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
+    // Auth is handled by wrapper, session is guaranteed if authRequired=true
+    const { searchParams } = new URL(req.url);
+    const category = searchParams.get('category') || 'DEFAULT';
 
-        const { searchParams } = new URL(req.url);
-        const category = searchParams.get('category') || 'DEFAULT';
+    const checklist = DOCUMENT_TEMPLATES[category as keyof typeof DOCUMENT_TEMPLATES] || DOCUMENT_TEMPLATES['DEFAULT'];
 
-        const checklist = DOCUMENT_TEMPLATES[category as keyof typeof DOCUMENT_TEMPLATES] || DOCUMENT_TEMPLATES['DEFAULT'];
+    return NextResponse.json({
+        success: true,
+        category,
+        checklist
+    });
+};
 
-        return NextResponse.json({
-            success: true,
-            category,
-            checklist
-        });
-
-    } catch (error) {
-        console.error('Templates error:', error);
-        return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 });
-    }
-}
+export const GET = withApiHandler({ authRequired: true, checkDbHealth: false, rateLimit: 100 }, getHandler);

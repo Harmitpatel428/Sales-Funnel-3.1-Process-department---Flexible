@@ -706,7 +706,7 @@ export default function AllLeadsPage() {
       const dateB = new Date(b.lastActivityDate).getTime();
       return dateB - dateA; // Most recent first
     });
-  }, [leads.length, debouncedSearch, canSeeAllLeads, currentUser?.role, currentUser?.userId]);
+  }, [leads, debouncedSearch, canSeeAllLeads, currentUser?.role, currentUser?.userId]);
 
 
   // Modal functions
@@ -2129,6 +2129,8 @@ export default function AllLeadsPage() {
               return lead;
             });
 
+            // Development-only logging for import debugging.
+            // These logs are stripped in production builds (NODE_ENV !== 'development').
             if (process.env.NODE_ENV === 'development') {
               console.log('All leads processed:', leads);
             }

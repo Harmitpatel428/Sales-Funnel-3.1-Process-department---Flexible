@@ -1,30 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { addServerAuditLog } from '@/app/actions/audit';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    forbiddenResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 import type { TenantOperationResponse, TenantResponse, UpdateTenantRequest } from '../types';
-
-/**
- * Helper to check if user is SUPER_ADMIN
- */
-async function requireSuperAdmin() {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session) {
-        return { authorized: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { id: session.userId },
-        select: { role: true, name: true },
-    });
-
-    if (user?.role !== 'SUPER_ADMIN') {
-        return { authorized: false, error: 'Forbidden: Super Admin access required', status: 403 };
-    }
-
-    return { authorized: true, session, userName: user.name };
-}
 
 /**
  * Format tenant for API response
@@ -57,72 +41,77 @@ function formatTenant(tenant: {
     };
 }
 
-interface RouteContext {
-    params: Promise<{ id: string }>;
+/**
+ * Helper to check if user is SUPER_ADMIN
+ */
+async function checkSuperAdmin(session: { userId: string }) {
+    const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { role: true, name: true },
+    });
+
+    if (user?.role !== 'SUPER_ADMIN') {
+        return { authorized: false as const, user };
+    }
+
+    return { authorized: true as const, user };
 }
 
 /**
  * GET /api/tenants/[id]
  * Get a single tenant by ID (SUPER_ADMIN only)
  */
-export async function GET(
-    _request: NextRequest,
-    context: RouteContext
-): Promise<NextResponse<TenantOperationResponse>> {
-    try {
-        const auth = await requireSuperAdmin();
-        if (!auth.authorized) {
-            return NextResponse.json(
-                { success: false, message: auth.error },
-                { status: auth.status }
-            );
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (_req: NextRequest, context: ApiContext): Promise<NextResponse<TenantOperationResponse>> => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse() as NextResponse<TenantOperationResponse>;
         }
 
-        const { id } = await context.params;
+        const { authorized } = await checkSuperAdmin(session);
+        if (!authorized) {
+            return forbiddenResponse('Super Admin access required') as NextResponse<TenantOperationResponse>;
+        }
+
+        const { id } = await params;
 
         const tenant = await prisma.tenant.findUnique({
             where: { id },
         });
 
         if (!tenant) {
-            return NextResponse.json(
-                { success: false, message: 'Tenant not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Tenant') as NextResponse<TenantOperationResponse>;
         }
 
         return NextResponse.json({
             success: true,
             tenant: formatTenant(tenant),
         });
-    } catch (error) {
-        console.error('GET /api/tenants/[id] error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch tenant' },
-            { status: 500 }
-        );
     }
-}
+);
 
 /**
  * PUT /api/tenants/[id]
  * Update a tenant (SUPER_ADMIN only)
  */
-export async function PUT(
-    request: NextRequest,
-    context: RouteContext
-): Promise<NextResponse<TenantOperationResponse>> {
-    try {
-        const auth = await requireSuperAdmin();
-        if (!auth.authorized) {
-            return NextResponse.json(
-                { success: false, message: auth.error },
-                { status: auth.status }
-            );
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context: ApiContext): Promise<NextResponse<TenantOperationResponse>> => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse() as NextResponse<TenantOperationResponse>;
         }
 
-        const { id } = await context.params;
-        const body: UpdateTenantRequest = await request.json();
+        const { authorized, user } = await checkSuperAdmin(session);
+        if (!authorized) {
+            return forbiddenResponse('Super Admin access required') as NextResponse<TenantOperationResponse>;
+        }
+
+        const { id } = await params;
+        const body: UpdateTenantRequest = await req.json();
 
         // Check if tenant exists
         const existingTenant = await prisma.tenant.findUnique({
@@ -130,10 +119,7 @@ export async function PUT(
         });
 
         if (!existingTenant) {
-            return NextResponse.json(
-                { success: false, message: 'Tenant not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Tenant') as NextResponse<TenantOperationResponse>;
         }
 
         // Build update data
@@ -157,8 +143,8 @@ export async function PUT(
             actionType: 'TENANT_UPDATED',
             entityType: 'tenant',
             entityId: id,
-            performedById: auth.session!.userId,
-            performedByName: auth.userName,
+            performedById: session.userId,
+            performedByName: user?.name,
             description: `Updated tenant: ${tenant.name}`,
             metadata: { tenantId: id, updates: Object.keys(body) },
         });
@@ -168,33 +154,28 @@ export async function PUT(
             message: 'Tenant updated successfully',
             tenant: formatTenant(tenant),
         });
-    } catch (error) {
-        console.error('PUT /api/tenants/[id] error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to update tenant' },
-            { status: 500 }
-        );
     }
-}
+);
 
 /**
  * DELETE /api/tenants/[id]
  * Soft delete (deactivate) a tenant (SUPER_ADMIN only)
  */
-export async function DELETE(
-    _request: NextRequest,
-    context: RouteContext
-): Promise<NextResponse<TenantOperationResponse>> {
-    try {
-        const auth = await requireSuperAdmin();
-        if (!auth.authorized) {
-            return NextResponse.json(
-                { success: false, message: auth.error },
-                { status: auth.status }
-            );
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (_req: NextRequest, context: ApiContext): Promise<NextResponse<TenantOperationResponse>> => {
+        const { session, params } = context;
+
+        if (!session) {
+            return unauthorizedResponse() as NextResponse<TenantOperationResponse>;
         }
 
-        const { id } = await context.params;
+        const { authorized, user } = await checkSuperAdmin(session);
+        if (!authorized) {
+            return forbiddenResponse('Super Admin access required') as NextResponse<TenantOperationResponse>;
+        }
+
+        const { id } = await params;
 
         // Check if tenant exists
         const existingTenant = await prisma.tenant.findUnique({
@@ -202,10 +183,7 @@ export async function DELETE(
         });
 
         if (!existingTenant) {
-            return NextResponse.json(
-                { success: false, message: 'Tenant not found' },
-                { status: 404 }
-            );
+            return notFoundResponse('Tenant') as NextResponse<TenantOperationResponse>;
         }
 
         // Soft delete - just deactivate
@@ -218,8 +196,8 @@ export async function DELETE(
             actionType: 'TENANT_DELETED',
             entityType: 'tenant',
             entityId: id,
-            performedById: auth.session!.userId,
-            performedByName: auth.userName,
+            performedById: session.userId,
+            performedByName: user?.name,
             description: `Deactivated tenant: ${tenant.name}`,
             metadata: { tenantId: id, tenantName: tenant.name },
         });
@@ -228,11 +206,5 @@ export async function DELETE(
             success: true,
             message: 'Tenant deactivated successfully',
         });
-    } catch (error) {
-        console.error('DELETE /api/tenants/[id] error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to delete tenant' },
-            { status: 500 }
-        );
     }
-}
+);

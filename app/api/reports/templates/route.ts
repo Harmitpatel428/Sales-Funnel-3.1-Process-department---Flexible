@@ -1,14 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from '@/lib/auth';
 import { ReportTemplateSchema, UpdateReportTemplateSchema } from '@/lib/validation/report-schemas';
 import { z } from 'zod';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/reports/templates
+ * List report templates
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -16,9 +28,9 @@ export async function GET(req: NextRequest) {
 
         const templates = await prisma.reportTemplate.findMany({
             where: {
-                tenantId: session.user.tenantId,
+                tenantId: session.tenantId,
                 OR: [
-                    { createdById: session.user.id },
+                    { createdById: session.userId },
                     { isPublic: true }
                 ],
                 ...(category ? { category } : {})
@@ -28,21 +40,36 @@ export async function GET(req: NextRequest) {
         });
 
         return NextResponse.json({ success: true, data: { templates } });
-    } catch (error) {
-        console.error('Error fetching templates:', error);
-        return NextResponse.json({ success: false, message: 'Failed to fetch templates' }, { status: 500 });
     }
-}
+);
 
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/reports/templates
+ * Create a new report template
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
-        const validatedData = ReportTemplateSchema.parse(body);
+        const result = ReportTemplateSchema.safeParse(body);
+
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
+
+        const validatedData = result.data;
 
         const template = await prisma.reportTemplate.create({
             data: {
@@ -52,26 +79,26 @@ export async function POST(req: NextRequest) {
                 category: validatedData.category,
                 isPublic: validatedData.isPublic,
                 sharedWith: JSON.stringify(validatedData.sharedWith),
-                tenantId: session.user.tenantId,
-                createdById: session.user.id
+                tenantId: session.tenantId,
+                createdById: session.userId
             }
         });
 
         return NextResponse.json({ success: true, message: 'Template created', data: { template } }, { status: 201 });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ success: false, message: 'Validation error', errors: error.errors }, { status: 400 });
-        }
-        console.error('Error creating template:', error);
-        return NextResponse.json({ success: false, message: 'Failed to create template' }, { status: 500 });
     }
-}
+);
 
-export async function PUT(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * PUT /api/reports/templates
+ * Update a report template
+ */
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -81,14 +108,26 @@ export async function PUT(req: NextRequest) {
         }
 
         const existing = await prisma.reportTemplate.findFirst({
-            where: { id: templateId, tenantId: session.user.tenantId, createdById: session.user.id }
+            where: { id: templateId, tenantId: session.tenantId, createdById: session.userId }
         });
         if (!existing) {
-            return NextResponse.json({ success: false, message: 'Template not found' }, { status: 404 });
+            return notFoundResponse('Template');
         }
 
         const body = await req.json();
-        const validatedData = UpdateReportTemplateSchema.parse(body);
+        const result = UpdateReportTemplateSchema.safeParse(body);
+
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
+
+        const validatedData = result.data;
         const updateData: any = {};
         if (validatedData.name) updateData.name = validatedData.name;
         if (validatedData.description !== undefined) updateData.description = validatedData.description;
@@ -99,20 +138,20 @@ export async function PUT(req: NextRequest) {
 
         const template = await prisma.reportTemplate.update({ where: { id: templateId }, data: updateData });
         return NextResponse.json({ success: true, message: 'Template updated', data: { template } });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ success: false, message: 'Validation error', errors: error.errors }, { status: 400 });
-        }
-        console.error('Error updating template:', error);
-        return NextResponse.json({ success: false, message: 'Failed to update template' }, { status: 500 });
     }
-}
+);
 
-export async function DELETE(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * DELETE /api/reports/templates
+ * Delete a report template
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -122,16 +161,13 @@ export async function DELETE(req: NextRequest) {
         }
 
         const existing = await prisma.reportTemplate.findFirst({
-            where: { id: templateId, tenantId: session.user.tenantId, createdById: session.user.id }
+            where: { id: templateId, tenantId: session.tenantId, createdById: session.userId }
         });
         if (!existing) {
-            return NextResponse.json({ success: false, message: 'Template not found' }, { status: 404 });
+            return notFoundResponse('Template');
         }
 
         await prisma.reportTemplate.delete({ where: { id: templateId } });
         return NextResponse.json({ success: true, message: 'Template deleted' });
-    } catch (error) {
-        console.error('Error deleting template:', error);
-        return NextResponse.json({ success: false, message: 'Failed to delete template' }, { status: 500 });
     }
-}
+);

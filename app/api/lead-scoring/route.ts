@@ -3,22 +3,29 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { LeadScoringEngine } from '@/lib/workflows/lead-scoring';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+/**
+ * GET /api/lead-scoring/config
+ * Get lead scoring configuration
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
 
-// GET /api/lead-scoring/config
-export async function GET(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const tenant = await prisma.tenant.findUnique({
-            where: { id: session.user.tenantId }
+            where: { id: session.tenantId }
         });
 
         const workflowSettings = JSON.parse(tenant?.workflowSettings || '{}');
@@ -30,54 +37,55 @@ export async function GET(request: NextRequest) {
         };
 
         return NextResponse.json(scoringConfig);
-    } catch (error) {
-        console.error('Failed to get scoring config:', error);
-        return NextResponse.json({ error: 'Failed to get scoring config' }, { status: 500 });
     }
-}
+);
 
-// PUT /api/lead-scoring/config
-export async function PUT(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * PUT /api/lead-scoring/config
+ * Update lead scoring configuration
+ */
+export const PUT = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        const body = await request.json();
+        const body = await req.json();
 
         const tenant = await prisma.tenant.findUnique({
-            where: { id: session.user.tenantId }
+            where: { id: session.tenantId }
         });
 
         const workflowSettings = JSON.parse(tenant?.workflowSettings || '{}');
         workflowSettings.leadScoring = body;
 
         await prisma.tenant.update({
-            where: { id: session.user.tenantId },
+            where: { id: session.tenantId },
             data: { workflowSettings: JSON.stringify(workflowSettings) }
         });
 
         return NextResponse.json({ success: true, config: body });
-    } catch (error) {
-        console.error('Failed to update scoring config:', error);
-        return NextResponse.json({ error: 'Failed to update scoring config' }, { status: 500 });
     }
-}
+);
 
-// POST /api/lead-scoring/bulk-calculate
-export async function POST(request: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/lead-scoring/bulk-calculate
+ * Bulk calculate lead scores for tenant
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
-        const count = await LeadScoringEngine.bulkCalculateScores(session.user.tenantId);
+        const count = await LeadScoringEngine.bulkCalculateScores(session.tenantId);
 
         return NextResponse.json({ success: true, calculated: count });
-    } catch (error) {
-        console.error('Failed to bulk calculate:', error);
-        return NextResponse.json({ error: 'Failed to bulk calculate' }, { status: 500 });
     }
-}
+);

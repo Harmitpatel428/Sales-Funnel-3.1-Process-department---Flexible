@@ -7,7 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { z } from 'zod';
 import { getStorageProvider } from '@/lib/storage';
 import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
@@ -16,7 +15,8 @@ import { emitDocumentUpdated, emitDocumentDeleted } from '@/lib/websocket/server
 
 import { DocumentUploadSchema, DocumentFiltersSchema } from '@/lib/validation/schemas';
 import { validateDocumentCrossFields } from '@/lib/validation/cross-field-rules';
-import { validateRequest } from '@/lib/validation/schemas'; // Just in case, though manual used
+import { withApiHandler } from '@/lib/api/withApiHandler';
+import { ApiHandler, ApiContext } from '@/lib/api/types';
 
 // Validation Schema
 const DocumentUpdateSchema = z.object({
@@ -27,38 +27,131 @@ const DocumentUpdateSchema = z.object({
     rejectionReason: z.string().optional(),
 });
 
-interface RouteParams {
-    params: Promise<{ id: string }>;
-}
-
 // GET /api/documents/[id]
-export async function GET(req: NextRequest, { params }: RouteParams) {
-    try {
-        const { id } = await params;
+const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
+    const { session } = context;
+    if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-        // Authenticate
-        const session = await auth();
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+    // Await params if it's a promise (standard in Next.js 15+), or just access if resolved
+    const params = await context.params;
+    const { id } = params;
 
-        // Get user with tenant
-        const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
-            select: { id: true, tenantId: true },
-        });
-
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
-        }
-
-        // Get document
-        const document = await prisma.document.findFirst({
-            where: {
-                id,
-                tenantId: user.tenantId,
-                isDeleted: false,
+    // Get document
+    const document = await prisma.document.findFirst({
+        where: {
+            id,
+            tenantId: session.tenantId,
+            isDeleted: false,
+        },
+        include: {
+            uploadedBy: {
+                select: { id: true, name: true, email: true },
             },
+            verifiedBy: {
+                select: { id: true, name: true, email: true },
+            },
+            versions: {
+                include: {
+                    uploadedBy: {
+                        select: { id: true, name: true },
+                    },
+                },
+                orderBy: { versionNumber: 'desc' },
+            },
+        },
+    });
+
+    if (!document) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    // Log access
+    await prisma.documentAccessLog.create({
+        data: {
+            documentId: document.id,
+            userId: session.userId,
+            action: 'VIEW',
+            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
+            userAgent: req.headers.get('user-agent'),
+        },
+    });
+
+    // Generate pre-signed URL
+    const storage = getStorageProvider();
+    const previewUrl = await storage.generatePresignedUrl(document.storagePath, 900);
+
+    return NextResponse.json({
+        document: {
+            ...document,
+            previewUrl,
+            encryptionKey: undefined,
+            encryptionIV: undefined,
+        },
+    });
+};
+
+// PATCH /api/documents/[id]
+const patchHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
+    const { session } = context;
+    if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const params = await context.params;
+    const { id } = params;
+
+    // Check idempotency
+    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    if (idempotencyError) return idempotencyError;
+
+    // Parse body
+    const body = await req.json();
+    const { version, ...updateData } = DocumentUpdateSchema.parse(body);
+
+    // Get existing document
+    const existing = await prisma.document.findFirst({
+        where: {
+            id,
+            tenantId: session.tenantId,
+            isDeleted: false,
+        },
+    });
+
+    if (!existing) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    // Validate cross-field rules
+    const mergedDocument = { ...existing, ...updateData };
+    // Cast to any because validateDocumentCrossFields expects DocumentUpload shape which matches Document fields mostly
+    const crossErrors = validateDocumentCrossFields(mergedDocument as any);
+    if (crossErrors.length > 0) {
+        return NextResponse.json({
+            error: 'Validation error',
+            details: crossErrors,
+        }, { status: 400 });
+    }
+
+    try {
+        // Prepare update data with verification fields
+        const updatePayload: any = { ...updateData };
+        if (updateData.status === 'VERIFIED') {
+            updatePayload.verifiedById = session.userId;
+            updatePayload.verifiedAt = new Date();
+        }
+
+        await updateWithOptimisticLock(
+            prisma.document,
+            { id, tenantId: session.tenantId },
+            { currentVersion: version, data: updatePayload },
+            'Document'
+        );
+
+        // Fetch with includes for response
+        const fullDocument = await prisma.document.findUnique({
+            where: { id },
             include: {
                 uploadedBy: {
                     select: { id: true, name: true, email: true },
@@ -66,235 +159,6 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
                 verifiedBy: {
                     select: { id: true, name: true, email: true },
                 },
-                versions: {
-                    include: {
-                        uploadedBy: {
-                            select: { id: true, name: true },
-                        },
-                    },
-                    orderBy: { versionNumber: 'desc' },
-                },
-            },
-        });
-
-        if (!document) {
-            return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-        }
-
-        // Log access
-        await prisma.documentAccessLog.create({
-            data: {
-                documentId: document.id,
-                userId: user.id,
-                action: 'VIEW',
-                ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
-                userAgent: req.headers.get('user-agent'),
-            },
-        });
-
-        // Generate pre-signed URL
-        const storage = getStorageProvider();
-        const previewUrl = await storage.generatePresignedUrl(document.storagePath, 900);
-
-        return NextResponse.json({
-            document: {
-                ...document,
-                previewUrl,
-                encryptionKey: undefined,
-                encryptionIV: undefined,
-            },
-        });
-
-    } catch (error) {
-        console.error('Get document error:', error);
-        return NextResponse.json({
-            error: 'Failed to get document',
-            details: error instanceof Error ? error.message : 'Unknown error',
-        }, { status: 500 });
-    }
-}
-
-// PATCH /api/documents/[id]
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
-    try {
-        const { id } = await params;
-
-        // Authenticate
-        const session = await auth();
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        // Get user with tenant
-        const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
-            select: { id: true, tenantId: true, role: true },
-        });
-
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
-        }
-
-        // Check idempotency
-        const idempotencyError = await idempotencyMiddleware(req, user.tenantId);
-        if (idempotencyError) return idempotencyError;
-
-        // Parse body
-        const body = await req.json();
-        const { version, ...updateData } = DocumentUpdateSchema.parse(body);
-
-        // Get existing document
-        const existing = await prisma.document.findFirst({
-            where: {
-                id,
-                tenantId: user.tenantId,
-                isDeleted: false,
-            },
-        });
-
-        if (!existing) {
-            return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-        }
-
-        // Validate cross-field rules
-        const mergedDocument = { ...existing, ...updateData };
-        // Cast to any because validateDocumentCrossFields expects DocumentUpload shape which matches Document fields mostly
-        const crossErrors = validateDocumentCrossFields(mergedDocument as any);
-        if (crossErrors.length > 0) {
-            return NextResponse.json({
-                error: 'Validation error',
-                details: crossErrors,
-            }, { status: 400 });
-        }
-
-        try {
-            // Prepare update data with verification fields
-            const updatePayload: any = { ...updateData };
-            if (updateData.status === 'VERIFIED') {
-                updatePayload.verifiedById = user.id;
-                updatePayload.verifiedAt = new Date();
-            }
-
-            const document = await updateWithOptimisticLock(
-                prisma.document,
-                { id, tenantId: user.tenantId },
-                { currentVersion: version, data: updatePayload },
-                'Document'
-            );
-
-            // Fetch with includes for response
-            const fullDocument = await prisma.document.findUnique({
-                where: { id },
-                include: {
-                    uploadedBy: {
-                        select: { id: true, name: true, email: true },
-                    },
-                    verifiedBy: {
-                        select: { id: true, name: true, email: true },
-                    },
-                },
-            });
-
-            // Log access
-            await prisma.documentAccessLog.create({
-                data: {
-                    documentId: id,
-                    userId: user.id,
-                    action: 'UPDATE',
-                    ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
-                    userAgent: req.headers.get('user-agent'),
-                },
-            });
-
-            const response = NextResponse.json({
-                success: true,
-                document: {
-                    ...fullDocument,
-                    encryptionKey: undefined,
-                    encryptionIV: undefined,
-                },
-            });
-
-            // WebSocket Broadcast
-            try {
-                if (fullDocument) {
-                    await emitDocumentUpdated(user.tenantId, fullDocument);
-                }
-            } catch (wsError) {
-                console.error('[WebSocket] Document update broadcast failed:', wsError);
-            }
-
-            await storeIdempotencyResult(req, response);
-            return response;
-
-        } catch (error) {
-            const lockError = handleOptimisticLockError(error);
-            if (lockError) {
-                return NextResponse.json(lockError, { status: 409 });
-            }
-            throw error;
-        }
-
-    } catch (error) {
-        console.error('Update document error:', error);
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({
-                error: 'Validation error',
-                details: error.issues,
-            }, { status: 400 });
-        }
-        return NextResponse.json({
-            error: 'Failed to update document',
-            details: error instanceof Error ? error.message : 'Unknown error',
-        }, { status: 500 });
-    }
-}
-
-// DELETE /api/documents/[id]
-export async function DELETE(req: NextRequest, { params }: RouteParams) {
-    try {
-        const { id } = await params;
-
-        // Authenticate
-        const session = await auth();
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        // Get user with tenant
-        const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
-            select: { id: true, tenantId: true, role: true },
-        });
-
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
-        }
-
-        // Check idempotency
-        const idempotencyError = await idempotencyMiddleware(req, user.tenantId);
-        if (idempotencyError) return idempotencyError;
-
-        // Get existing document
-        const existing = await prisma.document.findFirst({
-            where: {
-                id,
-                tenantId: user.tenantId,
-                isDeleted: false,
-            },
-        });
-
-        if (!existing) {
-            return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-        }
-
-        // Soft delete
-        await prisma.document.update({
-            where: { id },
-            data: {
-                isDeleted: true,
-                deletedAt: new Date(),
-                deletedById: user.id,
             },
         });
 
@@ -302,33 +166,108 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
         await prisma.documentAccessLog.create({
             data: {
                 documentId: id,
-                userId: user.id,
-                action: 'DELETE',
+                userId: session.userId,
+                action: 'UPDATE',
                 ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
                 userAgent: req.headers.get('user-agent'),
             },
         });
 
-        // WebSocket Broadcast
-        try {
-            await emitDocumentDeleted(user.tenantId, id);
-        } catch (wsError) {
-            console.error('[WebSocket] Document delete broadcast failed:', wsError);
-        }
-
         const response = NextResponse.json({
             success: true,
-            message: 'Document deleted successfully',
+            document: {
+                ...fullDocument,
+                encryptionKey: undefined,
+                encryptionIV: undefined,
+            },
         });
+
+        // WebSocket Broadcast
+        try {
+            if (fullDocument) {
+                await emitDocumentUpdated(session.tenantId, fullDocument);
+            }
+        } catch (wsError) {
+            console.error('[WebSocket] Document update broadcast failed:', wsError);
+        }
 
         await storeIdempotencyResult(req, response);
         return response;
 
     } catch (error) {
-        console.error('Delete document error:', error);
-        return NextResponse.json({
-            error: 'Failed to delete document',
-            details: error instanceof Error ? error.message : 'Unknown error',
-        }, { status: 500 });
+        const lockError = handleOptimisticLockError(error);
+        if (lockError) {
+            return NextResponse.json(lockError, { status: 409 });
+        }
+        throw error;
     }
-}
+};
+
+// DELETE /api/documents/[id]
+const deleteHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
+    const { session } = context;
+    if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const params = await context.params;
+    const { id } = params;
+
+    // Check idempotency
+    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    if (idempotencyError) return idempotencyError;
+
+    // Get existing document
+    const existing = await prisma.document.findFirst({
+        where: {
+            id,
+            tenantId: session.tenantId,
+            isDeleted: false,
+        },
+    });
+
+    if (!existing) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    // Soft delete
+    await prisma.document.update({
+        where: { id },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+            deletedById: session.userId,
+        },
+    });
+
+    // Log access
+    await prisma.documentAccessLog.create({
+        data: {
+            documentId: id,
+            userId: session.userId,
+            action: 'DELETE',
+            ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip'),
+            userAgent: req.headers.get('user-agent'),
+        },
+    });
+
+    // WebSocket Broadcast
+    try {
+        await emitDocumentDeleted(session.tenantId, id);
+    } catch (wsError) {
+        console.error('[WebSocket] Document delete broadcast failed:', wsError);
+    }
+
+    const response = NextResponse.json({
+        success: true,
+        message: 'Document deleted successfully',
+    });
+
+    await storeIdempotencyResult(req, response);
+    return response;
+};
+
+export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, getHandler);
+export const PATCH = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, patchHandler);
+export const DELETE = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, deleteHandler);
+

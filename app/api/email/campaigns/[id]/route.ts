@@ -1,43 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { requirePermissions } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        const campaign = await prisma.emailCampaign.findFirst({
+            where: { id: context.params.id, tenantId: context.session.tenantId }
+        });
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-    const campaign = await prisma.emailCampaign.findFirst({
-        where: { id, tenantId: user.tenantId }
-    });
-
-    if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    return NextResponse.json(campaign);
-}
-
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    if (!(await requirePermissions(session.user.id as string, [PERMISSIONS.EMAIL_CAMPAIGN_DELETE]))) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        return NextResponse.json(campaign);
     }
+);
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id as string } });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
+        if (!(await requirePermissions(context.session.userId, [PERMISSIONS.EMAIL_CAMPAIGN_DELETE]))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-    const campaign = await prisma.emailCampaign.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        const campaign = await prisma.emailCampaign.findFirst({
+            where: { id: context.params.id, tenantId: context.session.tenantId }
+        });
+        if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    await prisma.emailCampaign.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-}
+        await prisma.emailCampaign.delete({ where: { id: context.params.id } });
+        return NextResponse.json({ success: true });
+    }
+);
+

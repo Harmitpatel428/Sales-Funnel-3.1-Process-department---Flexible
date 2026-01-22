@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeCodeForToken, refreshAccessToken, revokeToken } from '@/lib/oauth/server';
+import {
+    withApiHandler,
+    ApiContext,
+} from '@/lib/api/withApiHandler';
 
-// POST /api/oauth/token - Token exchange endpoint
-export async function POST(req: NextRequest) {
-    try {
+/**
+ * POST /api/oauth/token
+ * Token exchange endpoint - public endpoint
+ */
+export const POST = withApiHandler(
+    { authRequired: false, checkDbHealth: true },
+    async (req: NextRequest, _context: ApiContext) => {
         const contentType = req.headers.get('content-type');
         let body: any;
 
@@ -82,18 +90,16 @@ export async function POST(req: NextRequest) {
             { error: 'unsupported_grant_type', error_description: 'Grant type not supported' },
             { status: 400 }
         );
-    } catch (error: any) {
-        console.error('OAuth token error:', error);
-        return NextResponse.json(
-            { error: 'server_error', error_description: 'An error occurred' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// DELETE /api/oauth/token - Revoke token
-export async function DELETE(req: NextRequest) {
-    try {
+/**
+ * DELETE /api/oauth/token
+ * Revoke token - public endpoint
+ */
+export const DELETE = withApiHandler(
+    { authRequired: false, checkDbHealth: true },
+    async (req: NextRequest, _context: ApiContext) => {
         const body = await req.json();
         const { token } = body;
 
@@ -108,11 +114,5 @@ export async function DELETE(req: NextRequest) {
 
         // Per RFC 7009, always return success even if token doesn't exist
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        console.error('OAuth revoke error:', error);
-        return NextResponse.json(
-            { error: 'server_error', error_description: 'An error occurred' },
-            { status: 500 }
-        );
     }
-}
+);

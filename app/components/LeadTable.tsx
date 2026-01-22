@@ -212,7 +212,7 @@ const LeadTable = React.memo(function LeadTable({
       result = roleFilter(result);
     }
     return result;
-  }, [getFilteredLeads, filters, leads.length, customLeads, roleFilter]);
+  }, [getFilteredLeads, filters, customLeads, roleFilter]);
 
   // Optimized Intl.Collator for faster string comparisons (created once)
   const stringCollator = useMemo(() => new Intl.Collator(undefined, {
@@ -358,6 +358,9 @@ const LeadTable = React.memo(function LeadTable({
   }, [useVirtualization, sortedLeads.length]);
 
   // Add render time tracking and performance monitoring
+  // Development-only performance monitoring.
+  // Logs render count and virtualization mode for debugging.
+  // Automatically disabled in production builds.
   if (process.env.NODE_ENV === 'development') {
     console.log('LeadTable rendering', sortedLeads.length, 'leads', useVirtualization ? 'with virtualization' : 'standard');
 

@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from '@/lib/auth';
 import { generateReport } from '@/lib/reports/report-generator';
 import type { ReportConfig } from '@/lib/validation/report-schemas';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    notFoundResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/reports/export
+ * Export a report to file (Excel, PDF, CSV)
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
@@ -19,10 +30,10 @@ export async function POST(req: NextRequest) {
         if (reportId) {
             // Export saved report
             const savedReport = await prisma.savedReport.findFirst({
-                where: { id: reportId, tenantId: session.user.tenantId }
+                where: { id: reportId, tenantId: session.tenantId }
             });
             if (!savedReport) {
-                return NextResponse.json({ success: false, message: 'Report not found' }, { status: 404 });
+                return notFoundResponse('Report');
             }
             reportConfig = JSON.parse(savedReport.config);
         } else if (config) {
@@ -33,7 +44,7 @@ export async function POST(req: NextRequest) {
         }
 
         const { buffer, fileName, mimeType, recordCount } = await generateReport(
-            reportConfig, {}, format, session.user.tenantId
+            reportConfig, {}, format, session.tenantId
         );
 
         // Return file as binary response
@@ -44,8 +55,5 @@ export async function POST(req: NextRequest) {
                 'X-Record-Count': String(recordCount)
             }
         });
-    } catch (error) {
-        console.error('Export error:', error);
-        return NextResponse.json({ success: false, message: 'Export failed' }, { status: 500 });
     }
-}
+);

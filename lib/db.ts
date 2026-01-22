@@ -43,13 +43,24 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export const dbInstance = db;
 
-// Health check function
+// Health check function (synchronous - uses better-sqlite3 directly)
 export function checkDatabaseHealth() {
     try {
         const result = db.prepare('SELECT 1').get();
         return !!result;
     } catch (e) {
         console.error('Database health check failed:', e);
+        return false;
+    }
+}
+
+// Async health check function (uses Prisma)
+export async function isDatabaseHealthy(): Promise<boolean> {
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        return true;
+    } catch (e) {
+        console.error('[Database] Health check failed:', e);
         return false;
     }
 }

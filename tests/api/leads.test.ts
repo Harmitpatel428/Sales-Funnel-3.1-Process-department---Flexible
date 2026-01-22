@@ -6,6 +6,13 @@ vi.mock('../../lib/auth', () => ({
     getSessionByToken: vi.fn(),
 }));
 
+// Mock Next Headers
+vi.mock('next/headers', () => ({
+    cookies: vi.fn(() => ({
+        get: vi.fn((name) => ({ value: 'mock-session-token' })),
+    })),
+}));
+
 // Mock DB (hoisted)
 vi.mock('../../lib/db', () => ({
     prisma: {
@@ -20,6 +27,7 @@ vi.mock('../../lib/db', () => ({
             create: vi.fn(),
         },
     },
+    isDatabaseHealthy: vi.fn().mockResolvedValue(true),
 }));
 
 // Mock Rate Limiter
@@ -35,8 +43,8 @@ vi.mock('../../lib/tenant', () => ({
 
 // Mock Validation
 vi.mock('../../lib/validation/schemas', () => ({
-    LeadSchema: {},
-    LeadFiltersSchema: {},
+    LeadSchema: { safeParse: vi.fn(() => ({ success: true, data: {} })) },
+    LeadFiltersSchema: { safeParse: vi.fn(() => ({ success: true, data: {} })) },
     validateRequest: vi.fn(() => ({ success: true, data: {} })),
 }));
 
@@ -48,7 +56,10 @@ vi.mock('../../lib/middleware/permissions', () => ({
 
 // Mock Error Handler
 vi.mock('../../lib/middleware/error-handler', () => ({
-    handleApiError: vi.fn((error) => NextResponse.json({ error: error.message }, { status: 500 })),
+    handleApiError: vi.fn((error) => {
+        console.error('API Error in Test:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }),
 }));
 
 // Mock Response Helpers
@@ -61,6 +72,22 @@ vi.mock('../../lib/api/response-helpers', () => ({
 // Mock Request Logger
 vi.mock('../../lib/middleware/request-logger', () => ({
     logRequest: vi.fn(),
+}));
+
+vi.mock('@/lib/workflows/triggers', () => ({
+    TriggerManager: {
+        triggerWorkflows: vi.fn(),
+    },
+    EntityType: {
+        LEAD: 'LEAD',
+    },
+}));
+
+vi.mock('../../lib/websocket/server', () => ({
+    emitLeadCreated: vi.fn(),
+    emitLeadUpdated: vi.fn(),
+    emitLeadDeleted: vi.fn(),
+    emitCaseCreated: vi.fn(),
 }));
 
 import { GET, POST } from '../../app/api/leads/route';
@@ -102,6 +129,51 @@ describe('Leads API', () => {
             expect(data.success).toBe(true);
             expect(data.data.leads).toEqual([]);
         });
+
+        it('should return 503 when database is unhealthy', async () => {
+            const { isDatabaseHealthy } = await import('../../lib/db');
+            (isDatabaseHealthy as any).mockResolvedValue(false);
+
+            const req = new NextRequest('http://localhost:3000/api/leads');
+            const res = await GET(req);
+
+            expect(res.status).toBe(503);
+            const data = await res.json();
+            expect(data.success).toBe(false);
+            expect(data.error).toBe('SERVICE_UNAVAILABLE');
+            expect(data.message).toBe('Service temporarily unavailable');
+
+            // Verify Prisma was NOT called
+            expect(mockPrisma.lead.findMany).not.toHaveBeenCalled();
+
+            // Reset for other tests
+            (isDatabaseHealthy as any).mockResolvedValue(true);
+        });
+
+        it('should return 429 when rate limit is exceeded', async () => {
+            (getSessionByToken as any).mockResolvedValue({
+                userId: 'test-user',
+                role: 'ADMIN',
+                tenantId: 'test-tenant',
+            });
+
+            const rateLimitResponse = NextResponse.json(
+                { success: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' },
+                { status: 429 }
+            );
+            mockRateLimitMiddleware.mockResolvedValue(rateLimitResponse);
+
+            const req = new NextRequest('http://localhost:3000/api/leads');
+            const res = await GET(req);
+
+            expect(res.status).toBe(429);
+            expect(mockRateLimitMiddleware).toHaveBeenCalled();
+            // Verify Prisma was NOT called (short-circuited before handler)
+            expect(mockPrisma.lead.findMany).not.toHaveBeenCalled();
+
+            // Reset for other tests
+            mockRateLimitMiddleware.mockResolvedValue(null);
+        });
     });
 
     describe('POST /api/leads', () => {
@@ -138,6 +210,66 @@ describe('Leads API', () => {
             expect(res.status).toBe(201);
             expect(data.success).toBe(true);
             expect(data.data.clientName).toBe('Test Client');
+        });
+
+        it('should return 503 when database is unhealthy on POST', async () => {
+            const { isDatabaseHealthy } = await import('../../lib/db');
+            (isDatabaseHealthy as any).mockResolvedValue(false);
+
+            const req = new NextRequest('http://localhost:3000/api/leads', {
+                method: 'POST',
+                body: JSON.stringify({
+                    clientName: 'Test Client',
+                    company: 'Test Company',
+                    mobileNumber: '1234567890'
+                })
+            });
+
+            const res = await POST(req);
+
+            expect(res.status).toBe(503);
+            const data = await res.json();
+            expect(data.success).toBe(false);
+            expect(data.error).toBe('SERVICE_UNAVAILABLE');
+
+            // Verify Prisma was NOT called
+            expect(mockPrisma.lead.create).not.toHaveBeenCalled();
+
+            // Reset for other tests
+            (isDatabaseHealthy as any).mockResolvedValue(true);
+        });
+
+        it('should return 429 when rate limit is exceeded on POST', async () => {
+            (getSessionByToken as any).mockResolvedValue({
+                userId: 'test-user',
+                role: 'ADMIN',
+                tenantId: 'test-tenant',
+            });
+
+            const rateLimitResponse = NextResponse.json(
+                { success: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' },
+                { status: 429 }
+            );
+            mockRateLimitMiddleware.mockResolvedValue(rateLimitResponse);
+
+            const req = new NextRequest('http://localhost:3000/api/leads', {
+                method: 'POST',
+                body: JSON.stringify({
+                    clientName: 'Test Client',
+                    company: 'Test Company',
+                    mobileNumber: '1234567890'
+                })
+            });
+
+            const res = await POST(req);
+
+            expect(res.status).toBe(429);
+            expect(mockRateLimitMiddleware).toHaveBeenCalled();
+            // Verify Prisma was NOT called (short-circuited before handler)
+            expect(mockPrisma.lead.create).not.toHaveBeenCalled();
+
+            // Reset for other tests
+            mockRateLimitMiddleware.mockResolvedValue(null);
         });
     });
 

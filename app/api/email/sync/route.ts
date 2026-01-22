@@ -1,33 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth'; // or 'next-auth/next' depending on version
-import { PrismaClient } from '@prisma/client';
-import { EmailService } from '@/lib/email-service';
+import { prisma } from '@/lib/db';
 import { requirePermissions } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { emailSyncQueue } from '@/lib/jobs/email-sync';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
-const emailService = new EmailService();
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 20 },
+    async (req: NextRequest, context) => {
+        if (!(await requirePermissions(context.session.userId, [PERMISSIONS.EMAIL_VIEW_OWN]))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-export async function POST(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    if (!(await requirePermissions(session.user.id as string, [PERMISSIONS.EMAIL_VIEW_OWN]))) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    try {
         const user = await prisma.user.findUnique({
-            where: { id: session.user.id as string },
+            where: { id: context.session.userId },
             include: { emailProviders: { where: { isActive: true } } }
         });
 
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-        const results = [];
-        const errors = [];
-
+        const results: Array<{ providerId: string; status: string }> = [];
+        const errors: Array<{ providerId: string; error: string }> = [];
 
         for (const provider of user.emailProviders) {
             try {
@@ -48,9 +41,6 @@ export async function POST(req: NextRequest) {
             errors,
             timestamp: new Date()
         });
-
-    } catch (error: any) {
-        console.error('Sync route error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
+);
+

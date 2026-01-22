@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
 import { emitBulkImportCompleted } from '@/lib/websocket/server';
-
 import { generateBypassToken, validateBypassToken } from '@/lib/middleware/validation';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/bulk/import - Generate bypass token (Admin only)
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        // Assume role check or similar permission check
-        // If role doesn't exist on session.user, we might need a DB lookup or assume specific permission
+/**
+ * GET /api/bulk/import
+ * Generate bypass token (Admin only)
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
-
-        // Basic check, refine based on actual Role model
-        // For now, allow logged in users to generate token if they have permission?
-        // Let's assume anyone with access to this route (ui) needs it?
-        // Or restrict to 'ADMIN'.
-        // const user = await prisma.user.findUnique({ where: { id: session.userId } });
-        // if (user?.role !== 'ADMIN') ...
 
         const token = await generateBypassToken(
             'Bulk Import',
@@ -32,20 +30,35 @@ export async function GET(req: NextRequest) {
         );
 
         return NextResponse.json({ success: true, token });
-    } catch (e) {
-        return NextResponse.json({ success: false, message: 'Failed to generate token' }, { status: 500 });
     }
-}
+);
 
-// POST /api/bulk/import - Bulk data import with optional bypass
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/bulk/import
+ * Bulk data import with optional bypass
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
-        const body = await req.json();
+        const userId = session.userId;
+        const tenantId = session.tenantId;
+
+        let body: any;
+        try {
+            body = await req.json();
+        } catch (parseError) {
+            return NextResponse.json(
+                { success: false, error: 'INVALID_JSON_BODY', message: 'Invalid JSON in request body' },
+                { status: 400 }
+            );
+        }
+
         const { records, entityType, options } = body;
 
         if (!Array.isArray(records) || records.length === 0) {
@@ -62,19 +75,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Check for Bypass
+        // Check for validation bypass token
         const bypassHeader = req.headers.get('X-Validation-Bypass-Token');
         let isBypassed = false;
         if (bypassHeader) {
-            const { valid, logId } = await validateBypassToken(bypassHeader);
-            if (valid && logId) {
-                isBypassed = true;
-                console.log(`[Bulk Import] Bypassing strict validation with token: ${logId}`);
-                // Mark as used
-                await prisma.validationBypassLog.update({
-                    where: { id: logId },
-                    data: { usedAt: new Date() }
-                }).catch(console.error);
+            try {
+                const { valid, logId } = await validateBypassToken(bypassHeader);
+                if (valid && logId) {
+                    isBypassed = true;
+                    // Mark as used
+                    try {
+                        await prisma.validationBypassLog.update({
+                            where: { id: logId },
+                            data: { usedAt: new Date() }
+                        });
+                    } catch (updateErr) {
+                        console.error('[Validation] Failed to mark bypass token as used:', updateErr);
+                    }
+                }
+            } catch (bypassErr) {
+                console.error('[Validation] Failed to process bypass token:', bypassErr);
             }
         }
 
@@ -109,16 +129,18 @@ export async function POST(req: NextRequest) {
                     }
                 }
 
-                // Check for duplicates (always check unless specifically disabled in options?)
-                // Bypass usually implies skipping VALIDATION, not logical checks like uniqueness if db constraint exists.
-                // But skipDuplicates is user option.
+                // Check for duplicates
                 if (skipDuplicates && record.email) {
-                    const existing = await prisma.lead.findFirst({
-                        where: { email: record.email, tenantId: session.tenantId, isDeleted: false },
-                    });
-                    if (existing) {
-                        results.skipped++;
-                        continue;
+                    try {
+                        const existing = await prisma.lead.findFirst({
+                            where: { email: record.email, tenantId: tenantId, isDeleted: false },
+                        });
+                        if (existing) {
+                            results.skipped++;
+                            continue;
+                        }
+                    } catch (dupCheckErr) {
+                        console.error('[Bulk Import] Duplicate check failed:', dupCheckErr);
                     }
                 }
             }
@@ -159,9 +181,9 @@ export async function POST(req: NextRequest) {
                             timeline: record.timeline,
                             contactOwner: record.contactOwner,
                             customFields: record.customFields ? JSON.stringify(record.customFields) : '{}',
-                            tenantId: session.tenantId,
-                            createdById: session.userId,
-                            assignedToId: session.userId,
+                            tenantId: tenantId,
+                            createdById: userId,
+                            assignedToId: userId,
                             isDone: false,
                             isDeleted: false,
                         },
@@ -169,28 +191,30 @@ export async function POST(req: NextRequest) {
                     results.created.push(lead.id);
                 }
                 results.successful++;
-            } catch (error: any) {
+            } catch (createError: any) {
+                console.error('[Bulk Import] Failed to create lead:', createError);
                 results.failed++;
                 results.errors.push({
                     row: i + 1,
                     data: record,
-                    errors: [error.message || 'Unknown error creating record'],
+                    // Generic error message to prevent leaking internal details
+                    errors: ['Failed to create record'],
                 });
             }
         }
 
-        // 2. Emit WebSocket event (Secondary notification)
+        // Emit WebSocket event
         try {
-            await emitBulkImportCompleted(session.tenantId, {
+            await emitBulkImportCompleted(tenantId, {
                 successful: results.successful,
                 failed: results.failed,
                 skipped: results.skipped
             });
-        } catch (error) {
-            console.error('[WebSocket] Bulk import notification failed:', error);
+        } catch (wsError) {
+            console.error('[WebSocket] Bulk import notification failed:', wsError);
         }
 
-        // 7. Add Audit Logging
+        // Add Audit Logging
         try {
             // Convert plural entityType (leads/cases) to singular for audit log
             const auditEntity = entityType.endsWith('s') ? entityType.slice(0, -1) : entityType;
@@ -200,13 +224,13 @@ export async function POST(req: NextRequest) {
                     actionType: 'BULK_IMPORT',
                     entityType: auditEntity,
                     description: `Import complete: ${results.successful} created, ${results.failed} failed, ${results.skipped} skipped`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
+                    performedById: userId,
+                    tenantId: tenantId,
                     metadata: JSON.stringify({ results }),
                 }
             });
-        } catch (error) {
-            console.error('[Audit] Failed to log bulk import:', error);
+        } catch (auditError) {
+            console.error('[Audit] Failed to log bulk import:', auditError);
         }
 
         return NextResponse.json({
@@ -216,11 +240,5 @@ export async function POST(req: NextRequest) {
                 ? `Validation complete: ${results.successful} valid, ${results.failed} invalid`
                 : `Import complete: ${results.successful} created, ${results.failed} failed, ${results.skipped} skipped`,
         });
-    } catch (error: any) {
-        console.error('Bulk import error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to process bulk import' },
-            { status: 500 }
-        );
     }
-}
+);

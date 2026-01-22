@@ -1,30 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { addServerAuditLog } from '@/app/actions/audit';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    forbiddenResponse,
+} from '@/lib/api/withApiHandler';
 import type { ListTenantsResponse, TenantOperationResponse, TenantResponse, CreateTenantRequest } from './types';
-
-/**
- * Helper to check if user is SUPER_ADMIN
- */
-async function requireSuperAdmin() {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session) {
-        return { authorized: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { id: session.userId },
-        select: { role: true, name: true },
-    });
-
-    if (user?.role !== 'SUPER_ADMIN') {
-        return { authorized: false, error: 'Forbidden: Super Admin access required', status: 403 };
-    }
-
-    return { authorized: true, session, userName: user.name };
-}
 
 /**
  * Format tenant for API response
@@ -61,14 +44,23 @@ function formatTenant(tenant: {
  * GET /api/tenants
  * List all tenants (SUPER_ADMIN only)
  */
-export async function GET(): Promise<NextResponse<ListTenantsResponse>> {
-    try {
-        const auth = await requireSuperAdmin();
-        if (!auth.authorized) {
-            return NextResponse.json(
-                { success: false, message: auth.error },
-                { status: auth.status }
-            );
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (_req: NextRequest, context: ApiContext): Promise<NextResponse<ListTenantsResponse>> => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse() as NextResponse<ListTenantsResponse>;
+        }
+
+        // Check if user is SUPER_ADMIN
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { role: true },
+        });
+
+        if (user?.role !== 'SUPER_ADMIN') {
+            return forbiddenResponse('Super Admin access required') as NextResponse<ListTenantsResponse>;
         }
 
         const tenants = await prisma.tenant.findMany({
@@ -79,30 +71,33 @@ export async function GET(): Promise<NextResponse<ListTenantsResponse>> {
             success: true,
             tenants: tenants.map(formatTenant),
         });
-    } catch (error) {
-        console.error('GET /api/tenants error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch tenants' },
-            { status: 500 }
-        );
     }
-}
+);
 
 /**
  * POST /api/tenants
  * Create a new tenant (SUPER_ADMIN only)
  */
-export async function POST(request: NextRequest): Promise<NextResponse<TenantOperationResponse>> {
-    try {
-        const auth = await requireSuperAdmin();
-        if (!auth.authorized) {
-            return NextResponse.json(
-                { success: false, message: auth.error },
-                { status: auth.status }
-            );
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context: ApiContext): Promise<NextResponse<TenantOperationResponse>> => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse() as NextResponse<TenantOperationResponse>;
         }
 
-        const body: CreateTenantRequest = await request.json();
+        // Check if user is SUPER_ADMIN
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { role: true, name: true },
+        });
+
+        if (user?.role !== 'SUPER_ADMIN') {
+            return forbiddenResponse('Super Admin access required') as NextResponse<TenantOperationResponse>;
+        }
+
+        const body: CreateTenantRequest = await req.json();
 
         // Validate required fields
         if (!body.name || !body.slug) {
@@ -150,8 +145,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<TenantOpe
             actionType: 'TENANT_CREATED',
             entityType: 'tenant',
             entityId: tenant.id,
-            performedById: auth.session!.userId,
-            performedByName: auth.userName,
+            performedById: session.userId,
+            performedByName: user.name,
             description: `Created tenant: ${tenant.name}`,
             metadata: { tenantId: tenant.id, tenantName: tenant.name },
         });
@@ -162,11 +157,5 @@ export async function POST(request: NextRequest): Promise<NextResponse<TenantOpe
             tenantId: tenant.id,
             tenant: formatTenant(tenant),
         }, { status: 201 });
-    } catch (error) {
-        console.error('POST /api/tenants error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to create tenant' },
-            { status: 500 }
-        );
     }
-}
+);

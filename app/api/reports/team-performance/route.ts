@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from '@/lib/auth';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/reports/team-performance
+ * Fetch team performance analytics
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -38,7 +48,7 @@ export async function GET(req: NextRequest) {
         // Fetch users in tenant
         const users = await prisma.user.findMany({
             where: {
-                tenantId: session.user.tenantId,
+                tenantId: session.tenantId,
                 isActive: true,
                 ...(userIds && userIds.length > 0 ? { id: { in: userIds } } : {})
             },
@@ -52,7 +62,7 @@ export async function GET(req: NextRequest) {
         // Fetch leads data
         const leads = await prisma.lead.findMany({
             where: {
-                tenantId: session.user.tenantId,
+                tenantId: session.tenantId,
                 isDeleted: false,
                 createdAt: { gte: startDate }
             },
@@ -68,7 +78,7 @@ export async function GET(req: NextRequest) {
         // Fetch cases data
         const cases = await prisma.case.findMany({
             where: {
-                tenantId: session.user.tenantId,
+                tenantId: session.tenantId,
                 createdAt: { gte: startDate }
             },
             select: {
@@ -173,11 +183,5 @@ export async function GET(req: NextRequest) {
                 }
             }
         });
-    } catch (error) {
-        console.error('Error fetching team performance:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch team performance data' },
-            { status: 500 }
-        );
     }
-}
+);

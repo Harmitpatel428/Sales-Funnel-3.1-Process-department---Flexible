@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/bulk/export - Bulk data export with format options
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/bulk/export
+ * Bulk data export with format options
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -138,14 +146,8 @@ export async function GET(req: NextRequest) {
         }
 
         return NextResponse.json({ success: true, data });
-    } catch (error: any) {
-        console.error('Bulk export error:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to export data' },
-            { status: 500 }
-        );
     }
-}
+);
 
 function convertToCSV(data: any[]): string {
     if (data.length === 0) return '';

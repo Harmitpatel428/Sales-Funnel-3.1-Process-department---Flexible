@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from '@/lib/auth';
 import {
     calculateMovingAverage,
     forecastTimeSeries,
@@ -9,16 +8,27 @@ import {
     calculateTrend,
     type DataPoint
 } from '@/lib/analytics/forecasting';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
 // In-memory cache for forecast results
 const forecastCache = new Map<string, { data: any; expiry: number }>();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/reports/forecast
+ * Generate forecast data for leads or cases
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
+        if (!session) {
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -29,7 +39,7 @@ export async function GET(req: NextRequest) {
         const endDate = searchParams.get('endDate');
 
         // Check cache
-        const cacheKey = `forecast:${session.user.tenantId}:${entity}:${period}:${forecastDays}:${startDate}:${endDate}`;
+        const cacheKey = `forecast:${session.tenantId}:${entity}:${period}:${forecastDays}:${startDate}:${endDate}`;
         const cached = forecastCache.get(cacheKey);
         if (cached && cached.expiry > Date.now()) {
             return NextResponse.json({
@@ -59,7 +69,7 @@ export async function GET(req: NextRequest) {
         if (entity === 'leads') {
             rawData = await prisma.lead.findMany({
                 where: {
-                    tenantId: session.user.tenantId,
+                    tenantId: session.tenantId,
                     isDeleted: false,
                     createdAt: dateFilter
                 },
@@ -74,7 +84,7 @@ export async function GET(req: NextRequest) {
         } else {
             rawData = await prisma.case.findMany({
                 where: {
-                    tenantId: session.user.tenantId,
+                    tenantId: session.tenantId,
                     createdAt: dateFilter
                 },
                 select: {
@@ -203,11 +213,5 @@ export async function GET(req: NextRequest) {
             success: true,
             data: responseData
         });
-    } catch (error) {
-        console.error('Error generating forecast:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to generate forecast' },
-            { status: 500 }
-        );
     }
-}
+);

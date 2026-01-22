@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { generateApiKey, API_SCOPES, SCOPE_DESCRIPTIONS } from '@/lib/api-keys';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/api-keys - List all API keys for the tenant
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/api-keys
+ * List all API keys for the tenant
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const { searchParams } = new URL(req.url);
@@ -57,21 +65,20 @@ export async function GET(req: NextRequest) {
                 scopeDescriptions: SCOPE_DESCRIPTIONS,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching API keys:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch API keys' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST /api/api-keys - Create a new API key
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/api-keys
+ * Create a new API key
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
@@ -125,11 +132,5 @@ export async function POST(req: NextRequest) {
             },
             message: 'API key created successfully. Save this key now - you won\'t be able to see it again!',
         }, { status: 201 });
-    } catch (error: any) {
-        console.error('Error creating API key:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to create API key' },
-            { status: 500 }
-        );
     }
-}
+);

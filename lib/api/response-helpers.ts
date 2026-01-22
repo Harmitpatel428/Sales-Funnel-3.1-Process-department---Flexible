@@ -4,20 +4,40 @@ export function successResponse<T>(data: T, message?: string) {
     return NextResponse.json({ success: true, data, message }, { status: 200 });
 }
 
-export function errorResponse(message: string, errors?: string[], status: number = 500) {
-    return NextResponse.json({ success: false, message, errors }, { status });
+export function errorResponse(message: string, errors?: string[], status: number = 500, code: string = 'INTERNAL_SERVER_ERROR') {
+    return NextResponse.json({ success: false, error: code, message, errors }, { status });
 }
 
 export function notFoundResponse(entity: string = 'Resource') {
-    return errorResponse(`${entity} not found`, undefined, 404);
+    return errorResponse(`${entity} not found`, undefined, 404, 'NOT_FOUND');
 }
 
 export function unauthorizedResponse() {
-    return errorResponse('Unauthorized', undefined, 401);
+    return errorResponse('Unauthorized', undefined, 401, 'UNAUTHORIZED');
 }
 
 export function forbiddenResponse() {
-    return errorResponse('Forbidden', undefined, 403);
+    return errorResponse('Forbidden', undefined, 403, 'FORBIDDEN');
+}
+
+export function serviceUnavailableResponse() {
+    return NextResponse.json(
+        { success: false, error: "SERVICE_UNAVAILABLE", message: "Service temporarily unavailable" },
+        { status: 503 }
+    );
+}
+
+export function rateLimitResponse(remaining: number, reset: string) {
+    return NextResponse.json(
+        { success: false, error: "RATE_LIMIT_EXCEEDED", message: "Too Many Requests" },
+        {
+            status: 429,
+            headers: {
+                'X-RateLimit-Remaining': remaining.toString(),
+                'X-RateLimit-Reset': reset
+            }
+        }
+    );
 }
 
 export function validationErrorResponse(errors: string[] | Array<{ field: string, message: string, code: string }>) {

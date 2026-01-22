@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { z } from 'zod';
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
-const prisma = new PrismaClient();
-
-export async function DELETE(req: NextRequest) {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    try {
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (req: NextRequest, context) => {
         const body = await req.json();
         const { providerId, provider } = z.object({
             providerId: z.string().optional(),
@@ -21,12 +15,12 @@ export async function DELETE(req: NextRequest) {
         // Delete by ID or by provider name for user
         if (providerId) {
             await prisma.emailProvider.update({
-                where: { id: providerId, userId: session.user.id as string },
+                where: { id: providerId, userId: context.session.userId },
                 data: { isActive: false, accessToken: '', refreshToken: '' }
             });
         } else if (provider) {
             await prisma.emailProvider.updateMany({
-                where: { userId: session.user.id as string, provider },
+                where: { userId: context.session.userId, provider },
                 data: { isActive: false, accessToken: '', refreshToken: '' }
             });
         } else {
@@ -38,13 +32,12 @@ export async function DELETE(req: NextRequest) {
             data: {
                 actionType: 'EMAIL_PROVIDER_DISCONNECT',
                 description: `Disconnected email provider ${provider || providerId}`,
-                performedById: session.user.id as string,
-                tenantId: (await prisma.user.findUnique({ where: { id: session.user.id as string } }))!.tenantId
+                performedById: context.session.userId,
+                tenantId: context.session.tenantId
             }
         });
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
+);
+

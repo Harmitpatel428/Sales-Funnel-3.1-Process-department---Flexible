@@ -1,102 +1,121 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withTenant } from '@/lib/tenant';
 import { validateRequest } from '@/lib/validation/schemas';
 import { z } from 'zod';
+import { successResponse, notFoundResponse, validationErrorResponse } from '@/lib/api/response-helpers';
+import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
+import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
+import { requirePermissions } from '@/lib/middleware/permissions';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
+import { emitLeadUpdated } from '@/lib/websocket/server';
 
 const AssignLeadSchema = z.object({
     userId: z.string(),
     assignedBy: z.string().optional(),
     version: z.number().int().min(1, 'Version is required for updates')
 });
-import { rateLimitMiddleware } from '@/lib/middleware/rate-limiter';
-import { handleApiError } from '@/lib/middleware/error-handler';
-import { successResponse, unauthorizedResponse, notFoundResponse, validationErrorResponse, forbiddenResponse } from '@/lib/api/response-helpers';
-import { logRequest } from '@/lib/middleware/request-logger';
-import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
 
+// Helper to get params
 async function getParams(context: { params: Promise<{ id: string }> }) {
     return await context.params;
 }
 
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-    try {
-        const rateLimitError = await rateLimitMiddleware(req, 30);
-        if (rateLimitError) return rateLimitError;
+const postHandler = async (req: NextRequest, context: ApiContext, id: string) => {
+    const session = context.session!;
 
-        const { id } = await getParams(context);
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        logRequest(req, session);
-        if (!session) return unauthorizedResponse();
+    // Permission check
+    const permissionError = await requirePermissions([PERMISSIONS.LEADS_ASSIGN])(req);
+    if (permissionError) return permissionError;
 
-        const body = await req.json();
-        const validation = validateRequest(AssignLeadSchema, body);
-        if (!validation.success) return validationErrorResponse(validation.errors!);
+    const body = await req.json();
+    const validation = validateRequest(AssignLeadSchema, body);
+    if (!validation.success) return validationErrorResponse(validation.errors!);
 
-        const { userId, assignedBy } = validation.data!;
+    const { userId, assignedBy, version } = validation.data!;
 
-        // Permission check? 
-        // if (!['ADMIN', 'SALES_MANAGER'].includes(session.role)) return forbiddenResponse();
-
-        return await withTenant(session.tenantId, async () => {
-            const lead = await prisma.lead.findFirst({
-                where: { id, tenantId: session.tenantId }
-            });
-
-            if (!lead) return notFoundResponse('Lead');
-
-            const targetUser = await prisma.user.findFirst({
-                where: { id: userId, tenantId: session.tenantId }
-            });
-
-            if (!targetUser) return notFoundResponse('User');
-
-            // Extraction of version should happen before this, but let's ensure it's in the schema or body
-            const version = (body as any).version;
-            if (typeof version !== 'number') {
-                return validationErrorResponse(['Version field is required for updates']);
-            }
-
-            try {
-                const updatedLead = await updateWithOptimisticLock(
-                    prisma.lead,
-                    { id, tenantId: session.tenantId },
-                    {
-                        currentVersion: version,
-                        data: {
-                            assignedToId: userId,
-                            assignedBy: assignedBy,
-                            assignedAt: new Date()
-                        }
-                    },
-                    'Lead'
-                );
-
-                await prisma.auditLog.create({
-                    data: {
-                        actionType: 'LEAD_ASSIGNED',
-                        entityType: 'lead',
-                        entityId: id,
-                        description: `Lead assigned to ${targetUser.name}`,
-                        performedById: session.userId,
-                        tenantId: session.tenantId,
-                        metadata: JSON.stringify({ assignedTo: targetUser.id, assignedBy })
-                    }
-                });
-
-                return successResponse(updatedLead, "Lead assigned successfully");
-            } catch (error) {
-                const lockError = handleOptimisticLockError(error);
-                if (lockError) {
-                    return NextResponse.json(lockError, { status: 409 });
-                }
-                throw error;
-            }
+    return await withTenant(session.tenantId, async () => {
+        const lead = await prisma.lead.findFirst({
+            where: { id, tenantId: session.tenantId }
         });
 
-    } catch (error) {
-        return handleApiError(error);
-    }
+        if (!lead) return notFoundResponse('Lead');
+
+        const targetUser = await prisma.user.findFirst({
+            where: { id: userId, tenantId: session.tenantId }
+        });
+
+        if (!targetUser) return notFoundResponse('User');
+
+        // Capture old data
+        const oldData = lead as unknown as Record<string, unknown>;
+
+        try {
+            const updatedLead = await updateWithOptimisticLock(
+                prisma.lead,
+                { id, tenantId: session.tenantId },
+                {
+                    currentVersion: version,
+                    data: {
+                        assignedToId: userId,
+                        assignedBy: assignedBy,
+                        assignedAt: new Date(),
+                        isUpdated: true
+                    }
+                },
+                'Lead'
+            );
+
+            await prisma.auditLog.create({
+                data: {
+                    actionType: 'LEAD_ASSIGNED',
+                    entityType: 'lead',
+                    entityId: id,
+                    description: `Lead assigned to ${targetUser.name}`,
+                    performedById: session.userId,
+                    tenantId: session.tenantId,
+                    metadata: JSON.stringify({ assignedTo: targetUser.id, assignedBy })
+                }
+            });
+
+            // Trigger workflows
+            try {
+                await TriggerManager.triggerWorkflows(
+                    EntityType.LEAD,
+                    (updatedLead as any).id,
+                    'UPDATE', // Assignment is an update
+                    oldData,
+                    updatedLead as unknown as Record<string, unknown>,
+                    session.tenantId,
+                    session.userId
+                );
+            } catch (workflowError) {
+                console.error('Failed to trigger workflows for lead assignment:', workflowError);
+            }
+
+            // WebSocket Broadcast
+            try {
+                await emitLeadUpdated(session.tenantId, updatedLead);
+            } catch (wsError) {
+                console.error('[WebSocket] Lead assignment broadcast failed:', wsError);
+            }
+
+            return successResponse(updatedLead, "Lead assigned successfully");
+        } catch (error) {
+            const lockError = handleOptimisticLockError(error);
+            if (lockError) {
+                return NextResponse.json(lockError, { status: 409 });
+            }
+            throw error;
+        }
+    });
+};
+
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+    const { id } = await getParams(context);
+    return withApiHandler(
+        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        (req, ctx) => postHandler(req, ctx, id)
+    )(req);
 }

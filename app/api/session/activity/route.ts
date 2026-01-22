@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-export async function POST(req: NextRequest) {
-    try {
+/**
+ * POST /api/session/activity
+ * Track user session activity
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, updateSessionActivity: false },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         // getSession already updates lastActivityAt as a side effect!
-        // So we just need to call it.
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-
+        // So we just need to check if session exists.
         if (session) {
             return NextResponse.json({ success: true, tracking: 'active' });
         } else {
-            return NextResponse.json({ success: false, message: 'No session' }, { status: 401 });
+            return unauthorizedResponse();
         }
-    } catch (error) {
-        return NextResponse.json({ success: false, message: 'Tracking failed' }, { status: 500 });
     }
-}
+);

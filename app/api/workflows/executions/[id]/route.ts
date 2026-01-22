@@ -3,26 +3,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { getServerSession } from '@/lib/auth';
+
+import { prisma } from '@/lib/db';
 import { WorkflowExecutor } from '@/lib/workflows/executor';
-
-const prisma = new PrismaClient();
-
-interface RouteParams {
-    params: { id: string };
-}
+import { withApiHandler } from '@/lib/api/withApiHandler';
 
 // GET /api/workflows/executions/[id]
-export async function GET(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, context) => {
         const execution = await prisma.workflowExecution.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId },
+            where: { id: context.params.id, tenantId: context.session.tenantId },
             include: {
                 workflow: {
                     include: { steps: { orderBy: { stepOrder: 'asc' } } }
@@ -42,22 +33,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             executionLog: JSON.parse(execution.executionLog),
             triggerData: JSON.parse(execution.triggerData)
         });
-    } catch (error) {
-        console.error('Failed to get execution:', error);
-        return NextResponse.json({ error: 'Failed to get execution' }, { status: 500 });
     }
-}
+);
 
 // POST /api/workflows/executions/[id]/retry
-export async function POST(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, context) => {
         const execution = await prisma.workflowExecution.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId }
+            where: { id: context.params.id, tenantId: context.session.tenantId }
         });
 
         if (!execution) {
@@ -68,25 +52,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'Only failed executions can be retried' }, { status: 400 });
         }
 
-        const newExecutionId = await WorkflowExecutor.retryExecution(params.id, session.user.id);
+        const newExecutionId = await WorkflowExecutor.retryExecution(context.params.id, context.session.userId);
 
         return NextResponse.json({ success: true, newExecutionId });
-    } catch (error) {
-        console.error('Failed to retry execution:', error);
-        return NextResponse.json({ error: 'Failed to retry execution' }, { status: 500 });
     }
-}
+);
 
 // DELETE /api/workflows/executions/[id] - Cancel execution
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
-    try {
-        const session = await getServerSession();
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    async (request: NextRequest, context) => {
         const execution = await prisma.workflowExecution.findFirst({
-            where: { id: params.id, tenantId: session.user.tenantId }
+            where: { id: context.params.id, tenantId: context.session.tenantId }
         });
 
         if (!execution) {
@@ -97,11 +74,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: 'Cannot cancel completed/failed execution' }, { status: 400 });
         }
 
-        await WorkflowExecutor.cancelExecution(params.id, session.user.id);
+        await WorkflowExecutor.cancelExecution(context.params.id, context.session.userId);
 
         return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Failed to cancel execution:', error);
-        return NextResponse.json({ error: 'Failed to cancel execution' }, { status: 500 });
     }
-}
+);
+

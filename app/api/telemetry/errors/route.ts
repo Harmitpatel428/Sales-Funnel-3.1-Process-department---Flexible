@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+    withApiHandler,
+    ApiContext,
+} from '@/lib/api/withApiHandler';
 
-export async function POST(req: NextRequest) {
-    try {
+/**
+ * POST /api/telemetry/errors
+ * Receive error reports from client - public endpoint (no auth required)
+ */
+export const POST = withApiHandler(
+    { authRequired: false, checkDbHealth: false, rateLimit: 50, logRequest: true },
+    async (req: NextRequest, _context: ApiContext) => {
         const body = await req.json();
         // Here you would typically send to Sentry, LogRocket, or Datadog
         // For now we just log to server console in a structured way
@@ -24,8 +33,5 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json({ success: true, message: 'Error report received' });
-    } catch (error) {
-        console.error('[Telemetry] Failed to process error report:', error);
-        return NextResponse.json({ success: false, message: 'Failed to process error report' }, { status: 500 });
     }
-}
+);

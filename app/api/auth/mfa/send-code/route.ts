@@ -1,78 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { sendSMSCode } from '@/lib/mfa/sms';
 import { sendEmailCode } from '@/lib/mfa/email-code';
 import { randomInt } from 'crypto';
+import { withApiHandler } from '@/lib/api/withApiHandler';
+import { ApiContext } from '@/lib/api/types';
+import { errorResponse, notFoundResponse } from '@/lib/api/response-helpers';
+import { addServerAuditLog } from '@/app/actions/audit';
 
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-        if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+export const POST = withApiHandler({ authRequired: true, rateLimit: 5 }, async (context: ApiContext) => {
+    const session = context.session!;
+    const { method } = await context.req.json(); // 'SMS' or 'EMAIL'
 
-        const { method } = await req.json(); // 'SMS' or 'EMAIL'
+    const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+    });
 
-        const user = await prisma.user.findUnique({
-            where: { id: session.userId },
-        });
+    if (!user) return notFoundResponse('User');
 
-        if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // Generate 6-digit code
+    const code = randomInt(100000, 999999).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // Generate 6-digit code
-        const code = randomInt(100000, 999999).toString();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    // Store code in VerificationCode table
+    await prisma.verificationCode.deleteMany({
+        where: { userId: session.userId, method }
+    });
 
-        // Store code in VerificationCode table
-        // First clean up old codes for this user/method
-        await prisma.verificationCode.deleteMany({
-            where: { userId: session.userId, method }
-        });
-
-        await prisma.verificationCode.create({
-            data: {
-                userId: session.userId,
-                code, // In production, hash this! hashedCode
-                method,
-                expiresAt,
-            }
-        });
-
-        // Send Code
-        let result;
-        if (method === 'SMS') {
-            // Need user phone number? User model doesn't have it standardly based on Schema Step 1?
-            // "1. Database Schema Extensions" -> "Extend User model: ssoProvider, mfaEnabled..."
-            // It did NOT add 'phoneNumber' to User.
-            // But Lead has mobileNumber. User usually does too?
-            // Existing schema: "model User { ... email String ... }" - NO phone number.
-            // Assumption: User object might have it or we need to add it?
-            // Plan Step 7: "Integrate with Twilio... sendSMSCode(phoneNumber, code)".
-            // Where do we get phoneNumber?
-            // Perhaps we prompt user to enter it first?
-            // Or maybe it was missed in Schema Step 1.
-            // I'll check existing User model again.
-            // User model (read in Step 7 output): `username, name, email, password...` NO phone.
-            // We probably need to add `phoneNumber` to User or ask user to provide it in the request if setup?
-            // If verify, we need it stored.
-            // I'll assume for verify flow, we'd need it.
-            // I'll add `phoneNumber` to User schema in next migration pass if I can, OR
-            // I'll assume for now we can't do SMS without it.
-            // I'll fail if no phone number for SMS.
-            return NextResponse.json({ error: 'SMS not supported yet (missing phone number)' }, { status: 400 });
-        } else if (method === 'EMAIL') {
-            result = await sendEmailCode(user.email, code);
-        } else {
-            return NextResponse.json({ error: 'Invalid method' }, { status: 400 });
+    await prisma.verificationCode.create({
+        data: {
+            userId: session.userId,
+            code, // In production, hash this!
+            method,
+            expiresAt,
         }
+    });
 
-        if (!result.success) {
-            return NextResponse.json({ error: 'Failed to send code' }, { status: 500 });
-        }
-
-        return NextResponse.json({ success: true, message: 'Code sent' });
-
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    let result;
+    if (method === 'SMS') {
+        // SMS support placeholder as per original
+        return errorResponse('SMS not supported yet (missing phone number)', undefined, 400);
+    } else if (method === 'EMAIL') {
+        result = await sendEmailCode(user.email, code);
+    } else {
+        return errorResponse('Invalid method', undefined, 400);
     }
-}
+
+    if (!result.success) {
+        return errorResponse('Failed to send code');
+    }
+
+    await addServerAuditLog({
+        actionType: 'MFA_CODE_SENT',
+        entityType: 'User',
+        entityId: session.userId,
+        description: `MFA code sent via ${method}`,
+        performedById: session.userId,
+        sessionId: session.sessionId,
+        ipAddress: context.req.headers.get('x-forwarded-for') || undefined,
+        userAgent: context.req.headers.get('user-agent') || undefined
+    });
+
+    return NextResponse.json({ success: true, message: 'Code sent' });
+});

@@ -6,10 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+    forbiddenResponse,
+    validationErrorResponse,
+} from '@/lib/api/withApiHandler';
 
 const RetentionPolicySchema = z.object({
     documentType: z.string().min(1),
@@ -18,20 +23,26 @@ const RetentionPolicySchema = z.object({
     autoDelete: z.boolean().default(false),
 });
 
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * GET /api/admin/retention-policies
+ * List policies (ADMIN only, uses NextAuth)
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { nextAuthSession } = context;
+
+        if (!nextAuthSession?.user?.id) {
+            return unauthorizedResponse();
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
+            where: { id: nextAuthSession.user.id },
             select: { role: true, tenantId: true }
         });
 
         if (!user || user.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return forbiddenResponse('Admin access required');
         }
 
         const policies = await prisma.retentionPolicy.findMany({
@@ -40,30 +51,45 @@ export async function GET(req: NextRequest) {
         });
 
         return NextResponse.json({ policies });
-    } catch (error) {
-        console.error('Retention policies fetch error:', error);
-        return NextResponse.json({ error: 'Failed to fetch policies' }, { status: 500 });
     }
-}
+);
 
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * POST /api/admin/retention-policies
+ * Create/Update policy (ADMIN only, uses NextAuth)
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { nextAuthSession } = context;
+
+        if (!nextAuthSession?.user?.id) {
+            return unauthorizedResponse();
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
+            where: { id: nextAuthSession.user.id },
             select: { role: true, tenantId: true }
         });
 
         if (!user || user.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return forbiddenResponse('Admin access required');
         }
 
         const body = await req.json();
-        const data = RetentionPolicySchema.parse(body);
+        const result = RetentionPolicySchema.safeParse(body);
+
+        if (!result.success) {
+            return validationErrorResponse(
+                result.error.errors.map(e => ({
+                    field: e.path.join('.'),
+                    message: e.message,
+                    code: e.code
+                }))
+            );
+        }
+
+        const data = result.data;
 
         // Upsert policy
         const policy = await prisma.retentionPolicy.upsert({
@@ -85,41 +111,43 @@ export async function POST(req: NextRequest) {
                 retentionPeriod: data.retentionPeriod,
                 retentionUnit: data.retentionUnit,
                 autoDelete: data.autoDelete,
-                createdById: session.user.id
+                createdById: nextAuthSession.user.id
             }
         });
 
         return NextResponse.json({ policy });
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Invalid data', details: error.errors }, { status: 400 });
-        }
-        console.error('Retention policy save error:', error);
-        return NextResponse.json({ error: 'Failed to save policy' }, { status: 500 });
     }
-}
+);
 
-export async function DELETE(req: NextRequest) {
-    try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * DELETE /api/admin/retention-policies
+ * Delete policy (ADMIN only, uses NextAuth)
+ */
+export const DELETE = withApiHandler(
+    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { nextAuthSession } = context;
+
+        if (!nextAuthSession?.user?.id) {
+            return unauthorizedResponse();
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: session.user.id },
+            where: { id: nextAuthSession.user.id },
             select: { role: true, tenantId: true }
         });
 
         if (!user || user.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return forbiddenResponse('Admin access required');
         }
 
         const searchParams = req.nextUrl.searchParams;
         const documentType = searchParams.get('documentType');
 
         if (!documentType) {
-            return NextResponse.json({ error: 'Document type is required' }, { status: 400 });
+            return validationErrorResponse([
+                { field: 'documentType', message: 'Document type is required', code: 'required' }
+            ]);
         }
 
         await prisma.retentionPolicy.delete({
@@ -132,8 +160,5 @@ export async function DELETE(req: NextRequest) {
         });
 
         return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Retention policy delete error:', error);
-        return NextResponse.json({ error: 'Failed to delete policy' }, { status: 500 });
     }
-}
+);

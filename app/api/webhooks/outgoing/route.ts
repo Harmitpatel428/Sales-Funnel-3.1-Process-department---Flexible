@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { WebhookManager, WEBHOOK_EVENTS } from '@/lib/webhooks/manager';
 import { prisma } from '@/lib/db';
+import {
+    withApiHandler,
+    ApiContext,
+    unauthorizedResponse,
+} from '@/lib/api/withApiHandler';
 
-// GET /api/webhooks/outgoing - List webhook subscriptions
-export async function GET(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * GET /api/webhooks/outgoing
+ * List webhook subscriptions
+ */
+export const GET = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (_req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const subscriptions = await prisma.webhookSubscription.findMany({
@@ -44,21 +52,20 @@ export async function GET(req: NextRequest) {
                 availableEvents: WEBHOOK_EVENTS,
             },
         });
-    } catch (error: any) {
-        console.error('Error fetching webhook subscriptions:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to fetch webhook subscriptions' },
-            { status: 500 }
-        );
     }
-}
+);
 
-// POST /api/webhooks/outgoing - Create webhook subscription
-export async function POST(req: NextRequest) {
-    try {
-        const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+/**
+ * POST /api/webhooks/outgoing
+ * Create webhook subscription
+ */
+export const POST = withApiHandler(
+    { authRequired: true, checkDbHealth: true },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session } = context;
+
         if (!session) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+            return unauthorizedResponse();
         }
 
         const body = await req.json();
@@ -119,11 +126,5 @@ export async function POST(req: NextRequest) {
             },
             message: 'Webhook subscription created successfully',
         }, { status: 201 });
-    } catch (error: any) {
-        console.error('Error creating webhook subscription:', error);
-        return NextResponse.json(
-            { success: false, message: 'Failed to create webhook subscription' },
-            { status: 500 }
-        );
     }
-}
+);
