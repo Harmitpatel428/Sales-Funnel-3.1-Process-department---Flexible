@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getUserPermissions } from '@/lib/middleware/permissions';
 import { withApiHandler } from '@/lib/api/withApiHandler';
@@ -7,7 +7,8 @@ import { unauthorizedResponse } from '@/lib/api/response-helpers';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withApiHandler({ authRequired: true, updateSessionActivity: true }, async (context: ApiContext) => {
+// skipTenantCheck: true - User profile endpoint may be called before tenant selection in multi-tenant scenarios
+export const GET = withApiHandler({ authRequired: true, updateSessionActivity: true, skipTenantCheck: true }, async (_req: NextRequest, context: ApiContext) => {
     // Session is guaranteed to exist due to authRequired: true
     const session = context.session!;
 
@@ -66,11 +67,20 @@ export const GET = withApiHandler({ authRequired: true, updateSessionActivity: t
         lockedUntil: user.lockedUntil // Needed for account lock check
     };
 
+    // Response includes both success and valid fields for backward compatibility
+    // Clients may depend on 'valid' field, but new code should use 'success'
     return NextResponse.json({
+        success: true,
         valid: true,
         user: userProfile,
         expiresAt: dbSession?.expiresAt,
         lastActivityAt: dbSession?.lastActivityAt,
         permissionsHash
+    }, {
+        headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
     });
 });

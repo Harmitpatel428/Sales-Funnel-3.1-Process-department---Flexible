@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Session } from "next-auth";
 
 /**
  * Configuration options for the API handler wrapper
@@ -24,24 +23,6 @@ export interface ApiHandlerOptions {
     rateLimit?: number | false;
 
     /**
-     * Whether to use NextAuth v5 auth() for SSO routes
-     * @default false
-     */
-    useNextAuth?: boolean;
-
-    /**
-     * Whether to use API key authentication instead of session auth
-     * @default false
-     */
-    useApiKeyAuth?: boolean;
-
-    /**
-     * Required scopes for API key authentication
-     * Only used when useApiKeyAuth is true
-     */
-    requiredScopes?: string[];
-
-    /**
      * Whether to log the request
      * @default true
      */
@@ -52,48 +33,68 @@ export interface ApiHandlerOptions {
      * @default true
      */
     updateSessionActivity?: boolean;
+
+    /**
+     * Whether to skip tenant validation.
+     * Set to true for auth routes that operate outside tenant context
+     * (login, logout, password reset, OAuth, etc.)
+     * @default false
+     */
+    skipTenantCheck?: boolean;
+
+    /**
+     * Whether to use API key authentication instead of session auth.
+     * When true, expects X-API-Key header and validates via apiKeyAuthMiddleware.
+     * @default false
+     */
+    useApiKeyAuth?: boolean;
+
+    /**
+     * Required scopes for API key authentication.
+     * Only used when useApiKeyAuth is true.
+     * @default undefined (no specific scopes required)
+     */
+    requiredScopes?: string[];
+
+    /**
+     * Required permissions for session-based authentication.
+     * Maps to PERMISSIONS constants from app/types/permissions.ts.
+     * @default undefined (no specific permissions required)
+     */
+    permissions?: string[];
+
+    /**
+     * Whether all listed permissions are required (true) or just any (false).
+     * Only used when permissions array is provided.
+     * @default true
+     */
+    requireAll?: boolean;
 }
 
 /**
- * Session data from custom auth system
+ * Session data from custom auth system.
  */
 export interface CustomSessionData {
     userId: string;
     role: string;
     sessionId: string;
-    tenantId: string;
+    /**
+     * Tenant ID for multi-tenant isolation.
+     * May be undefined for auth routes (login, logout) where tenant context
+     * is not yet established. Use skipTenantCheck: true for such routes.
+     */
+    tenantId?: string;
 }
 
 /**
- * API key authentication context
- */
-export interface ApiKeyAuthContext {
-    /** The validated API key record */
-    apiKey: any;
-    /** The tenant associated with the API key */
-    tenant: any;
-    /** Scopes granted to the API key */
-    scopes: string[];
-}
-
-/**
- * Context passed to API handlers
+ * Context passed to API handlers.
  */
 export interface ApiContext {
     /**
-     * Session data from custom auth (if authRequired: true && !useNextAuth)
+     * Session data from custom session authentication.
+     * Will be null if authRequired: false or authentication failed.
      */
     session: CustomSessionData | null;
-
-    /**
-     * NextAuth v5 session (if useNextAuth: true)
-     */
-    nextAuthSession: Session | null;
-
-    /**
-     * API key auth context (if useApiKeyAuth: true)
-     */
-    apiKeyAuth: ApiKeyAuthContext | null;
 
     /**
      * Original request object
@@ -103,15 +104,35 @@ export interface ApiContext {
     /**
      * Request start timestamp for duration tracking
      */
-    /**
-     * Request start timestamp for duration tracking
-     */
     startTime: number;
 
     /**
      * Route parameters for dynamic routes
      */
     params?: any;
+
+    /**
+     * API key authentication data when useApiKeyAuth is true.
+     * Contains validated API key, tenant, and scopes.
+     */
+    apiKeyAuth?: {
+        apiKey: {
+            id: string;
+            name: string;
+            tenantId: string;
+            scopes: string[];
+            rateLimit: number;
+            expiresAt: Date | null;
+            isActive: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+        };
+        tenant: {
+            id: string;
+            name?: string;
+        };
+        scopes: string[];
+    } | null;
 }
 
 /**

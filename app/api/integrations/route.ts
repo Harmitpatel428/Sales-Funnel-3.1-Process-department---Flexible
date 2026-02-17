@@ -5,13 +5,18 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/integrations
  * List available integrations
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_VIEW]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -82,7 +87,11 @@ export const GET = withApiHandler(
  * Seed official integrations (admin only)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

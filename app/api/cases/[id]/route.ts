@@ -10,27 +10,38 @@ import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/
 import { emitCaseUpdated, emitCaseDeleted } from '@/lib/websocket/server';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { getRecordLevelFilter } from '@/lib/middleware/permissions';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
     const { session, params: paramsPromise } = context;
-    if (!session) return unauthorizedResponse();
+    // session check removed
 
     const params = await paramsPromise;
     const id = params?.id;
     if (!id) return notFoundResponse('Case');
 
-    return await withTenant(session.tenantId, async () => {
+    return await withTenant(session!.tenantId, async () => {
+        const recordFilter = await getRecordLevelFilter(session!.userId, 'cases', 'view');
+
+        const baseCase = await prisma.case.findFirst({
+            where: { caseId: id, tenantId: session!.tenantId }
+        });
+
+        if (!baseCase) return notFoundResponse('Case');
+
         const caseItem = await prisma.case.findFirst({
-            where: { caseId: id, tenantId: session.tenantId },
+            where: {
+                caseId: id,
+                tenantId: session!.tenantId,
+                ...recordFilter
+            },
             include: { users: { select: { id: true, name: true } } }
         });
 
-        if (!caseItem) return notFoundResponse('Case');
+        if (!caseItem) return forbiddenResponse();
 
-        // Check visibility
-        if (session.role === 'PROCESS_EXECUTIVE' && caseItem.assignedProcessUserId !== session.userId) {
-            return forbiddenResponse();
-        }
+        // Manual visibility check removed - handled by declarative permissions (VIEW_OWN/VIEW_ASSIGNED/VIEW_ALL)
 
         const parsedCase = {
             ...caseItem,
@@ -45,14 +56,14 @@ const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
 
 const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
     const { session, params: paramsPromise } = context;
-    if (!session) return unauthorizedResponse();
+    // session check removed
 
     const params = await paramsPromise;
     const id = params?.id;
     if (!id) return notFoundResponse('Case');
 
     // Check idempotency
-    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    const idempotencyError = await idempotencyMiddleware(req, session!.tenantId);
     if (idempotencyError) return idempotencyError;
 
     const body = await req.json();
@@ -68,12 +79,24 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
 
     const updates = validation.data!;
 
-    return await withTenant(session.tenantId, async () => {
-        const existingCase = await prisma.case.findFirst({
-            where: { caseId: id, tenantId: session.tenantId }
+    return await withTenant(session!.tenantId, async () => {
+        const recordFilter = await getRecordLevelFilter(session!.userId, 'cases', 'edit');
+
+        const baseCase = await prisma.case.findFirst({
+            where: { caseId: id, tenantId: session!.tenantId }
         });
 
-        if (!existingCase) return notFoundResponse('Case');
+        if (!baseCase) return notFoundResponse('Case');
+
+        const existingCase = await prisma.case.findFirst({
+            where: {
+                caseId: id,
+                tenantId: session!.tenantId,
+                ...recordFilter
+            }
+        });
+
+        if (!existingCase) return forbiddenResponse();
 
         // Validate cross-field rules
         const mergedCase = { ...existingCase, ...updates };
@@ -83,10 +106,7 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
         // Capture old data for workflow trigger
         const oldData = existingCase as unknown as Record<string, unknown>;
 
-        // Permission checks
-        if (session.role === 'PROCESS_EXECUTIVE' && existingCase.assignedProcessUserId !== session.userId) {
-            return forbiddenResponse();
-        }
+        // Permission checks removed - handled by declarative permissions
 
         const data: any = { ...updates };
         if (updates.benefitTypes) data.benefitTypes = JSON.stringify(updates.benefitTypes);
@@ -96,7 +116,7 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
         try {
             const updatedCase = await updateWithOptimisticLock(
                 prisma.case,
-                { caseId: id, tenantId: session.tenantId },
+                { caseId: id, tenantId: session!.tenantId, ...recordFilter },
                 { currentVersion: version, data },
                 'Case'
             );
@@ -107,8 +127,8 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
                     entityType: 'case',
                     entityId: id,
                     description: `Case updated: ${(updatedCase as any).caseNumber}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
+                    performedById: session!.userId,
+                    tenantId: session!.tenantId,
                     beforeValue: JSON.stringify(existingCase),
                     afterValue: JSON.stringify(updatedCase)
                 }
@@ -122,8 +142,8 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
                     'UPDATE',
                     oldData,
                     updatedCase as unknown as Record<string, unknown>,
-                    session.tenantId,
-                    session.userId
+                    session!.tenantId,
+                    session!.userId
                 );
             } catch (workflowError) {
                 console.error('Failed to trigger workflows for case update:', workflowError);
@@ -131,7 +151,7 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
 
             // WebSocket Broadcast
             try {
-                await emitCaseUpdated(session.tenantId, updatedCase);
+                await emitCaseUpdated(session!.tenantId, updatedCase);
             } catch (wsError) {
                 console.error('[WebSocket] Case update broadcast failed:', wsError);
             }
@@ -152,21 +172,19 @@ const putHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
 
 const deleteHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
     const { session, params: paramsPromise } = context;
-    if (!session) return unauthorizedResponse();
+    // session check removed
 
     const params = await paramsPromise;
     const id = params?.id;
     if (!id) return notFoundResponse('Case');
 
     // Check idempotency
-    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    const idempotencyError = await idempotencyMiddleware(req, session!.tenantId);
     if (idempotencyError) return idempotencyError;
 
-    if (!['ADMIN', 'PROCESS_MANAGER'].includes(session.role)) {
-        return forbiddenResponse();
-    }
+    // Manual role check removed - handled by declarative permissions (CASES_DELETE)
 
-    return await withTenant(session.tenantId, async () => {
+    return await withTenant(session!.tenantId, async () => {
         // Hard delete as per plan
         await prisma.case.delete({
             where: { caseId: id }
@@ -178,14 +196,14 @@ const deleteHandler: ApiHandler = async (req: NextRequest, context: ApiContext) 
                 entityType: 'case',
                 entityId: id,
                 description: `Case deleted permanently`,
-                performedById: session.userId,
-                tenantId: session.tenantId
+                performedById: session!.userId,
+                tenantId: session!.tenantId
             }
         });
 
         // WebSocket Broadcast
         try {
-            await emitCaseDeleted(session.tenantId, id);
+            await emitCaseDeleted(session!.tenantId, id);
         } catch (wsError) {
             console.error('[WebSocket] Case delete broadcast failed:', wsError);
         }
@@ -196,6 +214,25 @@ const deleteHandler: ApiHandler = async (req: NextRequest, context: ApiContext) 
     });
 };
 
-export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, getHandler);
-export const PUT = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, putHandler);
-export const DELETE = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, deleteHandler);
+export const GET = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 100,
+    permissions: [PERMISSIONS.CASES_VIEW_OWN, PERMISSIONS.CASES_VIEW_ASSIGNED, PERMISSIONS.CASES_VIEW_ALL],
+    requireAll: false
+}, getHandler);
+
+export const PUT = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.CASES_EDIT_OWN, PERMISSIONS.CASES_EDIT_ASSIGNED, PERMISSIONS.CASES_EDIT_ALL],
+    requireAll: false
+}, putHandler);
+
+export const DELETE = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.CASES_DELETE]
+}, deleteHandler);

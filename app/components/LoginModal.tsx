@@ -13,10 +13,9 @@ interface LoginModalProps {
  * 
  * Modal for user authentication. Shows when user is not logged in.
  */
-import { LoginModalProps } from './LoginModalTypes'; // Assuming type definition or keep inline
 import MFAVerificationModal from './MFAVerificationModal';
 
-export function LoginModal({ isOpen = true, onLoginSuccess }: any) {
+export function LoginModal({ isOpen = true, onLoginSuccess }: LoginModalProps) {
     const { login, refreshUser, isAuthenticated, isLoading } = useUsers(); // Add refreshUser to update context after MFA
 
     const [username, setUsername] = useState('');

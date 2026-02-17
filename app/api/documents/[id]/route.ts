@@ -17,6 +17,7 @@ import { DocumentUploadSchema, DocumentFiltersSchema } from '@/lib/validation/sc
 import { validateDocumentCrossFields } from '@/lib/validation/cross-field-rules';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 // Validation Schema
 const DocumentUpdateSchema = z.object({
@@ -267,7 +268,25 @@ const deleteHandler: ApiHandler = async (req: NextRequest, context: ApiContext) 
     return response;
 };
 
-export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, getHandler);
-export const PATCH = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, patchHandler);
-export const DELETE = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, deleteHandler);
+export const GET = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 100,
+    permissions: [PERMISSIONS.DOCUMENTS_VIEW_ALL, PERMISSIONS.DOCUMENTS_VIEW_CASE],
+    requireAll: false
+}, getHandler);
+
+export const PATCH = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.DOCUMENTS_EDIT]
+}, patchHandler);
+
+export const DELETE = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.DOCUMENTS_DELETE]
+}, deleteHandler);
 

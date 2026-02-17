@@ -2,8 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { User, UserRole, UserSession } from '../types/processTypes';
-// DELETE THIS LINE:
-// import { logoutAction } from '../actions/auth';
 import { getUsers, createUserAction, updateUserAction, deleteUserAction, resetUserPasswordAction } from '../actions/user';
 import { useSession, AuthState } from '@/app/hooks/useSession';
 import { useMultiTabSync } from '@/app/hooks/useMultiTabSync';
@@ -127,7 +125,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
             window.removeEventListener('session-logout-requested', handleSessionLogout);
             window.removeEventListener('session-invalidated', handleSessionInvalidated);
         };
-    }, []);  
+    }, []);
 
 
 
@@ -212,7 +210,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     const login = useCallback(async (username: string, password: string, rememberMe: boolean = false): Promise<{ success: boolean; message: string; mfaRequired?: boolean }> => {
         setIsLoading(true);
+        console.log('[DEBUG LOGIN] Starting login for:', username);
         try {
+            console.log('[DEBUG LOGIN] Making fetch call to /api/auth/login');
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: {
@@ -225,8 +225,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     rememberMe: rememberMe
                 })
             });
+            console.log('[DEBUG LOGIN] Response status:', response.status);
 
             const result = await response.json();
+            console.log('[DEBUG LOGIN] Response body:', result);
 
             if (!response.ok) {
                 return {

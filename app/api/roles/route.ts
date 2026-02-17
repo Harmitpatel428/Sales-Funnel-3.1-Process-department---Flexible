@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requirePermissions } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
@@ -13,16 +12,17 @@ import {
  * List all roles (requires USERS_MANAGE_ROLES permission)
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
-    async (req: NextRequest, context: ApiContext) => {
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.USERS_MANAGE_ROLES]
+    },
+    async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse();
         }
-
-        const permError = await requirePermissions([PERMISSIONS.USERS_MANAGE_ROLES])(req);
-        if (permError) return permError;
 
         const roles = await prisma.role.findMany({
             where: {
@@ -52,16 +52,17 @@ export const GET = withApiHandler(
  * Create a new role (requires USERS_MANAGE_ROLES permission)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.USERS_MANAGE_ROLES]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse();
         }
-
-        const permError = await requirePermissions([PERMISSIONS.USERS_MANAGE_ROLES])(req);
-        if (permError) return permError;
 
         const { name, description, permissions, fieldPermissions } = await req.json();
 

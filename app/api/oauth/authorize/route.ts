@@ -10,7 +10,7 @@ import {
  * Authorization endpoint - display consent screen
  */
 export const GET = withApiHandler(
-    { authRequired: false, checkDbHealth: true },
+    { authRequired: false, checkDbHealth: true, skipTenantCheck: true },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
         const { searchParams } = new URL(req.url);
@@ -85,7 +85,7 @@ export const GET = withApiHandler(
  * User approves authorization
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    { authRequired: true, checkDbHealth: true, skipTenantCheck: true },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

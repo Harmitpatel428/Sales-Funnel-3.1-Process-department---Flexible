@@ -10,7 +10,7 @@ import {
  * Token exchange endpoint - public endpoint
  */
 export const POST = withApiHandler(
-    { authRequired: false, checkDbHealth: true },
+    { authRequired: false, checkDbHealth: true, skipTenantCheck: true },
     async (req: NextRequest, _context: ApiContext) => {
         const contentType = req.headers.get('content-type');
         let body: any;
@@ -98,7 +98,7 @@ export const POST = withApiHandler(
  * Revoke token - public endpoint
  */
 export const DELETE = withApiHandler(
-    { authRequired: false, checkDbHealth: true },
+    { authRequired: false, checkDbHealth: true, skipTenantCheck: true },
     async (req: NextRequest, _context: ApiContext) => {
         const body = await req.json();
         const { token } = body;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ScheduledReportSchema, UpdateScheduledReportSchema } from '@/lib/validation/report-schemas';
 import { z } from 'zod';
+import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
     ApiContext,
@@ -32,7 +33,12 @@ function calculateNextRun(cron: string): Date {
  * Fetch scheduled reports for current tenant
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_VIEW_OWN, PERMISSIONS.REPORTS_VIEW_ALL],
+        requireAll: false
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -67,7 +73,11 @@ export const GET = withApiHandler(
  * Create a new scheduled report
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_SCHEDULE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -146,7 +156,11 @@ export const POST = withApiHandler(
  * Update a scheduled report
  */
 export const PUT = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_SCHEDULE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -241,7 +255,11 @@ export const PUT = withApiHandler(
  * Remove a scheduled report
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_SCHEDULE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

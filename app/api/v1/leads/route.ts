@@ -35,6 +35,11 @@ const createLeadSchema = z.object({
 /**
  * GET /api/v1/leads
  * List leads - Public API endpoint using API key auth
+ * 
+ * NOTE: v1 API routes use API key authentication with scope-based permissions.
+ * They do NOT use session-based declarative permissions like internal routes.
+ * - requiredScopes: ['leads:read'] maps to LEADS_VIEW_ALL permission
+ * - Tenant isolation is enforced via apiKeyAuth.tenant.id
  */
 export const GET = withApiHandler(
     { useApiKeyAuth: true, requiredScopes: ['leads:read'], checkDbHealth: true },
@@ -101,6 +106,11 @@ export const GET = withApiHandler(
 /**
  * POST /api/v1/leads
  * Create lead - Public API endpoint using API key auth
+ * 
+ * NOTE: v1 API routes use API key authentication with scope-based permissions.
+ * They do NOT use session-based declarative permissions like internal routes.
+ * - requiredScopes: ['leads:write'] maps to LEADS_CREATE permission
+ * - Tenant isolation is enforced via apiKeyAuth.tenant.id
  */
 export const POST = withApiHandler(
     { useApiKeyAuth: true, requiredScopes: ['leads:write'], checkDbHealth: true },

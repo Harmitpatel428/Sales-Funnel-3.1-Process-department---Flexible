@@ -106,23 +106,48 @@ export async function checkPermissions(
 }
 
 // Middleware wrapper for API routes
+// Accepts optional context to avoid re-reading cookies when called from withApiHandler
+// Context includes userId, tenantId, and endpoint for direct permission checking
+export interface PermissionContext {
+    userId: string;
+    tenantId?: string;
+    endpoint?: string;
+}
+
 export function requirePermissions(
     permissions: PermissionKey[],
-    requireAll: boolean = true
+    requireAll: boolean = true,
+    context?: PermissionContext | null
 ) {
     return async (req: NextRequest): Promise<NextResponse | null> => {
-        const token = req.cookies.get(SESSION_COOKIE_NAME)?.value || null;
-        const session = await getSessionByToken(token);
+        let userId: string;
+        let tenantId: string | undefined;
+        let endpoint: string;
 
-        if (!session) {
-            return NextResponse.json(
-                { success: false, message: 'Unauthorized' },
-                { status: 401 }
-            );
+        if (context) {
+            // Use provided context directly
+            userId = context.userId;
+            tenantId = context.tenantId;
+            endpoint = context.endpoint || req.nextUrl.pathname;
+        } else {
+            // Fallback: read session from cookies
+            const token = req.cookies.get(SESSION_COOKIE_NAME)?.value || null;
+            const session = await getSessionByToken(token);
+
+            if (!session) {
+                return NextResponse.json(
+                    { success: false, message: 'Unauthorized' },
+                    { status: 401 }
+                );
+            }
+
+            userId = session.userId;
+            tenantId = session.tenantId;
+            endpoint = req.nextUrl.pathname;
         }
 
         const hasPermission = await checkPermissions(
-            session.userId,
+            userId,
             permissions,
             requireAll
         );
@@ -134,11 +159,11 @@ export function requirePermissions(
                     actionType: 'PERMISSION_DENIED',
                     entityType: 'permission',
                     description: `Permission denied: ${permissions.join(', ')}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
+                    performedById: userId,
+                    tenantId: tenantId || null,
                     metadata: JSON.stringify({
                         requiredPermissions: permissions,
-                        endpoint: req.nextUrl.pathname
+                        endpoint
                     })
                 }
             });
@@ -152,6 +177,8 @@ export function requirePermissions(
         return null; // Permission granted
     };
 }
+
+
 
 // Record-level permission filter
 export async function getRecordLevelFilter(

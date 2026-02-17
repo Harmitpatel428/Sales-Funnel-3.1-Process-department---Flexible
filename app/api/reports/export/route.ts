@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { generateReport } from '@/lib/reports/report-generator';
 import type { ReportConfig } from '@/lib/validation/report-schemas';
+import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
     ApiContext,
@@ -14,7 +15,11 @@ import {
  * Export a report to file (Excel, PDF, CSV)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_EXPORT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

@@ -1,29 +1,33 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getSessionByToken } from '@/lib/auth';
-import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
-import { requirePermissions, invalidatePermissionCacheForUser } from '@/lib/middleware/permissions';
+import { invalidatePermissionCacheForUser } from '@/lib/middleware/permissions';
+import { withApiHandler, ApiContext, unauthorizedResponse } from '@/lib/api/withApiHandler';
 import { PERMISSIONS } from '@/app/types/permissions';
 
-export async function PATCH(
-    req: NextRequest,
-    { params }: { params: { id: string } }
-) {
-    const session = await getSessionByToken(req.cookies.get(SESSION_COOKIE_NAME)?.value);
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/**
+ * PATCH /api/roles/[id]/field-permissions
+ * Update field permissions for a role
+ */
+export const PATCH = withApiHandler(
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.USERS_MANAGE_ROLES]
+    },
+    async (req: NextRequest, context: ApiContext) => {
+        const { session, params } = context;
 
-    const permError = await requirePermissions([PERMISSIONS.USERS_MANAGE_ROLES])(req);
-    if (permError) return permError;
+        if (!session) {
+            return unauthorizedResponse();
+        }
 
-    const roleId = params.id;
-    const { resource, fieldName, canView, canEdit } = await req.json();
+        const { id: roleId } = await params;
+        const { resource, fieldName, canView, canEdit } = await req.json();
 
-    if (!resource || !fieldName) {
-        return NextResponse.json({ error: 'Missing resource or fieldName' }, { status: 400 });
-    }
+        if (!resource || !fieldName) {
+            return NextResponse.json({ success: false, error: 'Missing resource or fieldName' }, { status: 400 });
+        }
 
-    try {
         const fieldPermission = await prisma.fieldPermission.upsert({
             where: {
                 roleId_resource_fieldName: {
@@ -53,7 +57,7 @@ export async function PATCH(
                 entityId: roleId,
                 description: `Updated field permission for ${resource}.${fieldName}`,
                 performedById: session.userId,
-                tenantId: session.tenantId || 'system', // specific handling for system context if needed
+                tenantId: session.tenantId || 'system',
                 afterValue: JSON.stringify({ resource, fieldName, canView, canEdit })
             }
         });
@@ -70,8 +74,5 @@ export async function PATCH(
         ));
 
         return NextResponse.json({ success: true, data: fieldPermission });
-    } catch (error) {
-        console.error('Failed to update field permission', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
-}
+);

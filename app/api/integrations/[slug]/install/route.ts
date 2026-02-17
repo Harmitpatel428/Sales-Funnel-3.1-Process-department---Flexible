@@ -6,13 +6,18 @@ import {
     unauthorizedResponse,
     notFoundResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * POST /api/integrations/[slug]/install
  * Install integration
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -87,7 +92,11 @@ export const POST = withApiHandler(
  * Uninstall integration
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 

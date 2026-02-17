@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 const VerifySchema = z.object({
     version: z.number().int().min(1, 'Version is required for updates'),
@@ -72,4 +73,9 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     }
 };
 
-export const POST = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, postHandler);
+export const POST = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.DOCUMENTS_VERIFY]
+}, postHandler);

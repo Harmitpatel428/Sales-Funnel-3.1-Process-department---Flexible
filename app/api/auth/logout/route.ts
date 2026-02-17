@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { invalidateSessionByToken } from '@/lib/auth';
 import { SESSION_COOKIE_NAME } from '@/lib/authConfig';
 import { withApiHandler } from '@/lib/api/withApiHandler';
@@ -14,8 +14,9 @@ import { errorResponse } from '@/lib/api/response-helpers';
  * ARCHITECTURAL RULE: This is the ONLY place where session_token cookie is deleted.
  * Server actions must never delete authentication cookies.
  */
-export const POST = withApiHandler({ authRequired: true, updateSessionActivity: false }, async (context: ApiContext) => {
-    const token = context.req.cookies.get(SESSION_COOKIE_NAME)?.value;
+// skipTenantCheck: true - Logout should work regardless of tenant context
+export const POST = withApiHandler({ authRequired: true, updateSessionActivity: false, skipTenantCheck: true }, async (req: NextRequest, context: ApiContext) => {
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = context.session!;
 
     // Invalidate session in database (pure domain function)
@@ -26,8 +27,8 @@ export const POST = withApiHandler({ authRequired: true, updateSessionActivity: 
         entityType: 'User',
         entityId: session.userId,
         description: 'User logged out',
-        ipAddress: context.req.headers.get('x-forwarded-for') || undefined,
-        userAgent: context.req.headers.get('user-agent') || undefined,
+        ipAddress: req.headers.get('x-forwarded-for') || undefined,
+        userAgent: req.headers.get('user-agent') || undefined,
         performedById: session.userId,
         sessionId: session.sessionId
     });

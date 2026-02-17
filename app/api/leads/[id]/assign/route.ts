@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { successResponse, notFoundResponse, validationErrorResponse } from '@/lib/api/response-helpers';
 import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils/optimistic-locking';
 import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
-import { requirePermissions } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 import { emitLeadUpdated } from '@/lib/websocket/server';
@@ -24,10 +23,6 @@ async function getParams(context: { params: Promise<{ id: string }> }) {
 
 const postHandler = async (req: NextRequest, context: ApiContext, id: string) => {
     const session = context.session!;
-
-    // Permission check
-    const permissionError = await requirePermissions([PERMISSIONS.LEADS_ASSIGN])(req);
-    if (permissionError) return permissionError;
 
     const body = await req.json();
     const validation = validateRequest(AssignLeadSchema, body);
@@ -115,7 +110,7 @@ const postHandler = async (req: NextRequest, context: ApiContext, id: string) =>
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await getParams(context);
     return withApiHandler(
-        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        { authRequired: true, checkDbHealth: true, rateLimit: 30, permissions: [PERMISSIONS.LEADS_ASSIGN] },
         (req, ctx) => postHandler(req, ctx, id)
     )(req);
 }

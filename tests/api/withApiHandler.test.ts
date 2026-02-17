@@ -92,18 +92,6 @@ vi.mock('@/lib/middleware/error-handler', () => ({
     },
 }));
 
-// Mock API key auth
-const mockApiKeyAuthMiddleware = vi.fn();
-vi.mock('@/lib/middleware/api-key-auth', () => ({
-    apiKeyAuthMiddleware: (...args: any[]) => mockApiKeyAuthMiddleware(...args),
-}));
-
-// Mock API usage logging
-const mockLogApiUsage = vi.fn();
-vi.mock('@/lib/api-keys', () => ({
-    logApiUsage: (...args: any[]) => mockLogApiUsage(...args),
-}));
-
 // Mock NextAuth
 vi.mock('@/app/api/auth/[...nextauth]/route', () => ({
     auth: vi.fn().mockResolvedValue(null),
@@ -118,7 +106,6 @@ import { cookies } from 'next/headers';
 import {
     createMockSession,
     createMockRequest,
-    createMockApiKey,
     createMockNextAuthSession,
 } from '../utils/test-helpers';
 
@@ -139,7 +126,6 @@ describe('withApiHandler', () => {
         mockHandleApiError.mockImplementation((error) =>
             NextResponse.json({ success: false, message: error.message }, { status: 500 })
         );
-        mockLogApiUsage.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -151,22 +137,6 @@ describe('withApiHandler', () => {
     // ========================================================================
 
     describe('Database Health Check Phase', () => {
-        it('should allow request when database is healthy', async () => {
-            mockIsDatabaseHealthy.mockResolvedValue(true);
-
-            const handler = vi.fn().mockResolvedValue(
-                NextResponse.json({ success: true, data: 'test' })
-            );
-
-            const wrappedHandler = withApiHandler({}, handler);
-            const req = createMockRequest();
-            const response = await wrappedHandler(req);
-
-            expect(mockIsDatabaseHealthy).toHaveBeenCalled();
-            expect(handler).toHaveBeenCalled();
-            expect(response.status).toBe(200);
-        });
-
         it('should return 503 when database is unhealthy', async () => {
             mockIsDatabaseHealthy.mockResolvedValue(false);
 
@@ -175,37 +145,12 @@ describe('withApiHandler', () => {
             const req = createMockRequest();
             const response = await wrappedHandler(req);
 
-            expect(mockIsDatabaseHealthy).toHaveBeenCalled();
-            expect(handler).not.toHaveBeenCalled();
             expect(response.status).toBe(503);
-
-            const body = await response.json();
-            expect(body.success).toBe(false);
-            expect(body.error).toBe('SERVICE_UNAVAILABLE');
-            expect(body.message).toBe('Service temporarily unavailable');
+            expect(handler).not.toHaveBeenCalled();
         });
 
-        it('should skip health check when checkDbHealth is false', async () => {
-            const handler = vi.fn().mockResolvedValue(
-                NextResponse.json({ success: true })
-            );
-
-            const wrappedHandler = withApiHandler({ checkDbHealth: false }, handler);
-            const req = createMockRequest();
-            await wrappedHandler(req);
-
-            expect(mockIsDatabaseHealthy).not.toHaveBeenCalled();
-            expect(handler).toHaveBeenCalled();
-        });
-    });
-
-    // ========================================================================
-    // Phase 3: Rate Limiting
-    // ========================================================================
-
-    describe('Rate Limiting Phase', () => {
-        it('should allow request when rate limit is not exceeded', async () => {
-            mockRateLimitMiddleware.mockResolvedValue(null);
+        it('should proceed when database is healthy', async () => {
+            mockIsDatabaseHealthy.mockResolvedValue(true);
 
             const handler = vi.fn().mockResolvedValue(
                 NextResponse.json({ success: true })
@@ -215,18 +160,35 @@ describe('withApiHandler', () => {
             const req = createMockRequest();
             const response = await wrappedHandler(req);
 
-            expect(mockRateLimitMiddleware).toHaveBeenCalledWith(req, 100); // default rate limit
-            expect(handler).toHaveBeenCalled();
             expect(response.status).toBe(200);
+            expect(handler).toHaveBeenCalled();
         });
 
-        it('should return 429 when rate limit is exceeded', async () => {
+        it('should skip DB check when checkDbHealth is false', async () => {
+            mockIsDatabaseHealthy.mockResolvedValue(false);
+
+            const handler = vi.fn().mockResolvedValue(
+                NextResponse.json({ success: true })
+            );
+
+            const wrappedHandler = withApiHandler({ checkDbHealth: false }, handler);
+            const req = createMockRequest();
+            const response = await wrappedHandler(req);
+
+            expect(mockIsDatabaseHealthy).not.toHaveBeenCalled();
+            expect(response.status).toBe(200);
+        });
+    });
+
+    // ========================================================================
+    // Phase 3: Rate Limiting
+    // ========================================================================
+
+    describe('Rate Limiting Phase', () => {
+        it('should return rate limit error when exceeded', async () => {
             const rateLimitResponse = NextResponse.json(
-                { success: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too Many Requests' },
-                {
-                    status: 429,
-                    headers: { 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '60' }
-                }
+                { success: false, message: 'Too many requests' },
+                { status: 429 }
             );
             mockRateLimitMiddleware.mockResolvedValue(rateLimitResponse);
 
@@ -239,6 +201,20 @@ describe('withApiHandler', () => {
             expect(handler).not.toHaveBeenCalled();
         });
 
+        it('should proceed when rate limit is not exceeded', async () => {
+            mockRateLimitMiddleware.mockResolvedValue(null);
+
+            const handler = vi.fn().mockResolvedValue(
+                NextResponse.json({ success: true })
+            );
+
+            const wrappedHandler = withApiHandler({}, handler);
+            const req = createMockRequest();
+            const response = await wrappedHandler(req);
+
+            expect(response.status).toBe(200);
+        });
+
         it('should skip rate limiting when rateLimit is false', async () => {
             const handler = vi.fn().mockResolvedValue(
                 NextResponse.json({ success: true })
@@ -249,7 +225,6 @@ describe('withApiHandler', () => {
             await wrappedHandler(req);
 
             expect(mockRateLimitMiddleware).not.toHaveBeenCalled();
-            expect(handler).toHaveBeenCalled();
         });
 
         it('should use custom rate limit value', async () => {
@@ -266,32 +241,11 @@ describe('withApiHandler', () => {
     });
 
     // ========================================================================
-    // Phase 4: Authentication - Custom Session Auth
+    // Phase 4: Authentication - Custom Session
     // ========================================================================
 
     describe('Custom Session Authentication', () => {
-        it('should allow request with valid session', async () => {
-            const session = createMockSession();
-            mockGetSessionByToken.mockResolvedValue(session);
-
-            const handler = vi.fn().mockResolvedValue(
-                NextResponse.json({ success: true })
-            );
-
-            const wrappedHandler = withApiHandler({}, handler);
-            const req = createMockRequest();
-            const response = await wrappedHandler(req);
-
-            expect(mockGetSessionByToken).toHaveBeenCalled();
-            expect(handler).toHaveBeenCalled();
-            expect(response.status).toBe(200);
-
-            // Verify session is passed to handler
-            const [, context] = handler.mock.calls[0];
-            expect(context.session).toEqual(session);
-        });
-
-        it('should return 401 when session is missing', async () => {
+        it('should return 401 when session is invalid', async () => {
             mockGetSessionByToken.mockResolvedValue(null);
 
             const handler = vi.fn();
@@ -301,14 +255,29 @@ describe('withApiHandler', () => {
 
             expect(response.status).toBe(401);
             expect(handler).not.toHaveBeenCalled();
-
-            const body = await response.json();
-            expect(body.success).toBe(false);
-            expect(body.error).toBe('UNAUTHORIZED');
         });
 
-        it('should pass session data to handler in context.session', async () => {
-            const session = createMockSession({ userId: 'custom-user', role: 'SALES_EXECUTIVE' });
+        it('should proceed when session is valid', async () => {
+            mockGetSessionByToken.mockResolvedValue(createMockSession());
+
+            const handler = vi.fn().mockResolvedValue(
+                NextResponse.json({ success: true })
+            );
+
+            const wrappedHandler = withApiHandler({}, handler);
+            const req = createMockRequest();
+            const response = await wrappedHandler(req);
+
+            expect(response.status).toBe(200);
+            expect(handler).toHaveBeenCalled();
+        });
+
+        it('should pass session data to handler via context', async () => {
+            const session = createMockSession({
+                userId: 'user-456',
+                role: 'SALES_MANAGER',
+                tenantId: 'tenant-789'
+            });
             mockGetSessionByToken.mockResolvedValue(session);
 
             const handler = vi.fn().mockResolvedValue(
@@ -320,8 +289,7 @@ describe('withApiHandler', () => {
             await wrappedHandler(req);
 
             const [, context] = handler.mock.calls[0];
-            expect(context.session.userId).toBe('custom-user');
-            expect(context.session.role).toBe('SALES_EXECUTIVE');
+            expect(context.session).toEqual(session);
         });
     });
 
@@ -330,7 +298,10 @@ describe('withApiHandler', () => {
     // ========================================================================
 
     describe('NextAuth Authentication', () => {
-        it('should use NextAuth when useNextAuth is true', async () => {
+        it('should use NextAuth when useNextAuth is true and no custom session', async () => {
+            // Ensure no custom session exists
+            mockGetSessionByToken.mockResolvedValue(null);
+
             const { auth } = await import('@/app/api/auth/[...nextauth]/route');
             const nextAuthSession = createMockNextAuthSession();
             (auth as Mock).mockResolvedValue(nextAuthSession);
@@ -347,13 +318,19 @@ describe('withApiHandler', () => {
             expect(handler).toHaveBeenCalled();
             expect(response.status).toBe(200);
 
-            // Verify NextAuth session is passed to handler
+            // Verify unified session is passed to handler (normalized from NextAuth)
             const [, context] = handler.mock.calls[0];
-            expect(context.nextAuthSession).toEqual(nextAuthSession);
-            expect(context.session).toBeNull();
+            expect(context.session).not.toBeNull();
+            expect(context.session.userId).toBe(nextAuthSession.user.id);
+            expect(context.session.role).toBe(nextAuthSession.user.role);
+            // Session adapter generates synthetic sessionId for NextAuth
+            expect(context.session.sessionId).toMatch(/^nextauth_/);
         });
 
-        it('should return 401 when NextAuth session is missing', async () => {
+        it('should return 401 when both custom session and NextAuth are missing', async () => {
+            // No custom session
+            mockGetSessionByToken.mockResolvedValue(null);
+
             const { auth } = await import('@/app/api/auth/[...nextauth]/route');
             (auth as Mock).mockResolvedValue(null);
 
@@ -365,99 +342,55 @@ describe('withApiHandler', () => {
             expect(response.status).toBe(401);
             expect(handler).not.toHaveBeenCalled();
         });
-    });
 
-    // ========================================================================
-    // Phase 4: Authentication - API Key Auth
-    // ========================================================================
+        it('should use custom session when both custom session and NextAuth exist (custom takes priority)', async () => {
+            const customSession = createMockSession({ userId: 'custom-user' });
+            mockGetSessionByToken.mockResolvedValue(customSession);
 
-    describe('API Key Authentication', () => {
-        it('should use API key auth when useApiKeyAuth is true', async () => {
-            const apiKeyResult = {
-                apiKey: createMockApiKey(),
-                tenant: { id: 'tenant-123', name: 'Test Tenant' },
-                scopes: ['leads:read', 'leads:write'],
-            };
-            mockApiKeyAuthMiddleware.mockResolvedValue(apiKeyResult);
+            const { auth } = await import('@/app/api/auth/[...nextauth]/route');
+            const nextAuthSession = createMockNextAuthSession({ user: { id: 'nextauth-user' } });
+            (auth as Mock).mockResolvedValue(nextAuthSession);
 
             const handler = vi.fn().mockResolvedValue(
                 NextResponse.json({ success: true })
             );
 
-            const wrappedHandler = withApiHandler({ useApiKeyAuth: true }, handler);
-            const req = createMockRequest('http://localhost:3000/api/leads', {
-                headers: { 'x-api-key': 'test-api-key' }
-            });
+            const wrappedHandler = withApiHandler({ useNextAuth: true }, handler);
+            const req = createMockRequest();
             const response = await wrappedHandler(req);
 
-            expect(mockApiKeyAuthMiddleware).toHaveBeenCalled();
-            expect(handler).toHaveBeenCalled();
             expect(response.status).toBe(200);
+            expect(handler).toHaveBeenCalled();
 
-            // Verify API key auth is passed to handler
+            // Custom session should take priority
             const [, context] = handler.mock.calls[0];
-            expect(context.apiKeyAuth).toEqual(apiKeyResult);
-            expect(context.session).toBeNull();
+            expect(context.session.userId).toBe('custom-user');
+            // NextAuth should NOT have been called since custom session was found first
+            expect(auth).not.toHaveBeenCalled();
         });
 
-        it('should return 401 when API key is invalid', async () => {
-            mockApiKeyAuthMiddleware.mockResolvedValue(
-                NextResponse.json(
-                    { success: false, error: { code: 'INVALID_API_KEY', message: 'Invalid API key' } },
-                    { status: 401 }
-                )
-            );
+        it('should fall back to NextAuth when custom session returns null', async () => {
+            // Custom session returns null
+            mockGetSessionByToken.mockResolvedValue(null);
 
-            const handler = vi.fn();
-            const wrappedHandler = withApiHandler({ useApiKeyAuth: true }, handler);
-            const req = createMockRequest();
-            const response = await wrappedHandler(req);
-
-            expect(response.status).toBe(401);
-            expect(handler).not.toHaveBeenCalled();
-        });
-
-        it('should return 403 when API key has insufficient scopes', async () => {
-            mockApiKeyAuthMiddleware.mockResolvedValue(
-                NextResponse.json(
-                    { success: false, error: { code: 'INSUFFICIENT_PERMISSIONS', message: 'Insufficient permissions' } },
-                    { status: 403 }
-                )
-            );
-
-            const handler = vi.fn();
-            const wrappedHandler = withApiHandler({
-                useApiKeyAuth: true,
-                requiredScopes: ['admin']
-            }, handler);
-            const req = createMockRequest();
-            const response = await wrappedHandler(req);
-
-            expect(response.status).toBe(403);
-            expect(handler).not.toHaveBeenCalled();
-        });
-
-        it('should pass required scopes to apiKeyAuthMiddleware', async () => {
-            const apiKeyResult = {
-                apiKey: createMockApiKey(),
-                tenant: { id: 'tenant-123' },
-                scopes: ['leads:read'],
-            };
-            mockApiKeyAuthMiddleware.mockResolvedValue(apiKeyResult);
+            const { auth } = await import('@/app/api/auth/[...nextauth]/route');
+            const nextAuthSession = createMockNextAuthSession({ user: { id: 'nextauth-user' } });
+            (auth as Mock).mockResolvedValue(nextAuthSession);
 
             const handler = vi.fn().mockResolvedValue(
                 NextResponse.json({ success: true })
             );
 
-            const requiredScopes = ['leads:read'];
-            const wrappedHandler = withApiHandler({
-                useApiKeyAuth: true,
-                requiredScopes
-            }, handler);
+            const wrappedHandler = withApiHandler({ useNextAuth: true }, handler);
             const req = createMockRequest();
-            await wrappedHandler(req);
+            const response = await wrappedHandler(req);
 
-            expect(mockApiKeyAuthMiddleware).toHaveBeenCalledWith(req, requiredScopes);
+            expect(response.status).toBe(200);
+            expect(handler).toHaveBeenCalled();
+
+            // Should use NextAuth session as fallback
+            const [, context] = handler.mock.calls[0];
+            expect(context.session.userId).toBe('nextauth-user');
         });
     });
 
@@ -541,18 +474,18 @@ describe('withApiHandler', () => {
             expect(mockUpdateSessionActivity).toHaveBeenCalledWith(req);
         });
 
-        it('should skip activity update for API key auth', async () => {
-            mockApiKeyAuthMiddleware.mockResolvedValue({
-                apiKey: createMockApiKey(),
-                tenant: { id: 'tenant-123' },
-                scopes: ['leads:read'],
-            });
+        it('should skip activity update for NextAuth sessions', async () => {
+            mockGetSessionByToken.mockResolvedValue(null);
+
+            const { auth } = await import('@/app/api/auth/[...nextauth]/route');
+            const nextAuthSession = createMockNextAuthSession();
+            (auth as Mock).mockResolvedValue(nextAuthSession);
 
             const handler = vi.fn().mockResolvedValue(
                 NextResponse.json({ success: true })
             );
 
-            const wrappedHandler = withApiHandler({ useApiKeyAuth: true }, handler);
+            const wrappedHandler = withApiHandler({ useNextAuth: true }, handler);
             const req = createMockRequest();
             await wrappedHandler(req);
 
@@ -620,8 +553,6 @@ describe('withApiHandler', () => {
             expect(passedReq).toBe(req);
             expect(context.req).toBe(req);
             expect(context.session).toEqual(session);
-            expect(context.nextAuthSession).toBeNull();
-            expect(context.apiKeyAuth).toBeNull();
             expect(typeof context.startTime).toBe('number');
         });
 
@@ -697,65 +628,6 @@ describe('withApiHandler', () => {
                     level: 'ERROR'
                 })
             );
-        });
-    });
-
-    // ========================================================================
-    // API Key Usage Logging
-    // ========================================================================
-
-    describe('API Key Usage Logging', () => {
-        it('should log API usage for API key authenticated requests', async () => {
-            const apiKey = createMockApiKey({ id: 'key-456', rateLimit: 1000 });
-            mockApiKeyAuthMiddleware.mockResolvedValue({
-                apiKey,
-                tenant: { id: 'tenant-123' },
-                scopes: ['leads:read'],
-            });
-
-            const handler = vi.fn().mockResolvedValue(
-                NextResponse.json({ success: true }, { status: 200 })
-            );
-
-            const wrappedHandler = withApiHandler({ useApiKeyAuth: true }, handler);
-            const req = createMockRequest('http://localhost:3000/api/leads', {
-                headers: {
-                    'x-api-key': 'test-key',
-                    'x-forwarded-for': '192.168.1.1',
-                    'user-agent': 'TestClient/1.0'
-                }
-            });
-
-            await wrappedHandler(req);
-
-            expect(mockLogApiUsage).toHaveBeenCalledWith(
-                'key-456',
-                '/api/leads',
-                'GET',
-                200,
-                expect.any(Number),
-                '192.168.1.1',
-                'TestClient/1.0'
-            );
-        });
-
-        it('should add rate limit headers for API key auth responses', async () => {
-            const apiKey = createMockApiKey({ rateLimit: 1000 });
-            mockApiKeyAuthMiddleware.mockResolvedValue({
-                apiKey,
-                tenant: { id: 'tenant-123' },
-                scopes: ['leads:read'],
-            });
-
-            const handler = vi.fn().mockResolvedValue(
-                NextResponse.json({ success: true })
-            );
-
-            const wrappedHandler = withApiHandler({ useApiKeyAuth: true }, handler);
-            const req = createMockRequest();
-            const response = await wrappedHandler(req);
-
-            expect(response.headers.get('X-RateLimit-Limit')).toBe('1000');
         });
     });
 

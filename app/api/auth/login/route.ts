@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { verifyPassword, createSession, isAccountLocked, recordFailedLoginAttempt, resetFailedLoginAttempts } from '@/lib/auth';
 import { calculateSessionExpiry, getSessionCookieOptions } from '@/lib/authCookies';
@@ -15,8 +15,10 @@ const loginSchema = z.object({
     rememberMe: z.boolean().optional()
 });
 
-export const POST = withApiHandler({ authRequired: false, rateLimit: 10 }, async (context: ApiContext) => {
-    const body = await context.req.json();
+// skipTenantCheck: true - Login happens before tenant context is established
+export const POST = withApiHandler({ authRequired: false, rateLimit: 10, skipTenantCheck: true }, async (req: NextRequest, _context: ApiContext) => {
+    console.log('[LOGIN API] Request received at', new Date().toISOString());
+    const body = await req.json();
     const validationResult = loginSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -39,8 +41,8 @@ export const POST = withApiHandler({ authRequired: false, rateLimit: 10 }, async
         }
     });
 
-    const ipAddress = context.req.headers.get('x-forwarded-for') || undefined;
-    const userAgent = context.req.headers.get('user-agent') || undefined;
+    const ipAddress = req.headers.get('x-forwarded-for') || undefined;
+    const userAgent = req.headers.get('user-agent') || undefined;
 
     if (!user) {
         // Log failed attempt (user not found)

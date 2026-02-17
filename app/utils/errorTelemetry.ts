@@ -32,8 +32,8 @@ const dbPromise = typeof window !== 'undefined'
             const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
             store.createIndex('by-timestamp', 'timestamp');
         },
-    })
-    : Promise.reject('SSR environment'); // No DB on server
+    }).catch(() => null) // Handle any DB init errors gracefully
+    : Promise.resolve(null); // Return null on SSR instead of rejecting
 
 /**
  * Capture an error with context
@@ -54,6 +54,7 @@ export async function captureError(error: unknown, context?: Partial<ErrorContex
         };
 
         const db = await dbPromise;
+        if (!db) return; // No DB available
         await db.add(STORE_NAME, event);
 
         // Prune old errors
@@ -84,6 +85,7 @@ export async function captureError(error: unknown, context?: Partial<ErrorContex
 async function syncErrors() {
     try {
         const db = await dbPromise;
+        if (!db) return; // No DB available
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
 
@@ -125,6 +127,7 @@ async function syncErrors() {
 export async function getErrorStats() {
     try {
         const db = await dbPromise;
+        if (!db) return { total: 0, byType: {}, byFingerprint: {} }; // No DB available
         const events = await db.getAll(STORE_NAME);
 
         const total = events.length;
@@ -151,6 +154,7 @@ export async function getErrorStats() {
 export async function exportErrorReport() {
     try {
         const db = await dbPromise;
+        if (!db) return '[]'; // No DB available
         const events = await db.getAll(STORE_NAME);
         return JSON.stringify(events, null, 2);
     } catch {

@@ -5,13 +5,25 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { requirePermissions } from '@/lib/middleware/permissions';
 
 /**
  * GET /api/bulk/export
  * Bulk data export with format options
+ * 
+ * Permission enforcement is entity-specific:
+ * - entityType=leads requires LEADS_EXPORT
+ * - entityType=cases requires CASES_EXPORT
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        // Note: We do NOT use declarative permissions here because
+        // the required permission depends on the entityType parameter.
+        // Entity-specific permission check is done inside the handler.
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -26,6 +38,33 @@ export const GET = withApiHandler(
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const fields = searchParams.get('fields')?.split(',');
+
+        // Validate entityType
+        if (!['leads', 'cases'].includes(entityType)) {
+            return NextResponse.json(
+                { success: false, message: 'entityType must be "leads" or "cases"' },
+                { status: 400 }
+            );
+        }
+
+        // Entity-specific permission check
+        const requiredPermission = entityType === 'leads'
+            ? PERMISSIONS.LEADS_EXPORT
+            : PERMISSIONS.CASES_EXPORT;
+
+        const permissionError = await requirePermissions(
+            [requiredPermission],
+            true,
+            {
+                userId: session.userId,
+                tenantId: session.tenantId,
+                endpoint: '/api/bulk/export'
+            }
+        )(req);
+
+        if (permissionError) {
+            return permissionError;
+        }
 
         if (!['json', 'csv', 'xlsx'].includes(format)) {
             return NextResponse.json(

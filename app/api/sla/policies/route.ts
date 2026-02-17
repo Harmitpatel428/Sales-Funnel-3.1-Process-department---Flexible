@@ -1,7 +1,3 @@
-/**
- * SLA Policies API Routes
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { validateSLAPolicy } from '@/lib/validation/workflow-schemas';
@@ -11,13 +7,18 @@ import {
     unauthorizedResponse,
     validationErrorResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/sla/policies
  * List SLA policies for tenant
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SLA_VIEW]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -35,7 +36,7 @@ export const GET = withApiHandler(
             orderBy: { createdAt: 'desc' }
         });
 
-        return NextResponse.json({ policies });
+        return NextResponse.json({ success: true, data: policies });
     }
 );
 
@@ -44,7 +45,11 @@ export const GET = withApiHandler(
  * Create a new SLA policy
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SLA_MANAGE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -57,7 +62,7 @@ export const POST = withApiHandler(
 
         if (!validation.success) {
             return validationErrorResponse(
-                validation.error.errors.map(e => ({
+                validation.error.issues.map(e => ({
                     field: e.path.join('.'),
                     message: e.message,
                     code: e.code
@@ -73,6 +78,6 @@ export const POST = withApiHandler(
             }
         });
 
-        return NextResponse.json(policy, { status: 201 });
+        return NextResponse.json({ success: true, data: policy }, { status: 201 });
     }
 );

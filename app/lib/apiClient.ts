@@ -152,6 +152,8 @@ async function baseFetch<T>(
                 },
                 body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
                 signal: controller.signal,
+                credentials: 'include', // Ensure cookies are sent with all API requests
+                cache: 'no-store' // Prevent browser from caching API responses
             });
 
             clearTimeout(timeoutId);

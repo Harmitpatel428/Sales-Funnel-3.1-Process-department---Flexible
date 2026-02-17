@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Session } from "next-auth";
 
 import { isDatabaseHealthy } from "@/lib/db";
 import { rateLimitMiddleware } from "@/lib/middleware/rate-limiter";
-import { getSessionByToken } from "@/lib/auth";
-import { SESSION_COOKIE_NAME } from "@/lib/authConfig";
 import { logRequest } from "@/lib/middleware/request-logger";
 import { updateSessionActivity } from "@/lib/middleware/session-activity";
 import { handleApiError } from "@/lib/middleware/error-handler";
-import { apiKeyAuthMiddleware, ApiKeyAuthResult } from "@/lib/middleware/api-key-auth";
+import { apiKeyAuthMiddleware } from "@/lib/middleware/api-key-auth";
 import { logApiUsage } from "@/lib/api-keys";
+import { checkApiKeyRateLimit, addRateLimitHeaders } from "@/lib/api-rate-limiter";
+import { getSessionByToken } from "@/lib/auth";
+import { SESSION_COOKIE_NAME } from "@/lib/authConfig";
 
 import { unauthorizedResponse, serviceUnavailableResponse } from "./response-helpers";
-import { ApiHandler, ApiHandlerOptions, ApiContext, CustomSessionData, ApiKeyAuthContext } from "./types";
+import { ApiHandler, ApiHandlerOptions, ApiContext, CustomSessionData } from "./types";
 
 // Re-exports
 export * from "./response-helpers";
@@ -24,28 +24,38 @@ const DEFAULT_OPTIONS: ApiHandlerOptions = {
     authRequired: true,
     checkDbHealth: true,
     rateLimit: 100,
-    useNextAuth: false,
-    useApiKeyAuth: false,
     logRequest: true,
     updateSessionActivity: true,
+    useApiKeyAuth: false,
+    requiredScopes: undefined,
 };
 
 /**
- * Helper to get custom session from cookies
+ * Get the custom session token from cookies.
  */
-async function getCustomSession(req: NextRequest): Promise<CustomSessionData | null> {
+async function getSessionTokenFromCookie(): Promise<string | null> {
     const cookieStore = await cookies();
-    const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-    if (!sessionToken) return null;
-    return getSessionByToken(sessionToken);
+    const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    return token || null;
 }
 
 /**
- * Helper to get NextAuth session
+ * Validate response format (fire-and-forget).
+ * Logs a warning if JSON responses are missing the 'success' field.
  */
-async function getNextAuthSession(): Promise<Session | null> {
-    const { auth } = await import("@/app/api/auth/[...nextauth]/route");
-    return await auth();
+async function validateResponseFormat(response: NextResponse): Promise<void> {
+    try {
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+            const clone = response.clone();
+            const body = await clone.json();
+            if (typeof body === 'object' && body !== null && !('success' in body)) {
+                console.warn('[API] Response missing "success" field:', Object.keys(body).slice(0, 5));
+            }
+        }
+    } catch {
+        // Ignore validation errors - response may not be JSON
+    }
 }
 
 /**
@@ -54,18 +64,16 @@ async function getNextAuthSession(): Promise<Session | null> {
 function buildApiContext(
     req: NextRequest,
     session: CustomSessionData | null,
-    nextAuthSession: Session | null,
-    apiKeyAuth: ApiKeyAuthContext | null,
     startTime: number,
-    params?: any
+    params?: any,
+    apiKeyAuth?: ApiContext['apiKeyAuth']
 ): ApiContext {
     return {
         req,
         session,
-        nextAuthSession,
-        apiKeyAuth,
         startTime,
         params,
+        apiKeyAuth: apiKeyAuth ?? null,
     };
 }
 
@@ -82,8 +90,8 @@ export function withApiHandler(
     return async (req: NextRequest, ...args: any[]) => {
         const startTime = Date.now();
         let session: CustomSessionData | null = null;
-        let nextAuthSession: Session | null = null;
-        let apiKeyAuth: ApiKeyAuthContext | null = null;
+        let apiKeyAuth: ApiContext['apiKeyAuth'] = null;
+        let rateLimitResult: { allowed: boolean; limit: number; remaining: number; reset: number; retryAfter?: number } | null = null;
 
         // Extract route context (params)
         const routeContext = args[0] || {};
@@ -103,44 +111,90 @@ export function withApiHandler(
                 }
             }
 
-            // Phase 3: Rate Limiting
-            if (config.rateLimit !== false) {
+            // Phase 3: Rate Limiting (for session-based auth)
+            if (config.rateLimit !== false && !config.useApiKeyAuth) {
                 const rateLimitError = await rateLimitMiddleware(req, config.rateLimit);
                 if (rateLimitError) return rateLimitError;
             }
 
             // Phase 4: Authentication
-            if (config.authRequired) {
-                if (config.useApiKeyAuth) {
-                    // API Key Auth Path
-                    const authResult = await apiKeyAuthMiddleware(req, config.requiredScopes);
-                    if (authResult instanceof NextResponse) {
-                        return authResult; // Auth failed
-                    }
-                    apiKeyAuth = authResult as ApiKeyAuthContext;
-                } else if (config.useNextAuth) {
-                    // NextAuth v5 Path
-                    nextAuthSession = await getNextAuthSession();
-                    if (!nextAuthSession) {
-                        return unauthorizedResponse();
-                    }
-                } else {
-                    // Custom Session Auth Path (Default)
-                    session = await getCustomSession(req);
-                    if (!session) {
-                        return unauthorizedResponse();
-                    }
+            if (config.useApiKeyAuth) {
+                // API Key Authentication Path
+                const apiKeyResult = await apiKeyAuthMiddleware(req, config.requiredScopes);
+
+                // If apiKeyResult is a NextResponse, it's an error response
+                if (apiKeyResult instanceof NextResponse) {
+                    return apiKeyResult;
+                }
+
+                // Otherwise, it's the successful auth data
+                apiKeyAuth = apiKeyResult;
+
+                // Check API key specific rate limit
+                const rlResult = await checkApiKeyRateLimit(apiKeyAuth.apiKey.id, apiKeyAuth.apiKey.rateLimit);
+                if (!rlResult.allowed) {
+                    return NextResponse.json(
+                        { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Rate limit exceeded', retryAfter: rlResult.retryAfter } },
+                        { status: 429 }
+                    );
+                }
+                rateLimitResult = rlResult;
+            } else if (config.authRequired) {
+                // Session Authentication Path (custom session auth only)
+                const token = await getSessionTokenFromCookie();
+                if (token) {
+                    session = await getSessionByToken(token);
+                }
+                if (!session) {
+                    return unauthorizedResponse();
+                }
+            }
+
+            // Phase 4.5: Permission Check (Declarative)
+            if (config.permissions && config.permissions.length > 0) {
+                const { requirePermissions } = await import("@/lib/middleware/permissions");
+
+                // For API Key auth, permissions are handled by requiredScopes in Phase 4.
+                // This declarative check applies to session-based auth.
+                if (session) {
+                    const permissionError = await requirePermissions(
+                        config.permissions as any,
+                        config.requireAll ?? true,
+                        {
+                            userId: session.userId,
+                            tenantId: session.tenantId,
+                            endpoint: pathname
+                        }
+                    )(req);
+
+                    if (permissionError) return permissionError;
+                }
+            }
+
+            // Phase 4.6: Tenant Context Validation
+            // Skip for routes that explicitly opt out (OAuth, auth routes)
+            if (!config.skipTenantCheck && config.authRequired && !config.useApiKeyAuth) {
+                if (session && !session.tenantId) {
+                    console.warn(`[API] Tenant context missing for authenticated route: ${pathname}`);
+                    return NextResponse.json(
+                        {
+                            success: false,
+                            error: 'FORBIDDEN',
+                            message: 'Tenant context is required for this operation'
+                        },
+                        { status: 403 }
+                    );
                 }
             }
 
             // Phase 5: Request Logging
             if (config.logRequest) {
-                // Pass the appropriate session data (preferring custom session if both exist, which is unlikely)
-                logRequest(req, session || (nextAuthSession?.user as any) || null);
+                // Pass the unified session data directly
+                logRequest(req, session || null);
             }
 
-            // Phase 6: Session Activity Update
-            if (config.updateSessionActivity && session && !config.useNextAuth && !config.useApiKeyAuth) {
+            // Phase 6: Session Activity Update (only for session-based auth)
+            if (config.updateSessionActivity && session && !config.useApiKeyAuth) {
                 // Fire-and-forget
                 updateSessionActivity(req).catch((err) => {
                     console.error("[SessionActivity] Failed to update activity:", err);
@@ -148,38 +202,54 @@ export function withApiHandler(
             }
 
             // Phase 7: Handler Execution
-            const context = buildApiContext(req, session, nextAuthSession, apiKeyAuth, startTime, params);
+            const context = buildApiContext(req, session, startTime, params, apiKeyAuth);
+            // Handler receives (req, context) for backward compatibility
             const response = await handler(req, context);
 
-            // Phase 9: Response Finalization (Log Success)
-            // Note: We log success here. If handler throws, it goes to catch block.
-            if (config.logRequest) {
-                logRequest(req, session || (nextAuthSession?.user as any) || null, { startTime, status: response.status });
+            // Phase 8: Response Finalization
+            let finalResponse = response;
+
+            // Add rate limit headers for API key auth
+            if (config.useApiKeyAuth && apiKeyAuth && rateLimitResult) {
+                finalResponse = addRateLimitHeaders(response, rateLimitResult);
             }
 
-            // Log API key usage if applicable
-            if (apiKeyAuth) {
+            // Validate response format (fire-and-forget)
+            validateResponseFormat(finalResponse).catch(() => {
+                // Ignore validation errors
+            });
+
+            // Log success
+            if (config.logRequest) {
+                logRequest(req, session || null, { startTime, status: finalResponse.status });
+            }
+
+            // Log API usage for API key auth (fire-and-forget)
+            if (config.useApiKeyAuth && apiKeyAuth) {
+                const { pathname } = new URL(req.url);
                 const responseTime = Date.now() - startTime;
+                const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+                const userAgent = req.headers.get('user-agent') || 'unknown';
+
                 logApiUsage(
                     apiKeyAuth.apiKey.id,
-                    req.nextUrl.pathname,
+                    pathname,
                     req.method,
-                    response.status,
+                    finalResponse.status,
                     responseTime,
-                    req.headers.get('x-forwarded-for') || undefined,
-                    req.headers.get('user-agent') || undefined
-                ).catch(console.error);
-
-                // Add rate-limit headers for API key authenticated requests
-                response.headers.set('X-RateLimit-Limit', String(apiKeyAuth.apiKey.rateLimit));
+                    ipAddress,
+                    userAgent
+                ).catch((err) => {
+                    console.error("[ApiUsage] Failed to log API usage:", err);
+                });
             }
 
-            return response;
+            return finalResponse;
 
         } catch (error) {
-            // Phase 8: Error Handling
+            // Phase 9: Error Handling
             if (config.logRequest) {
-                logRequest(req, session || (nextAuthSession?.user as any) || null, {
+                logRequest(req, session || null, {
                     error: error instanceof Error ? error.message : "Unknown error",
                     level: 'ERROR'
                 });

@@ -13,6 +13,7 @@ import { extractText, isOcrSupported } from '@/lib/ocr';
 import crypto from 'crypto';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 // GET /api/documents/[id]/versions
 const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
@@ -171,5 +172,17 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     return NextResponse.json({ success: true, version: nextVersionNum });
 };
 
-export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, getHandler);
-export const POST = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, postHandler);
+export const GET = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 100,
+    permissions: [PERMISSIONS.DOCUMENTS_VIEW_ALL, PERMISSIONS.DOCUMENTS_VIEW_CASE],
+    requireAll: false
+}, getHandler);
+
+export const POST = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 30,
+    permissions: [PERMISSIONS.DOCUMENTS_UPLOAD]
+}, postHandler);

@@ -1,10 +1,3 @@
-/**
- * Retention Policy Admin API
- * GET /api/admin/retention-policies - List policies
- * POST /api/admin/retention-policies - Create/Update policy
- * DELETE /api/admin/retention-policies - Delete policy
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
@@ -12,9 +5,9 @@ import {
     withApiHandler,
     ApiContext,
     unauthorizedResponse,
-    forbiddenResponse,
     validationErrorResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 const RetentionPolicySchema = z.object({
     documentType: z.string().min(1),
@@ -24,33 +17,47 @@ const RetentionPolicySchema = z.object({
 });
 
 /**
+ * Helper to ensure tenantId is resolved
+ */
+async function resolveTenantId(session: { userId: string, tenantId?: string }): Promise<string | null> {
+    if (session.tenantId) return session.tenantId;
+
+    const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { tenantId: true }
+    });
+
+    return user?.tenantId || null;
+}
+
+/**
  * GET /api/admin/retention-policies
  * List policies (ADMIN only, uses NextAuth)
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (_req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession } = context;
+        const { session } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session?.userId) {
             return unauthorizedResponse();
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: nextAuthSession.user.id },
-            select: { role: true, tenantId: true }
-        });
-
-        if (!user || user.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
+        const tenantId = await resolveTenantId(session);
+        if (!tenantId) {
+            return NextResponse.json({ success: false, error: 'FORBIDDEN', message: 'Tenant context could not be resolved' }, { status: 403 });
         }
 
         const policies = await prisma.retentionPolicy.findMany({
-            where: { tenantId: user.tenantId },
+            where: { tenantId },
             orderBy: { documentType: 'asc' }
         });
 
-        return NextResponse.json({ policies });
+        return NextResponse.json({ success: true, data: policies });
     }
 );
 
@@ -59,21 +66,21 @@ export const GET = withApiHandler(
  * Create/Update policy (ADMIN only, uses NextAuth)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession } = context;
+        const { session } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session?.userId) {
             return unauthorizedResponse();
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: nextAuthSession.user.id },
-            select: { role: true, tenantId: true }
-        });
-
-        if (!user || user.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
+        const tenantId = await resolveTenantId(session);
+        if (!tenantId) {
+            return NextResponse.json({ success: false, error: 'FORBIDDEN', message: 'Tenant context could not be resolved' }, { status: 403 });
         }
 
         const body = await req.json();
@@ -81,7 +88,7 @@ export const POST = withApiHandler(
 
         if (!result.success) {
             return validationErrorResponse(
-                result.error.errors.map(e => ({
+                result.error.issues.map(e => ({
                     field: e.path.join('.'),
                     message: e.message,
                     code: e.code
@@ -95,7 +102,7 @@ export const POST = withApiHandler(
         const policy = await prisma.retentionPolicy.upsert({
             where: {
                 tenantId_documentType: {
-                    tenantId: user.tenantId,
+                    tenantId,
                     documentType: data.documentType
                 }
             },
@@ -106,16 +113,16 @@ export const POST = withApiHandler(
                 updatedAt: new Date()
             },
             create: {
-                tenantId: user.tenantId,
+                tenantId,
                 documentType: data.documentType,
                 retentionPeriod: data.retentionPeriod,
                 retentionUnit: data.retentionUnit,
                 autoDelete: data.autoDelete,
-                createdById: nextAuthSession.user.id
+                createdById: session.userId
             }
         });
 
-        return NextResponse.json({ policy });
+        return NextResponse.json({ success: true, data: policy });
     }
 );
 
@@ -124,21 +131,21 @@ export const POST = withApiHandler(
  * Delete policy (ADMIN only, uses NextAuth)
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession } = context;
+        const { session } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session?.userId) {
             return unauthorizedResponse();
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: nextAuthSession.user.id },
-            select: { role: true, tenantId: true }
-        });
-
-        if (!user || user.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
+        const tenantId = await resolveTenantId(session);
+        if (!tenantId) {
+            return NextResponse.json({ success: false, error: 'FORBIDDEN', message: 'Tenant context could not be resolved' }, { status: 403 });
         }
 
         const searchParams = req.nextUrl.searchParams;
@@ -153,7 +160,7 @@ export const DELETE = withApiHandler(
         await prisma.retentionPolicy.delete({
             where: {
                 tenantId_documentType: {
-                    tenantId: user.tenantId,
+                    tenantId,
                     documentType
                 }
             }

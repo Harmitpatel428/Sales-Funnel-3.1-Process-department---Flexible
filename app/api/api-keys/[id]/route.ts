@@ -7,13 +7,18 @@ import {
     unauthorizedResponse,
     notFoundResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/api-keys/[id]
  * Get a specific API key
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_VIEW]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -76,7 +81,11 @@ export const GET = withApiHandler(
  * Update an API key
  */
 export const PATCH = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -184,7 +193,11 @@ export const PATCH = withApiHandler(
  * Revoke/delete an API key
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 

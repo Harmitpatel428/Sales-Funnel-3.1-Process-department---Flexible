@@ -12,16 +12,16 @@ import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 
+import { PERMISSIONS } from '@/app/types/permissions';
+
 const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
     const { session } = context;
-    if (!session) return unauthorizedResponse();
+    // session check removed
 
-    if (!['ADMIN', 'PROCESS_MANAGER'].includes(session.role)) {
-        return forbiddenResponse();
-    }
+    // Role check removed - handled by declarative permissions (CASES_ASSIGN)
 
     // Check idempotency
-    const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+    const idempotencyError = await idempotencyMiddleware(req, session!.tenantId);
     if (idempotencyError) return idempotencyError;
 
     const body = await req.json();
@@ -33,9 +33,9 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
 
     const { caseIds, userId, roleId } = validationResult.data;
 
-    return await withTenant(session.tenantId, async () => {
+    return await withTenant(session!.tenantId, async () => {
         const targetUser = await prisma.user.findFirst({
-            where: { id: userId, tenantId: session.tenantId }
+            where: { id: userId, tenantId: session!.tenantId }
         });
 
         if (!targetUser) return validationErrorResponse(['User not found']);
@@ -44,7 +44,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
         const oldCases = await prisma.case.findMany({
             where: {
                 caseId: { in: caseIds },
-                tenantId: session.tenantId
+                tenantId: session!.tenantId
             }
         });
 
@@ -54,7 +54,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
             const updateResult = await tx.case.updateMany({
                 where: {
                     caseId: { in: caseIds },
-                    tenantId: session.tenantId
+                    tenantId: session!.tenantId
                 },
                 data: {
                     assignedProcessUserId: userId,
@@ -70,8 +70,8 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
                     actionType: 'CASE_BULK_ASSIGNED',
                     entityType: 'case',
                     description: `Bulk assigned ${updateResult.count} cases to ${targetUser.name}`,
-                    performedById: session.userId,
-                    tenantId: session.tenantId,
+                    performedById: session!.userId,
+                    tenantId: session!.tenantId,
                     metadata: JSON.stringify({ caseIds, assignedTo: userId })
                 }
             });
@@ -80,12 +80,12 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
         // WebSocket Broadcast and Workflows
         try {
             const updatedCases = await prisma.case.findMany({
-                where: { caseId: { in: caseIds }, tenantId: session.tenantId }
+                where: { caseId: { in: caseIds }, tenantId: session!.tenantId }
             });
 
             for (const c of updatedCases) {
                 // WebSocket
-                emitCaseUpdated(session.tenantId, c);
+                emitCaseUpdated(session!.tenantId, c);
 
                 // Workflow
                 const oldCase = oldCases.find(oc => oc.caseId === c.caseId);
@@ -100,8 +100,8 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
                         'UPDATE',
                         oldData,
                         c as unknown as Record<string, unknown>,
-                        session.tenantId,
-                        session.userId
+                        session!.tenantId,
+                        session!.userId
                     );
                 } catch (wfError) {
                     console.error(`[Workflows] Bulk assign trigger failed for case ${c.caseId}:`, wfError);
@@ -117,4 +117,9 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     });
 };
 
-export const POST = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 10 }, postHandler);
+export const POST = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 10,
+    permissions: [PERMISSIONS.CASES_ASSIGN]
+}, postHandler);

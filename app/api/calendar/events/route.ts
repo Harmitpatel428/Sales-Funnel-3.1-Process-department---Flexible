@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import ical from 'ical-generator';
 import { z } from 'zod';
+import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
     ApiContext,
@@ -25,11 +26,16 @@ const createEventSchema = z.object({
  * List calendar events
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.CALENDAR_VIEW, PERMISSIONS.CALENDAR_VIEW_OWN],
+        requireAll: false
+    },
     async (req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession } = context;
+        const { session } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session) {
             return unauthorizedResponse();
         }
 
@@ -39,12 +45,7 @@ export const GET = withApiHandler(
         const leadId = searchParams.get('leadId');
         const caseId = searchParams.get('caseId');
 
-        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
-        if (!user) {
-            return unauthorizedResponse();
-        }
-
-        const where: any = { tenantId: user.tenantId };
+        const where: any = { tenantId: session.tenantId };
 
         if (startStr && endStr) {
             where.startTime = { gte: new Date(startStr), lte: new Date(endStr) };
@@ -58,7 +59,7 @@ export const GET = withApiHandler(
             include: { organizer: { select: { name: true, email: true } } }
         });
 
-        return NextResponse.json(events);
+        return NextResponse.json({ success: true, data: { events } });
     }
 );
 
@@ -67,11 +68,15 @@ export const GET = withApiHandler(
  * Create a calendar event
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.CALENDAR_CREATE]
+    },
     async (req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession } = context;
+        const { session } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session) {
             return unauthorizedResponse();
         }
 
@@ -89,19 +94,14 @@ export const POST = withApiHandler(
         }
 
         const data = result.data;
-        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
-
-        if (!user) {
-            return unauthorizedResponse();
-        }
 
         const event = await prisma.calendarEvent.create({
             data: {
                 title: data.title,
                 startTime: new Date(data.startTime),
                 endTime: new Date(data.endTime),
-                organizerId: nextAuthSession.user.id as string,
-                tenantId: user.tenantId,
+                organizerId: session.userId,
+                tenantId: session.tenantId!,
                 leadId: data.leadId,
                 caseId: data.caseId,
                 description: data.description,
@@ -115,6 +115,6 @@ export const POST = withApiHandler(
         // calendar.createEvent({ start: event.startTime, end: event.endTime, summary: event.title });
         // In real app, we'd email this ical content or sync to provider.
 
-        return NextResponse.json(event);
+        return NextResponse.json({ success: true, data: { event } }, { status: 201 });
     }
 );

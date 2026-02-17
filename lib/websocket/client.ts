@@ -26,10 +26,13 @@ export interface WebSocketMessage {
 /**
  * Hook for managing WebSocket connection
  */
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 export function useWebSocket(tenantId?: string, options: { onMessage?: (msg: any) => void } = {}) {
     const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef<WebSocket | null>(null);
     const lastSequenceRef = useRef<number>(0);
+    const reconnectAttemptsRef = useRef<number>(0);
     const queryClient = useQueryClient();
     const optionsRef = useRef(options);
     optionsRef.current = options;
@@ -37,57 +40,81 @@ export function useWebSocket(tenantId?: string, options: { onMessage?: (msg: any
     const connect = useCallback(() => {
         if (!tenantId || socketRef.current?.readyState === WebSocket.OPEN) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
+        // Don't try to connect if we've failed too many times
+        if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+            console.warn('[WebSocket] Max reconnection attempts reached, stopping reconnection');
+            return;
+        }
 
-        socket.onopen = () => {
-            setIsConnected(true);
-            // Sync missed events
-            socket.send(JSON.stringify({
-                action: 'sync',
-                lastEventId: lastSequenceRef.current,
-            }));
-        };
+        try {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
 
-        socket.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
+            socket.onopen = () => {
+                setIsConnected(true);
+                reconnectAttemptsRef.current = 0; // Reset on successful connection
+                // Sync missed events
+                socket.send(JSON.stringify({
+                    action: 'sync',
+                    lastEventId: lastSequenceRef.current,
+                }));
+            };
 
-                if (message.type === 'sync_response') {
-                    // Process missed events
-                    for (const ev of (message.events || [])) {
-                        if (!isDuplicate(ev.id)) {
-                            handleMessage(ev, queryClient);
-                            optionsRef.current.onMessage?.(ev);
-                            if (ev.sequenceNumber > lastSequenceRef.current) {
-                                lastSequenceRef.current = ev.sequenceNumber;
+            socket.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+
+                    if (message.type === 'sync_response') {
+                        // Process missed events
+                        for (const ev of (message.events || [])) {
+                            if (!isDuplicate(ev.id)) {
+                                handleMessage(ev, queryClient);
+                                optionsRef.current.onMessage?.(ev);
+                                if (ev.sequenceNumber > lastSequenceRef.current) {
+                                    lastSequenceRef.current = ev.sequenceNumber;
+                                }
                             }
                         }
+                    } else if (message.id && !isDuplicate(message.id)) {
+                        handleMessage(message, queryClient);
+                        optionsRef.current.onMessage?.(message);
+                        if (message.sequenceNumber > lastSequenceRef.current) {
+                            lastSequenceRef.current = message.sequenceNumber;
+                        }
+                    } else if (message.type === 'ping') {
+                        socket.send(JSON.stringify({ type: 'pong', lastEventId: lastSequenceRef.current }));
+                    } else {
+                        // Other messages like presence
+                        optionsRef.current.onMessage?.(message);
                     }
-                } else if (message.id && !isDuplicate(message.id)) {
-                    handleMessage(message, queryClient);
-                    optionsRef.current.onMessage?.(message);
-                    if (message.sequenceNumber > lastSequenceRef.current) {
-                        lastSequenceRef.current = message.sequenceNumber;
-                    }
-                } else if (message.type === 'ping') {
-                    socket.send(JSON.stringify({ type: 'pong', lastEventId: lastSequenceRef.current }));
-                } else {
-                    // Other messages like presence
-                    optionsRef.current.onMessage?.(message);
+                } catch (error) {
+                    console.error('WebSocket message parsing error:', error);
                 }
-            } catch (error) {
-                console.error('WebSocket message parsing error:', error);
-            }
-        };
+            };
 
-        socket.onclose = () => {
-            setIsConnected(false);
-            // Reconnect after 3 seconds
-            setTimeout(connect, 3000);
-        };
+            socket.onclose = (event) => {
+                setIsConnected(false);
+                // Only reconnect if it wasn't a clean close and we haven't exceeded attempts
+                if (!event.wasClean && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttemptsRef.current++;
+                    const delay = Math.min(3000 * reconnectAttemptsRef.current, 30000); // Exponential backoff, max 30s
+                    setTimeout(connect, delay);
+                }
+            };
 
-        socketRef.current = socket;
+            socket.onerror = (error) => {
+                // Log once and stop spamming
+                if (reconnectAttemptsRef.current === 0) {
+                    console.warn('[WebSocket] Connection failed. Real-time updates may be unavailable.');
+                }
+                // Error will trigger onclose, so reconnection is handled there
+            };
+
+            socketRef.current = socket;
+        } catch (error) {
+            console.warn('[WebSocket] Failed to create connection:', error);
+            reconnectAttemptsRef.current = MAX_RECONNECT_ATTEMPTS; // Stop further attempts
+        }
     }, [tenantId, queryClient]);
 
     useEffect(() => {

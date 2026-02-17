@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import { getStorageProvider } from '@/lib/storage';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
   const { session } = context;
@@ -71,7 +72,7 @@ const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
     });
 
     // Return file stream
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(fileBuffer as any, {
       headers: {
         'Content-Type': document.mimeType,
         'Content-Disposition': `attachment; filename="${document.fileName}"`,
@@ -84,4 +85,9 @@ const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
   }
 };
 
-export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 50 }, getHandler);
+export const GET = withApiHandler({
+  authRequired: true,
+  checkDbHealth: true,
+  rateLimit: 50,
+  permissions: [PERMISSIONS.DOCUMENTS_DOWNLOAD]
+}, getHandler);

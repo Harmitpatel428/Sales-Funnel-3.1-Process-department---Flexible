@@ -4,17 +4,21 @@ import {
     withApiHandler,
     ApiContext,
     unauthorizedResponse,
-    forbiddenResponse,
     notFoundResponse,
     validationErrorResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/admin/sso
  * List SSO providers (ADMIN only)
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_SSO]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -22,15 +26,11 @@ export const GET = withApiHandler(
             return unauthorizedResponse();
         }
 
-        if (session.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
-        }
-
-        const providers = await prisma.sSOProvider.findMany({
+        const providers = await prisma.sso_providers.findMany({
             where: { tenantId: session.tenantId },
         });
 
-        return NextResponse.json(providers);
+        return NextResponse.json({ success: true, data: providers });
     }
 );
 
@@ -39,16 +39,16 @@ export const GET = withApiHandler(
  * Create SSO provider (ADMIN only)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_SSO]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse();
-        }
-
-        if (session.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
         }
 
         const data = await req.json();
@@ -65,7 +65,7 @@ export const POST = withApiHandler(
             return validationErrorResponse(errors);
         }
 
-        const provider = await prisma.sSOProvider.create({
+        const provider = await prisma.sso_providers.create({
             data: {
                 tenantId: session.tenantId,
                 name: data.name,
@@ -82,7 +82,7 @@ export const POST = withApiHandler(
             }
         });
 
-        return NextResponse.json(provider);
+        return NextResponse.json({ success: true, data: provider });
     }
 );
 
@@ -91,16 +91,16 @@ export const POST = withApiHandler(
  * Update SSO provider (ADMIN only)
  */
 export const PUT = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_SSO]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse();
-        }
-
-        if (session.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
         }
 
         const data = await req.json();
@@ -111,7 +111,7 @@ export const PUT = withApiHandler(
         }
 
         // Ensure we only update if belongs to tenant
-        const existing = await prisma.sSOProvider.findUnique({
+        const existing = await prisma.sso_providers.findUnique({
             where: { id: data.id }
         });
 
@@ -119,7 +119,7 @@ export const PUT = withApiHandler(
             return notFoundResponse('Provider');
         }
 
-        const provider = await prisma.sSOProvider.update({
+        const provider = await prisma.sso_providers.update({
             where: { id: data.id },
             data: {
                 name: data.name,
@@ -136,7 +136,7 @@ export const PUT = withApiHandler(
             }
         });
 
-        return NextResponse.json(provider);
+        return NextResponse.json({ success: true, data: provider });
     }
 );
 
@@ -145,16 +145,16 @@ export const PUT = withApiHandler(
  * Delete SSO provider (ADMIN only)
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_SSO]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse();
-        }
-
-        if (session.role !== 'ADMIN') {
-            return forbiddenResponse('Admin access required');
         }
 
         const { searchParams } = new URL(req.url);
@@ -167,7 +167,7 @@ export const DELETE = withApiHandler(
         }
 
         // Ensure we only delete if belongs to tenant
-        const existing = await prisma.sSOProvider.findUnique({
+        const existing = await prisma.sso_providers.findUnique({
             where: { id }
         });
 
@@ -175,7 +175,7 @@ export const DELETE = withApiHandler(
             return notFoundResponse('Provider');
         }
 
-        await prisma.sSOProvider.delete({
+        await prisma.sso_providers.delete({
             where: { id }
         });
 

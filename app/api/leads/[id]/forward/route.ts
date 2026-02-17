@@ -6,7 +6,6 @@ import { successResponse, notFoundResponse, errorResponse, validationErrorRespon
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitLeadUpdated, emitCaseCreated } from '@/lib/websocket/server';
 import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
-import { requirePermissions } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 
@@ -20,10 +19,6 @@ async function getParams(context: { params: Promise<{ id: string }> }) {
 
 const postHandler = async (req: NextRequest, context: ApiContext, id: string) => {
     const session = context.session!;
-
-    // Permission check
-    const permissionError = await requirePermissions([PERMISSIONS.LEADS_FORWARD])(req);
-    if (permissionError) return permissionError;
 
     // Check idempotency
     const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
@@ -169,7 +164,7 @@ const postHandler = async (req: NextRequest, context: ApiContext, id: string) =>
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await getParams(context);
     return withApiHandler(
-        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        { authRequired: true, checkDbHealth: true, rateLimit: 30, permissions: [PERMISSIONS.LEADS_FORWARD] },
         (req, ctx) => postHandler(req, ctx, id)
     )(req);
 }

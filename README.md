@@ -153,7 +153,51 @@ npm run verify:build
 
 ---
 
+## 🛡️ **API Route Patterns**
+
+All API routes use the `withApiHandler` wrapper for consistent middleware composition.
+
+### **Declarative Permissions**
+
+```typescript
+import { PERMISSIONS } from '@/app/types/permissions';
+
+export const GET = withApiHandler(
+    { 
+        authRequired: true, 
+        permissions: [PERMISSIONS.LEADS_VIEW_ALL]
+    },
+    async (req, context) => { /* handler */ }
+);
+```
+
+### **Permission Logic**
+
+**OR Logic** (user needs ANY permission):
+```typescript
+permissions: [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ALL],
+requireAll: false
+```
+
+**AND Logic** (user needs ALL permissions):
+```typescript
+permissions: [PERMISSIONS.LEADS_EDIT, PERMISSIONS.LEADS_ASSIGN],
+requireAll: true  // default
+```
+
+### **Special Options**
+
+| Option | Description |
+|--------|-------------|
+| `skipTenantCheck: true` | For routes without tenant context (OAuth, auth) |
+| `useApiKeyAuth: true` | Use API key authentication instead of session |
+
+See `app/types/permissions.ts` for the complete list of available permissions.
+
+---
+
 ## 🔑 **Default Credentials** (Dev/Test)
+
 
 - **Admin User**: `admin`
 - **Password**: `admin123`

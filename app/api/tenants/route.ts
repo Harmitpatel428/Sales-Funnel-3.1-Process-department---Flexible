@@ -5,8 +5,8 @@ import {
     withApiHandler,
     ApiContext,
     unauthorizedResponse,
-    forbiddenResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 import type { ListTenantsResponse, TenantOperationResponse, TenantResponse, CreateTenantRequest } from './types';
 
 /**
@@ -45,24 +45,14 @@ function formatTenant(tenant: {
  * List all tenants (SUPER_ADMIN only)
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
-    async (_req: NextRequest, context: ApiContext): Promise<NextResponse<ListTenantsResponse>> => {
-        const { session } = context;
-
-        if (!session) {
-            return unauthorizedResponse() as NextResponse<ListTenantsResponse>;
-        }
-
-        // Check if user is SUPER_ADMIN
-        const user = await prisma.user.findUnique({
-            where: { id: session.userId },
-            select: { role: true },
-        });
-
-        if (user?.role !== 'SUPER_ADMIN') {
-            return forbiddenResponse('Super Admin access required') as NextResponse<ListTenantsResponse>;
-        }
-
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        rateLimit: 100,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_TENANTS],
+        skipTenantCheck: true
+    },
+    async (_req: NextRequest, _context: ApiContext): Promise<NextResponse<ListTenantsResponse>> => {
         const tenants = await prisma.tenant.findMany({
             orderBy: { name: 'asc' },
         });
@@ -79,22 +69,18 @@ export const GET = withApiHandler(
  * Create a new tenant (SUPER_ADMIN only)
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        rateLimit: 100,
+        permissions: [PERMISSIONS.SETTINGS_MANAGE_TENANTS],
+        skipTenantCheck: true
+    },
     async (req: NextRequest, context: ApiContext): Promise<NextResponse<TenantOperationResponse>> => {
         const { session } = context;
 
         if (!session) {
             return unauthorizedResponse() as NextResponse<TenantOperationResponse>;
-        }
-
-        // Check if user is SUPER_ADMIN
-        const user = await prisma.user.findUnique({
-            where: { id: session.userId },
-            select: { role: true, name: true },
-        });
-
-        if (user?.role !== 'SUPER_ADMIN') {
-            return forbiddenResponse('Super Admin access required') as NextResponse<TenantOperationResponse>;
         }
 
         const body: CreateTenantRequest = await req.json();
@@ -141,12 +127,18 @@ export const POST = withApiHandler(
             },
         });
 
+        // Get user name for audit log
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { name: true },
+        });
+
         await addServerAuditLog({
             actionType: 'TENANT_CREATED',
             entityType: 'tenant',
             entityId: tenant.id,
             performedById: session.userId,
-            performedByName: user.name,
+            performedByName: user?.name || 'Unknown',
             description: `Created tenant: ${tenant.name}`,
             metadata: { tenantId: tenant.id, tenantName: tenant.name },
         });

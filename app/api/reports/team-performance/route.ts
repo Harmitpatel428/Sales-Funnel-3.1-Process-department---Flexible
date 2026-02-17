@@ -5,13 +5,18 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/reports/team-performance
  * Fetch team performance analytics
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_VIEW_TEAM]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

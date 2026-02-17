@@ -8,7 +8,8 @@ import { unauthorizedResponse } from '@/lib/api/response-helpers';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withApiHandler({ authRequired: true, updateSessionActivity: false }, async (context: ApiContext) => {
+// skipTenantCheck: true - Session validation endpoint used by client to check auth status
+export const GET = withApiHandler({ authRequired: true, updateSessionActivity: false, skipTenantCheck: true }, async (context: ApiContext) => {
     const session = context.session!;
 
     // Double check user status directly from DB to catch locks/deactivations immediately
@@ -41,7 +42,10 @@ export const GET = withApiHandler({ authRequired: true, updateSessionActivity: f
         return unauthorizedResponse();
     }
 
+    // Response includes both success and valid fields for backward compatibility
+    // Clients may depend on 'valid' field, but new code should use 'success'
     return NextResponse.json({
+        success: true,
         valid: true,
         expiresAt: dbSession.expiresAt,
         lastActivityAt: dbSession.lastActivityAt,

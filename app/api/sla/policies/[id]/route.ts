@@ -1,7 +1,3 @@
-/**
- * Individual SLA Policy API Routes
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { validateSLAPolicy } from '@/lib/validation/workflow-schemas';
@@ -12,13 +8,18 @@ import {
     notFoundResponse,
     validationErrorResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/sla/policies/[id]
  * Get a specific SLA policy
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SLA_VIEW]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -40,7 +41,7 @@ export const GET = withApiHandler(
             return notFoundResponse('Policy');
         }
 
-        return NextResponse.json(policy);
+        return NextResponse.json({ success: true, data: policy });
     }
 );
 
@@ -49,7 +50,11 @@ export const GET = withApiHandler(
  * Update an SLA policy
  */
 export const PUT = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SLA_MANAGE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -72,7 +77,7 @@ export const PUT = withApiHandler(
 
         if (!validation.success) {
             return validationErrorResponse(
-                validation.error.errors.map(e => ({
+                validation.error.issues.map(e => ({
                     field: e.path.join('.'),
                     message: e.message,
                     code: e.code
@@ -85,7 +90,7 @@ export const PUT = withApiHandler(
             data: validation.data
         });
 
-        return NextResponse.json(policy);
+        return NextResponse.json({ success: true, data: policy });
     }
 );
 
@@ -94,7 +99,11 @@ export const PUT = withApiHandler(
  * Delete an SLA policy
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SLA_MANAGE]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 

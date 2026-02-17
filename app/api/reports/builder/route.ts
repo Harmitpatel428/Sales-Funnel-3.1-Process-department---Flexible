@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { SavedReportSchema, UpdateSavedReportSchema } from '@/lib/validation/report-schemas';
 import { z } from 'zod';
+import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
     ApiContext,
@@ -15,7 +16,12 @@ import {
  * Fetch saved reports for current tenant
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_VIEW_OWN, PERMISSIONS.REPORTS_VIEW_ALL],
+        requireAll: false
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -63,7 +69,11 @@ export const GET = withApiHandler(
  * Create a new saved report
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_CREATE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -119,7 +129,11 @@ export const POST = withApiHandler(
  * Update a saved report
  */
 export const PUT = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -199,7 +213,11 @@ export const PUT = withApiHandler(
  * Remove a saved report
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_DELETE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

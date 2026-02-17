@@ -7,12 +7,13 @@ import { ApiContext } from '@/lib/api/types';
 import { validationErrorResponse, errorResponse } from '@/lib/api/response-helpers';
 import { addServerAuditLog } from '@/app/actions/audit';
 
-export const POST = withApiHandler({ authRequired: false, rateLimit: 5 }, async (context: ApiContext) => {
+// skipTenantCheck: true - Public endpoint, no tenant context available
+export const POST = withApiHandler({ authRequired: false, rateLimit: 5, skipTenantCheck: true }, async (context: ApiContext) => {
     const body = await context.req.json();
     const { token, password } = body;
 
     if (!token || !password) {
-        return NextResponse.json({ error: 'Token and password are required' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Token and password are required' }, { status: 400 });
     }
 
     // Verify token
@@ -32,19 +33,19 @@ export const POST = withApiHandler({ authRequired: false, rateLimit: 5 }, async 
             userAgent,
             metadata: { token: 'REDACTED' } // Don't log expected token for security
         });
-        return NextResponse.json({ error: 'Invalid or expired token' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Invalid or expired token' }, { status: 400 });
     }
 
     // Validate password strength
     const strength = validatePasswordStrength(password);
     if (!strength.valid) {
-        return NextResponse.json({ error: strength.message }, { status: 400 });
+        return NextResponse.json({ success: false, message: strength.message }, { status: 400 });
     }
 
     // Check history
     const historyCheck = await checkPasswordHistory(resetRecord.userId, password);
     if (historyCheck) {
-        return NextResponse.json({ error: 'Password has been used recently. Please choose a different password.' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Password has been used recently. Please choose a different password.' }, { status: 400 });
     }
 
     // Update password

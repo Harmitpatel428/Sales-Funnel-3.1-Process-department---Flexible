@@ -1,7 +1,3 @@
-/**
- * Individual Approval API Routes
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ApprovalHandler } from '@/lib/workflows/approval-handler';
@@ -11,13 +7,18 @@ import {
     unauthorizedResponse,
     notFoundResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/approvals/[id]
  * Get a specific approval request
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.APPROVALS_VIEW]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -40,10 +41,13 @@ export const GET = withApiHandler(
         }
 
         return NextResponse.json({
-            ...approval,
-            approverIds: JSON.parse(approval.approverIds),
-            approvedBy: JSON.parse(approval.approvedBy),
-            metadata: JSON.parse(approval.metadata)
+            success: true,
+            data: {
+                ...approval,
+                approverIds: JSON.parse(approval.approverIds),
+                approvedBy: JSON.parse(approval.approvedBy),
+                metadata: JSON.parse(approval.metadata)
+            }
         });
     }
 );
@@ -53,7 +57,11 @@ export const GET = withApiHandler(
  * Approve or reject an approval request
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.APPROVALS_APPROVE]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 
@@ -66,7 +74,7 @@ export const POST = withApiHandler(
         const { action, comments } = body;
 
         if (!['approve', 'reject'].includes(action)) {
-            return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+            return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
         }
 
         const result = await ApprovalHandler.submitApproval(
@@ -76,7 +84,7 @@ export const POST = withApiHandler(
             comments
         );
 
-        return NextResponse.json(result);
+        return NextResponse.json({ success: true, ...result });
     }
 );
 
@@ -85,7 +93,11 @@ export const POST = withApiHandler(
  * Cancel an approval request
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.APPROVALS_MANAGE]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session, params } = context;
 

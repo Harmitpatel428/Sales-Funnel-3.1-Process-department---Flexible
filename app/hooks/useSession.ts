@@ -36,9 +36,18 @@ const INVALID_SESSION: SessionState = {
 async function fetchSession(): Promise<SessionState> {
     try {
         // Single source of truth: /api/auth/me
+        // Using redirect: 'manual' prevents the browser from following cached 308 redirects
         const response = await fetch('/api/auth/me', {
-            credentials: 'include' // Req 3
+            credentials: 'include',
+            redirect: 'manual', // Don't follow redirects - treat them as errors
+            cache: 'no-store' // Bypass browser cache completely
         });
+
+        // With redirect: 'manual', redirects show as type 'opaqueredirect' or status 0
+        if (response.type === 'opaqueredirect' || response.status === 0) {
+            console.warn('[Session] Received redirect - treating as invalid session');
+            return INVALID_SESSION;
+        }
 
         if (response.status === 401) {
             return INVALID_SESSION;

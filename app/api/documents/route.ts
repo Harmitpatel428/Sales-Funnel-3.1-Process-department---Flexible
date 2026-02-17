@@ -18,6 +18,7 @@ import { validateDocumentCrossFields } from '@/lib/validation/cross-field-rules'
 import { validationErrorResponse } from '@/lib/api/response-helpers';
 import { withApiHandler } from '@/lib/api/withApiHandler';
 import { ApiHandler, ApiContext } from '@/lib/api/types';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 // POST /api/documents - Upload document
 // Note: Manually handles FormData, so not using withValidation middleware for body parsing
@@ -55,7 +56,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
         // Validate against centralized schema
         const validation = DocumentUploadSchema.safeParse(validationData);
         if (!validation.success) {
-            return validationErrorResponse(validation.error.errors.map(e => ({
+            return validationErrorResponse(validation.error.issues.map(e => ({
                 field: e.path.join('.'),
                 message: e.message,
                 code: 'VALIDATION_ERROR'
@@ -242,7 +243,7 @@ const getHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => 
     const validation = DocumentFiltersSchema.safeParse(filtersData);
 
     if (!validation.success) {
-        return validationErrorResponse(validation.error.errors.map(e => ({
+        return validationErrorResponse(validation.error.issues.map(e => ({
             field: e.path.join('.'),
             message: e.message,
             code: 'VALIDATION_ERROR'
@@ -344,6 +345,18 @@ async function processOcrAsync(documentId: string, buffer: Buffer, mimeType: str
     }
 }
 
-export const POST = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, postHandler);
-export const GET = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 100 }, getHandler);
+export const POST = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 100,
+    permissions: [PERMISSIONS.DOCUMENTS_UPLOAD]
+}, postHandler);
+
+export const GET = withApiHandler({
+    authRequired: true,
+    checkDbHealth: true,
+    rateLimit: 100,
+    permissions: [PERMISSIONS.DOCUMENTS_VIEW_ALL, PERMISSIONS.DOCUMENTS_VIEW_CASE],
+    requireAll: false
+}, getHandler);
 

@@ -18,20 +18,20 @@ const AssignCaseSchema = z.object({
   version: z.number().int().min(1, 'Version is required for updates')
 });
 
+import { PERMISSIONS } from '@/app/types/permissions';
+
 const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) => {
   const { session, params: paramsPromise } = context;
-  if (!session) return unauthorizedResponse();
+  // session check removed
 
   const params = await paramsPromise;
   const id = params?.id;
   if (!id) return notFoundResponse('Case');
 
-  if (!['ADMIN', 'PROCESS_MANAGER'].includes(session.role)) {
-    return forbiddenResponse();
-  }
+  // Role check removed - handled by declarative permissions (CASES_ASSIGN)
 
   // Check idempotency
-  const idempotencyError = await idempotencyMiddleware(req, session.tenantId);
+  const idempotencyError = await idempotencyMiddleware(req, session!.tenantId);
   if (idempotencyError) return idempotencyError;
 
   const body = await req.json();
@@ -40,9 +40,9 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
 
   const { userId, roleId, version } = validation.data;
 
-  return await withTenant(session.tenantId, async () => {
+  return await withTenant(session!.tenantId, async () => {
     const caseItem = await prisma.case.findFirst({
-      where: { caseId: id, tenantId: session.tenantId }
+      where: { caseId: id, tenantId: session!.tenantId }
     });
 
     if (!caseItem) return notFoundResponse('Case');
@@ -51,7 +51,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     const oldData = caseItem as unknown as Record<string, unknown>;
 
     const targetUser = await prisma.user.findFirst({
-      where: { id: userId, tenantId: session.tenantId }
+      where: { id: userId, tenantId: session!.tenantId }
     });
 
     if (!targetUser) return notFoundResponse('User');
@@ -59,7 +59,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     try {
       const updatedCase = await updateWithOptimisticLock(
         prisma.case,
-        { caseId: id, tenantId: session.tenantId },
+        { caseId: id, tenantId: session!.tenantId },
         {
           currentVersion: version,
           data: {
@@ -76,8 +76,8 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
           entityType: 'case',
           entityId: id,
           description: `Case assigned to ${targetUser.name}`,
-          performedById: session.userId,
-          tenantId: session.tenantId
+          performedById: session!.userId,
+          tenantId: session!.tenantId
         }
       });
 
@@ -89,8 +89,8 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
           'UPDATE',
           oldData,
           updatedCase as unknown as Record<string, unknown>,
-          session.tenantId,
-          session.userId
+          session!.tenantId,
+          session!.userId
         );
       } catch (workflowError) {
         console.error('Failed to trigger workflows for case assignment:', workflowError);
@@ -98,7 +98,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
 
       // WebSocket Broadcast
       try {
-        await emitCaseUpdated(session.tenantId, updatedCase);
+        await emitCaseUpdated(session!.tenantId, updatedCase);
       } catch (wsError) {
         console.error('[WebSocket] Case assignment broadcast failed:', wsError);
       }
@@ -117,4 +117,9 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
   });
 };
 
-export const POST = withApiHandler({ authRequired: true, checkDbHealth: true, rateLimit: 30 }, postHandler);
+export const POST = withApiHandler({
+  authRequired: true,
+  checkDbHealth: true,
+  rateLimit: 30,
+  permissions: [PERMISSIONS.CASES_ASSIGN]
+}, postHandler);

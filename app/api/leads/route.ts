@@ -8,14 +8,20 @@ import { validateLeadCrossFields } from '@/lib/validation/cross-field-rules';
 import { formatValidationErrors, validateBypassToken } from '@/lib/middleware/validation';
 import { successResponse, validationErrorResponse } from '@/lib/api/response-helpers';
 import { Prisma } from '@prisma/client';
-import { requirePermissions, getRecordLevelFilter } from '@/lib/middleware/permissions';
+import { getRecordLevelFilter } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 import { TriggerManager, EntityType } from '@/lib/workflows/triggers';
 import { emitLeadCreated } from '@/lib/websocket/server';
 import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
 
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        rateLimit: 100,
+        permissions: [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
+        requireAll: false
+    },
     async (req: NextRequest, context: ApiContext) => {
         // Trailing-slash guard
         const { pathname } = new URL(req.url);
@@ -54,14 +60,6 @@ export const GET = withApiHandler(
                 console.log('[Validation Bypass] GET /api/leads - bypass token accepted');
             }
         }
-
-        // Permission check
-        const permissionError = await requirePermissions(
-            [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
-            false // require any
-        )(req);
-
-        if (permissionError) return permissionError;
 
         // Get record-level filter
         const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'view');
@@ -124,7 +122,7 @@ export const GET = withApiHandler(
 );
 
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+    { authRequired: true, checkDbHealth: true, rateLimit: 30, permissions: [PERMISSIONS.LEADS_CREATE] },
     async (req: NextRequest, context: ApiContext) => {
         // Trailing-slash guard
         const { pathname } = new URL(req.url);
@@ -178,10 +176,6 @@ export const POST = withApiHandler(
             }
             data = validationResult.data;
         }
-
-        // Permission check
-        const permissionError = await requirePermissions([PERMISSIONS.LEADS_CREATE])(req);
-        if (permissionError) return permissionError;
 
         // Cross-field Validation
         const crossErrors = validateLeadCrossFields(data as any);

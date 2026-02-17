@@ -6,13 +6,18 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/webhooks/outgoing
  * List webhook subscriptions
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_VIEW]
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -60,7 +65,11 @@ export const GET = withApiHandler(
  * Create webhook subscription
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

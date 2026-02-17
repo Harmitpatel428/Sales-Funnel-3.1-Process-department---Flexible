@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/authConfig';
 import { withApiHandler } from '@/lib/api/withApiHandler';
@@ -7,9 +7,10 @@ import { addServerAuditLog } from '@/app/actions/audit';
 import { errorResponse } from '@/lib/api/response-helpers';
 import { getSessionCookieOptions } from '@/lib/authCookies';
 
-export const POST = withApiHandler({ authRequired: true }, async (context: ApiContext) => {
+// skipTenantCheck: true - Session refresh should work regardless of tenant context
+export const POST = withApiHandler({ authRequired: true, skipTenantCheck: true }, async (req: NextRequest, context: ApiContext) => {
     const session = context.session!;
-    const token = context.req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
 
     // Extend session expiry
     const newExpiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
@@ -29,8 +30,8 @@ export const POST = withApiHandler({ authRequired: true }, async (context: ApiCo
         description: 'Session refreshed',
         performedById: session.userId,
         sessionId: session.sessionId,
-        ipAddress: context.req.headers.get('x-forwarded-for') || undefined,
-        userAgent: context.req.headers.get('user-agent') || undefined
+        ipAddress: req.headers.get('x-forwarded-for') || undefined,
+        userAgent: req.headers.get('user-agent') || undefined
     });
 
     const response = NextResponse.json({

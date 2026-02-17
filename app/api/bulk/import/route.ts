@@ -7,13 +7,24 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
+import { requirePermissions } from '@/lib/middleware/permissions';
 
 /**
  * GET /api/bulk/import
- * Generate bypass token (Admin only)
+ * Generate bypass token
+ * 
+ * Note: This endpoint generates tokens for bulk import operations.
+ * Since the token will be used for a specific entityType, we require
+ * both LEADS_CREATE and CASES_CREATE permissions (admin-level access).
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.LEADS_CREATE, PERMISSIONS.CASES_CREATE],
+        requireAll: true  // Both permissions required for token generation
+    },
     async (_req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -36,9 +47,19 @@ export const GET = withApiHandler(
 /**
  * POST /api/bulk/import
  * Bulk data import with optional bypass
+ * 
+ * Permission enforcement is entity-specific:
+ * - entityType=leads requires LEADS_CREATE
+ * - entityType=cases requires CASES_CREATE
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        // Note: We do NOT use declarative permissions here because
+        // the required permission depends on the entityType in the request body.
+        // Entity-specific permission check is done inside the handler.
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -73,6 +94,25 @@ export const POST = withApiHandler(
                 { success: false, message: 'entityType must be "leads" or "cases"' },
                 { status: 400 }
             );
+        }
+
+        // Entity-specific permission check
+        const requiredPermission = entityType === 'leads'
+            ? PERMISSIONS.LEADS_CREATE
+            : PERMISSIONS.CASES_CREATE;
+
+        const permissionError = await requirePermissions(
+            [requiredPermission],
+            true,
+            {
+                userId: session.userId,
+                tenantId: session.tenantId,
+                endpoint: '/api/bulk/import'
+            }
+        )(req);
+
+        if (permissionError) {
+            return permissionError;
         }
 
         // Check for validation bypass token

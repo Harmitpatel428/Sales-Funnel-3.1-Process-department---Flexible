@@ -62,6 +62,7 @@ export function createMockLead(overrides: Partial<{
     email: string;
     status: string;
     tenantId: string;
+    assignedToId: string | null;
     assignedTo: string | null;
     version: number;
 }> = {}) {
@@ -73,6 +74,7 @@ export function createMockLead(overrides: Partial<{
         email: overrides.email ?? 'client@example.com',
         status: overrides.status ?? 'NEW',
         tenantId: overrides.tenantId ?? 'tenant-123',
+        assignedToId: overrides.assignedToId ?? null,
         assignedTo: overrides.assignedTo ?? null,
         version: overrides.version ?? 1,
         createdAt: new Date(),
@@ -403,3 +405,139 @@ export function createMockCookies(sessionToken: string | null = 'mock-session-to
         ),
     }));
 }
+
+// ============================================================================
+// Performance Measurement Helpers
+// ============================================================================
+
+/**
+ * Measure execution time of a function over multiple iterations
+ * Returns statistics: avg, min, max, p50, p95, p99
+ */
+export async function measureExecutionTime(
+    fn: () => Promise<any>,
+    iterations: number = 100
+): Promise<{
+    avg: number;
+    min: number;
+    max: number;
+    p50: number;
+    p95: number;
+    p99: number;
+    times: number[];
+}> {
+    const times: number[] = [];
+
+    // Warmup (10% of iterations)
+    const warmupCount = Math.max(1, Math.floor(iterations * 0.1));
+    for (let i = 0; i < warmupCount; i++) {
+        await fn();
+    }
+
+    // Actual measurements
+    for (let i = 0; i < iterations; i++) {
+        const start = performance.now();
+        await fn();
+        const end = performance.now();
+        times.push(end - start);
+    }
+
+    times.sort((a, b) => a - b);
+
+    const sum = times.reduce((a, b) => a + b, 0);
+
+    return {
+        avg: sum / times.length,
+        min: times[0],
+        max: times[times.length - 1],
+        p50: times[Math.floor(times.length * 0.5)],
+        p95: times[Math.floor(times.length * 0.95)],
+        p99: times[Math.floor(times.length * 0.99)],
+        times,
+    };
+}
+
+/**
+ * Log performance metrics as a formatted table
+ */
+export function logPerformanceMetrics(
+    label: string,
+    metrics: { avg: number; min: number; max: number; p50: number; p95: number; p99: number }
+): void {
+    console.log(`\n${label}:`);
+    console.table({
+        'Average (ms)': metrics.avg.toFixed(2),
+        'Min (ms)': metrics.min.toFixed(2),
+        'Max (ms)': metrics.max.toFixed(2),
+        'P50 (ms)': metrics.p50.toFixed(2),
+        'P95 (ms)': metrics.p95.toFixed(2),
+        'P99 (ms)': metrics.p99.toFixed(2),
+    });
+}
+
+// ============================================================================
+// Permission Mock Helpers
+// ============================================================================
+
+/**
+ * Create mock permissions for testing
+ */
+export function createMockPermissions(permissions: string[]) {
+    return {
+        permissions,
+        hasPermission: (perm: string) => permissions.includes(perm),
+        hasAnyPermission: (perms: string[]) => perms.some(p => permissions.includes(p)),
+        hasAllPermissions: (perms: string[]) => perms.every(p => permissions.includes(p)),
+    };
+}
+
+/**
+ * Assert that a response indicates permission denied (403)
+ */
+export async function expectPermissionDenied(
+    response: NextResponse,
+    expectedPermissions?: string[]
+) {
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.success).toBe(false);
+
+    if (expectedPermissions) {
+        expect(body.message || body.error).toContain('permission');
+    }
+
+    return body;
+}
+
+/**
+ * Mock console.warn and return a spy
+ */
+export function mockConsoleWarn(): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(console, 'warn').mockImplementation(() => { });
+}
+
+/**
+ * Create a mock audit log for testing
+ */
+export function createMockAuditLog(overrides: Partial<{
+    id: string;
+    action: string;
+    userId: string;
+    tenantId: string;
+    entityType: string;
+    entityId: string;
+    details: any;
+}> = {}) {
+    return {
+        id: overrides.id ?? 'audit-123',
+        action: overrides.action ?? 'VIEW',
+        userId: overrides.userId ?? 'user-123',
+        tenantId: overrides.tenantId ?? 'tenant-123',
+        entityType: overrides.entityType ?? 'lead',
+        entityId: overrides.entityId ?? 'entity-123',
+        details: overrides.details ?? {},
+        createdAt: new Date(),
+    };
+}
+

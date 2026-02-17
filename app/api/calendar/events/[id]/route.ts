@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { PERMISSIONS } from '@/app/types/permissions';
 import {
     withApiHandler,
     ApiContext,
@@ -12,30 +13,30 @@ import {
  * Get a specific calendar event
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.CALENDAR_VIEW, PERMISSIONS.CALENDAR_VIEW_OWN],
+        requireAll: false
+    },
     async (_req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession, params } = context;
+        const { session, params } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session) {
             return unauthorizedResponse();
         }
 
         const { id } = await params;
 
-        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
-        if (!user) {
-            return unauthorizedResponse();
-        }
-
         const event = await prisma.calendarEvent.findFirst({
-            where: { id, tenantId: user.tenantId }
+            where: { id, tenantId: session.tenantId }
         });
 
         if (!event) {
             return notFoundResponse('Event');
         }
 
-        return NextResponse.json(event);
+        return NextResponse.json({ success: true, data: { event } });
     }
 );
 
@@ -44,31 +45,30 @@ export const GET = withApiHandler(
  * Update a calendar event
  */
 export const PUT = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.CALENDAR_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession, params } = context;
+        const { session, params } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session) {
             return unauthorizedResponse();
         }
 
         const { id } = await params;
         const body = await req.json();
 
-        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
-        if (!user) {
-            return unauthorizedResponse();
-        }
-
         const existing = await prisma.calendarEvent.findFirst({
-            where: { id, tenantId: user.tenantId }
+            where: { id, tenantId: session.tenantId }
         });
 
         if (!existing) {
             return notFoundResponse('Event');
         }
 
-        await prisma.calendarEvent.update({
+        const event = await prisma.calendarEvent.update({
             where: { id },
             data: {
                 title: body.title,
@@ -79,7 +79,7 @@ export const PUT = withApiHandler(
             }
         });
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, data: { event } });
     }
 );
 
@@ -88,23 +88,22 @@ export const PUT = withApiHandler(
  * Delete a calendar event
  */
 export const DELETE = withApiHandler(
-    { authRequired: true, checkDbHealth: true, useNextAuth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.CALENDAR_DELETE]
+    },
     async (_req: NextRequest, context: ApiContext) => {
-        const { nextAuthSession, params } = context;
+        const { session, params } = context;
 
-        if (!nextAuthSession?.user?.id) {
+        if (!session) {
             return unauthorizedResponse();
         }
 
         const { id } = await params;
 
-        const user = await prisma.user.findUnique({ where: { id: nextAuthSession.user.id as string } });
-        if (!user) {
-            return unauthorizedResponse();
-        }
-
         const existing = await prisma.calendarEvent.findFirst({
-            where: { id, tenantId: user.tenantId }
+            where: { id, tenantId: session.tenantId }
         });
 
         if (!existing) {
@@ -112,6 +111,6 @@ export const DELETE = withApiHandler(
         }
 
         await prisma.calendarEvent.delete({ where: { id } });
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, message: 'Event deleted' });
     }
 );

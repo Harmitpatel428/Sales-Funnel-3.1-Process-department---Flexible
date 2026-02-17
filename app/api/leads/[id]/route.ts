@@ -10,7 +10,7 @@ import { updateWithOptimisticLock, handleOptimisticLockError } from '@/lib/utils
 import { idempotencyMiddleware, storeIdempotencyResult } from '@/lib/middleware/idempotency';
 import { emitLeadUpdated, emitLeadDeleted } from '@/lib/websocket/server';
 import { withApiHandler, ApiContext } from '@/lib/api/withApiHandler';
-import { requirePermissions, getRecordLevelFilter } from '@/lib/middleware/permissions';
+import { getRecordLevelFilter } from '@/lib/middleware/permissions';
 import { PERMISSIONS } from '@/app/types/permissions';
 
 // Helper to get params
@@ -20,13 +20,6 @@ async function getParams(context: { params: Promise<{ id: string }> }) {
 
 const getHandler = async (req: NextRequest, context: ApiContext, id: string) => {
     const session = context.session!;
-
-    // Permission check
-    const permissionError = await requirePermissions(
-        [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
-        false
-    )(req);
-    if (permissionError) return permissionError;
 
     // Record level filter
     const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'view');
@@ -59,20 +52,19 @@ const getHandler = async (req: NextRequest, context: ApiContext, id: string) => 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await getParams(context);
     return withApiHandler(
-        { authRequired: true, checkDbHealth: true, rateLimit: 100 },
+        {
+            authRequired: true,
+            checkDbHealth: true,
+            rateLimit: 100,
+            permissions: [PERMISSIONS.LEADS_VIEW_OWN, PERMISSIONS.LEADS_VIEW_ASSIGNED, PERMISSIONS.LEADS_VIEW_ALL],
+            requireAll: false
+        },
         (req, ctx) => getHandler(req, ctx, id)
     )(req);
 }
 
 const putHandler = async (req: NextRequest, context: ApiContext, id: string) => {
     const session = context.session!;
-
-    // Permission check
-    const permissionError = await requirePermissions(
-        [PERMISSIONS.LEADS_EDIT_OWN, PERMISSIONS.LEADS_EDIT_ASSIGNED, PERMISSIONS.LEADS_EDIT_ALL],
-        false
-    )(req);
-    if (permissionError) return permissionError;
 
     // Record level filter for edit? Validating existence and permissions
     const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'edit');
@@ -187,17 +179,19 @@ const putHandler = async (req: NextRequest, context: ApiContext, id: string) => 
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await getParams(context);
     return withApiHandler(
-        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        {
+            authRequired: true,
+            checkDbHealth: true,
+            rateLimit: 30,
+            permissions: [PERMISSIONS.LEADS_EDIT_OWN, PERMISSIONS.LEADS_EDIT_ASSIGNED, PERMISSIONS.LEADS_EDIT_ALL],
+            requireAll: false
+        },
         (req, ctx) => putHandler(req, ctx, id)
     )(req);
 }
 
 const deleteHandler = async (req: NextRequest, context: ApiContext, id: string) => {
     const session = context.session!;
-
-    // Permission check
-    const permissionError = await requirePermissions([PERMISSIONS.LEADS_DELETE])(req);
-    if (permissionError) return permissionError;
 
     // Start with record level filter for delete
     const recordFilter = await getRecordLevelFilter(session.userId, 'leads', 'delete');
@@ -249,7 +243,13 @@ const deleteHandler = async (req: NextRequest, context: ApiContext, id: string) 
 export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await getParams(context);
     return withApiHandler(
-        { authRequired: true, checkDbHealth: true, rateLimit: 30 },
+        {
+            authRequired: true,
+            checkDbHealth: true,
+            rateLimit: 30,
+            permissions: [PERMISSIONS.LEADS_DELETE_OWN, PERMISSIONS.LEADS_DELETE_ALL],
+            requireAll: false
+        },
         (req, ctx) => deleteHandler(req, ctx, id)
     )(req);
 }

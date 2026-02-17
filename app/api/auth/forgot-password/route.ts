@@ -8,12 +8,13 @@ import { ApiContext } from '@/lib/api/types';
 import { errorResponse } from '@/lib/api/response-helpers';
 import { addServerAuditLog } from '@/app/actions/audit';
 
-export const POST = withApiHandler({ authRequired: false, rateLimit: 5 }, async (context: ApiContext) => {
+// skipTenantCheck: true - Public endpoint, no tenant context available
+export const POST = withApiHandler({ authRequired: false, rateLimit: 5, skipTenantCheck: true }, async (context: ApiContext) => {
     const body = await context.req.json();
     const { email } = body;
 
     if (!email) {
-        return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Email is required' }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({

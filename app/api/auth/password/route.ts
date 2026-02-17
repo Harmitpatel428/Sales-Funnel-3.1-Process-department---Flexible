@@ -13,13 +13,15 @@ const passwordUpdateSchema = z.object({
     newPassword: z.string().min(1),
 });
 
-export const PUT = withApiHandler({ authRequired: true }, async (context: ApiContext) => {
+// skipTenantCheck: true - Password change is user-level operation, not tenant-specific
+export const PUT = withApiHandler({ authRequired: true, skipTenantCheck: true }, async (context: ApiContext) => {
     // Session is guaranteed by wrapper
     const session = context.session!;
 
     const body = await context.req.json();
+    const validationResult = passwordUpdateSchema.safeParse(body);
     if (!validationResult.success) {
-        return NextResponse.json({ error: 'Validation error', details: validationResult.error.errors }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Validation error', details: validationResult.error.errors }, { status: 400 });
     }
 
     const { oldPassword, newPassword } = validationResult.data;
@@ -35,19 +37,19 @@ export const PUT = withApiHandler({ authRequired: true }, async (context: ApiCon
     // Verify old password
     const isValid = await verifyPassword(oldPassword, user.password);
     if (!isValid) {
-        return NextResponse.json({ error: 'Invalid old password' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Invalid old password' }, { status: 400 });
     }
 
     // Check strength
     const strength = validatePasswordStrength(newPassword);
     if (!strength.valid) {
-        return NextResponse.json({ error: strength.message }, { status: 400 });
+        return NextResponse.json({ success: false, message: strength.message }, { status: 400 });
     }
 
     // History check
     const usedRecently = await checkPasswordHistory(user.id, newPassword);
     if (usedRecently) {
-        return NextResponse.json({ error: 'Password has been used recently' }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Password has been used recently' }, { status: 400 });
     }
 
     // Hash new password

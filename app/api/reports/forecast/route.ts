@@ -13,6 +13,7 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 // In-memory cache for forecast results
 const forecastCache = new Map<string, { data: any; expiry: number }>();
@@ -23,7 +24,12 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 hour
  * Generate forecast data for leads or cases
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.REPORTS_VIEW_SALES, PERMISSIONS.REPORTS_VIEW_PROCESS],
+        requireAll: false
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 

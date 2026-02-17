@@ -6,13 +6,18 @@ import {
     ApiContext,
     unauthorizedResponse,
 } from '@/lib/api/withApiHandler';
+import { PERMISSIONS } from '@/app/types/permissions';
 
 /**
  * GET /api/api-keys
  * List all API keys for the tenant
  */
 export const GET = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_VIEW]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
@@ -73,7 +78,11 @@ export const GET = withApiHandler(
  * Create a new API key
  */
 export const POST = withApiHandler(
-    { authRequired: true, checkDbHealth: true },
+    {
+        authRequired: true,
+        checkDbHealth: true,
+        permissions: [PERMISSIONS.SETTINGS_EDIT]
+    },
     async (req: NextRequest, context: ApiContext) => {
         const { session } = context;
 
