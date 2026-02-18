@@ -71,6 +71,10 @@ const LeadTable = React.memo(function LeadTable({
   const [columnManagementOpen, setColumnManagementOpen] = useState(false);
   const [columnOperation, setColumnOperation] = useState<{ type: 'settings' | 'addBefore' | 'addAfter' | 'delete', fieldKey?: string } | null>(null);
 
+  // Refs for horizontal scroll sync between sticky header and virtualized rows
+  const headerScrollRef = React.useRef<HTMLDivElement>(null);
+  const listOuterRef = React.useRef<HTMLDivElement>(null);
+
   // Virtualization settings - enabled for all datasets with div-based grid layout
   const ROW_HEIGHT = 40; // Matches row height with padding
   const CONTAINER_HEIGHT = 600; // Visible container height
@@ -707,101 +711,112 @@ const LeadTable = React.memo(function LeadTable({
   LeadRow.displayName = 'LeadRow';
 
   return (
-    <div className={`overflow-x-auto relative ${className}`}>
-      {/* Loading indicator for large datasets */}
-      {sortedLeads.length > 1000 && (
-        <div className="absolute top-0 left-0 right-0 bg-blue-50 text-blue-800 text-xs px-2 py-1 text-center z-20">
-          Loading {sortedLeads.length} leads...
-        </div>
-      )}
-
+    <div className={`relative ${className}`}>
       {/* Count badge */}
       {sortedLeads.length > 0 && (
         <div className="absolute top-0 right-0 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-bl z-20">
-          Displaying {sortedLeads.length} leads (Virtualized)
+          Displaying {sortedLeads.length} leads
         </div>
       )}
 
-      {/* Div-based grid container - no table elements */}
-      <div key={columnVersion} className="min-w-full bg-white divide-y divide-gray-200">
-        {/* Sticky header row using CSS Grid */}
-        <div
-          className="bg-gray-50 sticky top-0 z-30 shadow-sm"
-          style={{ display: 'grid', gridTemplateColumns: gridTemplateColumns }}
-        >
-          {onLeadSelection && (
-            <div className="px-0.5 py-1.5 text-left w-9">
-              <div className="w-8 h-8 flex items-center justify-center">
-                <input
-                  type="checkbox"
-                  checked={selectAll}
-                  ref={(input) => {
-                    if (input) {
-                      const selectedCount = selectedLeads ? selectedLeads.size : 0;
-                      input.indeterminate = selectedCount > 0 && selectedCount < filteredLeads.length;
-                    }
-                  }}
-                  onChange={(e) => onSelectAll && onSelectAll(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                  aria-label="Select all leads"
-                />
-              </div>
+      {/* Sticky header - NO overflow wrapper so sticky works relative to <main> */}
+      <div
+        ref={headerScrollRef}
+        className="bg-gray-50 z-30 shadow-sm"
+        style={{
+          position: 'sticky',
+          top: 0,
+          overflowX: 'clip',
+          display: 'grid',
+          gridTemplateColumns: gridTemplateColumns,
+        }}
+      >
+        {onLeadSelection && (
+          <div className="px-0.5 py-1.5 text-left w-9">
+            <div className="w-8 h-8 flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={selectAll}
+                ref={(input) => {
+                  if (input) {
+                    const selectedCount = selectedLeads ? selectedLeads.size : 0;
+                    input.indeterminate = selectedCount > 0 && selectedCount < filteredLeads.length;
+                  }
+                }}
+                onChange={(e) => onSelectAll && onSelectAll(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                aria-label="Select all leads"
+              />
             </div>
-          )}
-          {getVisibleColumns().map((column) => {
-            const field = column.fieldKey;
-            const isEditing = editingHeader === field;
-            const displayName = getDisplayName(field);
+          </div>
+        )}
+        {getVisibleColumns().map((column) => {
+          const field = column.fieldKey;
+          const isEditing = editingHeader === field;
+          const displayName = getDisplayName(field);
 
-            return (
-              <div
-                key={field}
-                className={`px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider flex items-center ${!isEditing ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-                onClick={!isEditing ? () => handleSort(field as SortField) : undefined}
-              >
-                {headerEditable ? (
-                  <div className="flex items-center w-full">
-                    <EditableHeaderCell
-                      fieldKey={field}
-                      currentLabel={displayName}
-                      onSave={handleHeaderSave}
-                      onCancel={() => setEditingHeader(null)}
-                      disabled={!headerEditable}
-                      className="flex-1"
-                      onEditStart={(field) => setEditingHeader(field)}
-                      onEditEnd={() => setEditingHeader(null)}
-                      existingHeaders={Object.values(headerConfig)}
-                      onAddColumnBefore={handleAddColumnBefore}
-                      onAddColumnAfter={handleAddColumnAfter}
-                      onDeleteColumn={handleDeleteColumn}
-                      onColumnSettings={handleColumnSettings}
-                    />
-                    {!isEditing && renderSortIndicator(field as SortField)}
-                  </div>
-                ) : (
-                  <span className="flex items-center">
-                    {displayName}
-                    {renderSortIndicator(field as SortField)}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-          {showActions && (
-            <div className="px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider">
-              Actions
+          return (
+            <div
+              key={field}
+              className={`px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider flex items-center ${!isEditing ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+              onClick={!isEditing ? () => handleSort(field as SortField) : undefined}
+            >
+              {headerEditable ? (
+                <div className="flex items-center w-full">
+                  <EditableHeaderCell
+                    fieldKey={field}
+                    currentLabel={displayName}
+                    onSave={handleHeaderSave}
+                    onCancel={() => setEditingHeader(null)}
+                    disabled={!headerEditable}
+                    className="flex-1"
+                    onEditStart={(field) => setEditingHeader(field)}
+                    onEditEnd={() => setEditingHeader(null)}
+                    existingHeaders={Object.values(headerConfig)}
+                    onAddColumnBefore={handleAddColumnBefore}
+                    onAddColumnAfter={handleAddColumnAfter}
+                    onDeleteColumn={handleDeleteColumn}
+                    onColumnSettings={handleColumnSettings}
+                  />
+                  {!isEditing && renderSortIndicator(field as SortField)}
+                </div>
+              ) : (
+                <span className="flex items-center">
+                  {displayName}
+                  {renderSortIndicator(field as SortField)}
+                </span>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })}
+        {showActions && (
+          <div className="px-0.5 py-1.5 text-left text-xs font-medium text-black uppercase tracking-wider">
+            Actions
+          </div>
+        )}
+      </div>
 
-        {/* Virtualized rows using react-window List */}
+
+      {/* Virtualized rows - separate overflow-x-auto synced with header */}
+      <div className="overflow-x-auto">
         {sortedLeads.length > 0 ? (
           <List
+            key={columnVersion}
             height={CONTAINER_HEIGHT}
             itemCount={sortedLeads.length}
             itemSize={ROW_HEIGHT}
             width="100%"
             itemData={itemData}
+            outerRef={(el) => {
+              (listOuterRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+              if (el) {
+                el.onscroll = () => {
+                  if (headerScrollRef.current) {
+                    headerScrollRef.current.scrollLeft = el.scrollLeft;
+                  }
+                };
+              }
+            }}
           >
             {LeadRow}
           </List>
@@ -819,7 +834,6 @@ const LeadTable = React.memo(function LeadTable({
           </div>
         )}
       </div>
-
       {/* Mobile Numbers Modal */}
       {mobileModalOpen && (
         <Suspense fallback={<LoadingSpinner text="Loading..." />}>
