@@ -24,6 +24,7 @@ import { useBulkImportMutation, useBulkDeleteLeadsMutation } from '@/app/hooks/m
 
 const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
+const IMPORT_DEBUG = false;
 
 // Shared field mapping constants for import/export
 // @deprecated Use getExportHeaders from '../constants/exportUtils' instead for dynamic headers
@@ -113,7 +114,6 @@ export default function AllLeadsPage() {
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const isSearching = searchInput !== debouncedSearch;
   const canSeeAllLeads = canViewAllLeads();
-  const IMPORT_DEBUG = false;
 
   // Conflict Resolution
   // Conflict Resolution

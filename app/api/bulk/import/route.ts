@@ -344,7 +344,7 @@ export const POST = withApiHandler(
                             const missing = chunk.length - createResult.count;
                             results.failed += missing;
                         }
-                    } catch (chunkError) {
+                    } catch (_chunkError) {
                         // Fallback for safety; keeps import resilient if bulk insert fails.
                         for (const item of chunk) {
                             try {
