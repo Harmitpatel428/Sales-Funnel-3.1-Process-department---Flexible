@@ -14,14 +14,20 @@ const passwordUpdateSchema = z.object({
 });
 
 // skipTenantCheck: true - Password change is user-level operation, not tenant-specific
-export const PUT = withApiHandler({ authRequired: true, skipTenantCheck: true }, async (context: ApiContext) => {
+export const PUT = withApiHandler({ authRequired: true, skipTenantCheck: true }, async (_req, context: ApiContext) => {
     // Session is guaranteed by wrapper
     const session = context.session!;
 
-    const body = await context.req.json();
+    let body: unknown;
+    try {
+        body = await context.req.json();
+    } catch {
+        return validationErrorResponse(['Invalid request body']);
+    }
+
     const validationResult = passwordUpdateSchema.safeParse(body);
     if (!validationResult.success) {
-        return NextResponse.json({ success: false, message: 'Validation error', details: validationResult.error.errors }, { status: 400 });
+        return NextResponse.json({ success: false, message: 'Validation error', details: validationResult.error.issues }, { status: 400 });
     }
 
     const { oldPassword, newPassword } = validationResult.data;

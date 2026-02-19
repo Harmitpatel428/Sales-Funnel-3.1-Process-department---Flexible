@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useUsers } from '../context/UserContext';
-import RoleGuard from '../components/RoleGuard';
+import { RoleGuard } from '../components/RoleGuard';
 import MFASetupModal from '../components/MFASetupModal';
 
 // Password strength checker
@@ -22,7 +22,7 @@ function checkPasswordStrength(password: string): { score: number; label: string
 }
 
 export default function ProfilePage() {
-    const { currentUser, changeOwnPassword } = useUsers();
+    const { currentUser, changeOwnPassword, refreshUser } = useUsers();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -54,23 +54,27 @@ export default function ProfilePage() {
         passwordsMatch &&
         !isSubmitting;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         setMessage(null);
 
-        const result = changeOwnPassword(currentPassword, newPassword);
+        try {
+            const result = await changeOwnPassword(currentPassword, newPassword);
 
-        if (result.success) {
-            setMessage({ type: 'success', text: result.message });
-            setCurrentPassword('');
-            setNewPassword('');
-            setConfirmPassword('');
-        } else {
-            setMessage({ type: 'error', text: result.message });
+            if (result.success) {
+                setMessage({ type: 'success', text: result.message });
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+            } else {
+                setMessage({ type: 'error', text: result.message });
+            }
+        } catch (error) {
+            setMessage({ type: 'error', text: 'Failed to change password. Please try again.' });
+        } finally {
+            setIsSubmitting(false);
         }
-
-        setIsSubmitting(false);
     };
 
     const handleEnableMFA = () => {

@@ -24,6 +24,7 @@ export interface UserContextType {
     updateUser: (userId: string, updates: Partial<User>) => Promise<{ success: boolean; message: string }>;
     deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
     resetUserPassword: (userId: string) => Promise<{ success: boolean; message: string; newPassword?: string }>;
+    changeOwnPassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
 
     // SSO & MFA
     loginWithSSO: (provider: string) => void;
@@ -371,6 +372,44 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
     }, [refreshUsers]);
 
+    const changeOwnPassword = useCallback(async (oldPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+        try {
+            const response = await fetch('/api/auth/password', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({ oldPassword, newPassword })
+            });
+
+            let result: { success?: boolean; message?: string } | null = null;
+            try {
+                result = await response.json();
+            } catch {
+                result = null;
+            }
+
+            if (!response.ok) {
+                return {
+                    success: false,
+                    message: result?.message || 'Failed to change password'
+                };
+            }
+
+            // Refresh session in case backend updates any auth/session metadata.
+            await refetchSession();
+
+            return {
+                success: true,
+                message: result?.message || 'Password changed successfully'
+            };
+        } catch (error) {
+            console.error('Change own password error:', error);
+            return { success: false, message: 'Failed to change password' };
+        }
+    }, [refetchSession]);
+
     // Override current user (used for impersonation)
     const overrideCurrentUser = useCallback((user: UserSession) => {
         setCurrentUser(user);
@@ -567,6 +606,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         updateUser,
         deleteUser,
         resetUserPassword,
+        changeOwnPassword,
         overrideCurrentUser,
         hasRole,
         canManageLeads,
@@ -607,6 +647,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         updateUser,
         deleteUser,
         resetUserPassword,
+        changeOwnPassword,
         overrideCurrentUser,
         hasRole,
         canManageLeads,
