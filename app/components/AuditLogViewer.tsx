@@ -251,16 +251,16 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="bg-white text-black min-h-full p-6 max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">System Audit Log</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Track all system activities and security events</p>
+                    <h2 className="text-lg font-semibold text-black">System Audit Log</h2>
+                    <p className="text-sm text-gray-700">Track all system activities and security events</p>
                 </div>
                 <div className="flex gap-2">
                     <button
                         onClick={loadLogs}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        className="px-4 py-2 bg-gray-200 text-black hover:bg-gray-300 rounded-lg transition-colors"
                     >
                         Refresh
                     </button>
@@ -433,7 +433,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                 {/* Active Filters */}
                 {(filterCategory !== 'ALL' || filterAction !== 'ALL' || filterEntity !== 'all' || searchTerm || dateRange.start || dateRange.end) && (
                     <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-                        <span className="text-sm text-gray-500">Active Filters:</span>
+                        <span className="text-sm text-gray-600">Active Filters:</span>
                         {filterCategory !== 'ALL' && (
                             <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-700">{filterCategory}</span>
                         )}
@@ -461,7 +461,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
 
             {/* Result count with pagination controls */}
             <div className="flex items-center justify-between mb-4">
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-600">
                     Showing {Math.min((currentPage - 1) * pageSize + 1, filteredLogs.length)}-{Math.min(currentPage * pageSize, filteredLogs.length)} of {filteredLogs.length} logs (total: {systemLogs.length})
                 </div>
                 <div className="flex items-center gap-2">
@@ -486,9 +486,9 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <span className="font-semibold text-gray-900">{log.leadData.clientName || log.leadData.kva}</span>
-                                    <span className="text-sm text-gray-500 ml-2">({log.leadData.company})</span>
+                                    <span className="text-sm text-gray-600 ml-2">({log.leadData.company})</span>
                                 </div>
-                                <span className="text-xs text-gray-400">{new Date(log.deletedAt).toLocaleString()}</span>
+                                <span className="text-xs text-gray-600">{new Date(log.deletedAt).toLocaleString()}</span>
                             </div>
                             <div className="text-sm space-y-1 text-gray-700">
                                 <p><strong>Deleted by:</strong> {log.deletedByName}</p>
@@ -498,7 +498,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                             </div>
                         </div>
                     )) : (
-                        <div className="text-center py-8 text-gray-500">No deletion logs found.</div>
+                        <div className="text-center py-8 text-gray-600">No deletion logs found.</div>
                     )
                 ) : paginatedLogs.length > 0 ? (
                     paginatedLogs.map(log => (
@@ -520,21 +520,21 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                                         </span>
                                     )}
                                 </div>
-                                <span className="text-xs text-gray-400">{new Date(log.performedAt).toLocaleString()}</span>
+                                <span className="text-xs text-gray-600">{new Date(log.performedAt).toLocaleString()}</span>
                             </div>
 
                             <p className="font-medium text-gray-900 mb-2">{log.description}</p>
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-600 mb-2">
                                 <div>
-                                    <span className="text-gray-500">Performed by:</span> {log.performedByName}
+                                    <span className="text-gray-600">Performed by:</span> {log.performedByName}
                                 </div>
                                 <div>
-                                    <span className="text-gray-500">Entity ID:</span> <code className="bg-gray-100 px-1 rounded text-xs">{log.entityId}</code>
+                                    <span className="text-gray-600">Entity ID:</span> <code className="bg-gray-100 px-1 rounded text-xs">{log.entityId}</code>
                                 </div>
                                 {log.deviceInfo && (
                                     <div className="col-span-2 text-xs">
-                                        <span className="text-gray-500">Device:</span> {log.deviceInfo.substring(0, 80)}...
+                                        <span className="text-gray-600">Device:</span> {log.deviceInfo.substring(0, 80)}...
                                     </div>
                                 )}
                             </div>
@@ -561,7 +561,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                                             )}
                                             {log.beforeValue && (
                                                 <div>
-                                                    <div className="text-xs font-medium text-gray-500">Before:</div>
+                                                    <div className="text-xs font-medium text-gray-600">Before:</div>
                                                     <pre className="bg-red-50 p-2 rounded text-xs overflow-auto max-h-32">
                                                         {typeof log.beforeValue === 'object' ? JSON.stringify(log.beforeValue, null, 2) : log.beforeValue}
                                                     </pre>
@@ -569,7 +569,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                                             )}
                                             {log.afterValue && (
                                                 <div>
-                                                    <div className="text-xs font-medium text-gray-500">After:</div>
+                                                    <div className="text-xs font-medium text-gray-600">After:</div>
                                                     <pre className="bg-green-50 p-2 rounded text-xs overflow-auto max-h-32">
                                                         {typeof log.afterValue === 'object' ? JSON.stringify(log.afterValue, null, 2) : log.afterValue}
                                                     </pre>
@@ -577,7 +577,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                                             )}
                                             {log.metadata && Object.keys(log.metadata).length > 0 && (
                                                 <div>
-                                                    <div className="text-xs font-medium text-gray-500">Metadata:</div>
+                                                    <div className="text-xs font-medium text-gray-600">Metadata:</div>
                                                     <pre className="bg-gray-50 p-2 rounded text-xs overflow-auto max-h-32">
                                                         {JSON.stringify(log.metadata, null, 2)}
                                                     </pre>
@@ -590,7 +590,7 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                         </div>
                     ))
                 ) : (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-600">
                         No audit logs found matching the current filters.
                     </div>
                 )}
@@ -603,14 +603,14 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                         <button
                             onClick={() => handlePageChange(1)}
                             disabled={currentPage === 1}
-                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                         >
                             First
                         </button>
                         <button
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                         >
                             Previous
                         </button>
@@ -620,14 +620,14 @@ const AuditLogViewer = React.memo(function AuditLogViewer() {
                         <button
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                         >
                             Next
                         </button>
                         <button
                             onClick={() => handlePageChange(totalPages)}
                             disabled={currentPage === totalPages}
-                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                         >
                             Last
                         </button>

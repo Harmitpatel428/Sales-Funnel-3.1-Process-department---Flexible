@@ -111,16 +111,17 @@ export default function RolesPage() {
 
     return (
         <RoleGuard allowedRoles={['ADMIN']}>
-            <div className="p-6 max-w-7xl mx-auto space-y-8">
+            <div className="bg-white text-black min-h-full">
+                <div className="p-6 max-w-7xl mx-auto space-y-8">
 
                 {/* Testing Panel */}
                 <PermissionTestingPanel />
 
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold">Role Management</h1>
+                    <h1 className="text-lg font-semibold text-black">Role Management</h1>
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
+                        className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg"
                     >
                         Create Custom Role
                     </button>
@@ -129,11 +130,11 @@ export default function RolesPage() {
                 {/* Role Creation/Edit Form */}
                 {isCreating && (
                     <div className="bg-white rounded-xl border p-6 mb-6 shadow-sm">
-                        <h2 className="text-lg font-semibold mb-4">Create Custom Role</h2>
+                        <h2 className="text-lg font-semibold text-black mb-4">Create Custom Role</h2>
 
                         <div className="grid grid-cols-2 gap-4 mb-6">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Role Name</label>
+                                <label className="block text-sm text-gray-700 mb-1">Role Name</label>
                                 <input
                                     type="text"
                                     value={roleName}
@@ -143,7 +144,7 @@ export default function RolesPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Description</label>
+                                <label className="block text-sm text-gray-700 mb-1">Description</label>
                                 <input
                                     type="text"
                                     value={roleDescription}
@@ -158,7 +159,7 @@ export default function RolesPage() {
                         <div className="space-y-6">
                             {Object.entries(permissionsByCategory).map(([category, perms]) => (
                                 <div key={category} className="border rounded-lg p-4 bg-gray-50">
-                                    <h3 className="font-semibold text-lg mb-3 text-gray-900 border-b pb-2">
+                                    <h3 className="text-lg font-semibold text-black mb-3 border-b pb-2">
                                         {category} Permissions
                                     </h3>
                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -174,7 +175,7 @@ export default function RolesPage() {
                                                     <div className="text-sm font-medium text-gray-900">
                                                         {metadata.label}
                                                     </div>
-                                                    <div className="text-xs text-gray-500">
+                                                    <div className="text-xs text-gray-600">
                                                         {metadata.description}
                                                     </div>
                                                 </div>
@@ -187,7 +188,7 @@ export default function RolesPage() {
 
                         {/* Field Permissions Section */}
                         <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-                            <h3 className="font-semibold text-lg mb-3 text-gray-900 border-b pb-2">
+                            <h3 className="text-lg font-semibold text-black mb-3 border-b pb-2">
                                 Field-Level Permissions
                             </h3>
                             <div className="space-y-4">
@@ -231,13 +232,13 @@ export default function RolesPage() {
                         <div className="flex justify-end gap-3 mt-6">
                             <button
                                 onClick={() => { setIsCreating(false); resetForm(); }}
-                                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                                className="px-4 py-2 bg-gray-200 text-black hover:bg-gray-300 rounded-lg"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleSaveRole}
-                                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                                className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg"
                             >
                                 Save Role
                             </button>
@@ -248,40 +249,40 @@ export default function RolesPage() {
                 {/* Roles List */}
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-100 text-black font-medium">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-left text-sm font-medium text-black">
                                     Role Name
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-left text-sm font-medium text-black">
                                     Description
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-left text-sm font-medium text-black">
                                     Type
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-left text-sm font-medium text-black">
                                     Users
                                 </th>
-                                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-right text-sm font-medium text-black">
                                     Actions
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white divide-y divide-gray-200 text-gray-800">
                             {roles.map((role: any) => (
                                 <tr key={role.id}>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">{role.name}</div>
+                                        <div className="text-sm font-medium text-gray-800">{role.name}</div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="text-sm text-gray-500">{role.description}</div>
+                                        <div className="text-sm text-gray-600">{role.description}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${role.isSystem ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
                                             {role.isSystem ? 'System' : 'Custom'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                                         {role._count?.users || 0}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -294,13 +295,14 @@ export default function RolesPage() {
                             ))}
                             {roles.length === 0 && (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                    <td colSpan={5} className="px-6 py-4 text-center text-gray-600">
                                         No custom roles found.
                                     </td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
+                </div>
                 </div>
             </div>
         </RoleGuard>

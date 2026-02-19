@@ -18,7 +18,7 @@ export default function AuditLogsPage() {
 
     return (
         <RoleGuard allowedRoles={['ADMIN']}>
-            <div className="min-h-screen bg-gray-50">
+            <div className="bg-white text-black min-h-full">
                 <AuditLogViewer />
             </div>
         </RoleGuard>

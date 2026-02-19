@@ -10,22 +10,17 @@ import { User, UserRole, PasswordHistoryEntry } from '../types/processTypes';
 
 // Dynamically imported components for bundle optimization
 const AuditLogViewer = dynamic(() => import('../components/AuditLogViewer'), {
-    loading: () => <div className="flex items-center justify-center p-8"><div className="text-gray-500">Loading audit logs...</div></div>,
+    loading: () => <div className="flex items-center justify-center p-8"><div className="text-gray-600">Loading audit logs...</div></div>,
     ssr: false
 });
 
 const PasswordHistoryModal = dynamic(() => import('../components/PasswordHistoryModal'), {
-    loading: () => <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"><div className="bg-white rounded-xl p-6"><div className="text-gray-500">Loading...</div></div></div>,
-    ssr: false
-});
-
-const SSOConfigModal = dynamic(() => import('../components/SSOConfigModal'), {
-    loading: () => null,
+    loading: () => <div className="fixed inset-0 bg-gray-900/40 flex items-center justify-center z-50"><div className="bg-white rounded-xl p-6"><div className="text-gray-600">Loading...</div></div></div>,
     ssr: false
 });
 
 const RolesPage = dynamic(() => import('./roles/page'), {
-    loading: () => <div className="p-8 text-center text-gray-500">Loading Role Management...</div>,
+    loading: () => <div className="p-8 text-center text-gray-600">Loading Role Management...</div>,
     ssr: false
 });
 
@@ -58,8 +53,6 @@ export default function UsersPage() {
     const [historyModal, setHistoryModal] = useState<{ isOpen: boolean; userId: string; userName: string; history: PasswordHistoryEntry[] }>({
         isOpen: false, userId: '', userName: '', history: []
     });
-
-    const [ssoModalOpen, setSsoModalOpen] = useState(false);
 
     // Handle impersonation start using context
     const handleStartImpersonation = useCallback(async (user: User) => {
@@ -191,23 +184,18 @@ export default function UsersPage() {
 
     return (
         <RoleGuard allowedRoles={['ADMIN']} fallback={<AccessDenied />}>
-            <div className="p-6 w-full max-w-[98%] xl:max-w-[1920px] mx-auto">
+            <div className="bg-white text-black min-h-full">
+                <div className="p-6 w-full max-w-[98%] xl:max-w-[1920px] mx-auto">
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
+                    <h1 className="text-lg font-semibold text-black">User Management</h1>
                     {activeTab === 'users' && (
                         <div className="flex gap-3">
-                            <button
-                                onClick={() => setSsoModalOpen(true)}
-                                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-                            >
-                                Manage SSO
-                            </button>
                             <button
                                 onClick={() => {
                                     resetForm();
                                     setIsEditing(true);
                                 }}
-                                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                                className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
                             >
                                 Add New User
                             </button>
@@ -221,7 +209,7 @@ export default function UsersPage() {
                         onClick={() => setActiveTab('users')}
                         className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'users'
                             ? 'border-purple-600 text-purple-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                            : 'border-transparent text-gray-700 hover:text-black'
                             }`}
                     >
                         Users
@@ -230,7 +218,7 @@ export default function UsersPage() {
                         onClick={() => setActiveTab('roles')}
                         className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'roles'
                             ? 'border-purple-600 text-purple-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                            : 'border-transparent text-gray-700 hover:text-black'
                             }`}
                     >
                         Roles
@@ -239,7 +227,7 @@ export default function UsersPage() {
                         onClick={() => setActiveTab('audit')}
                         className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'audit'
                             ? 'border-purple-600 text-purple-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                            : 'border-transparent text-gray-700 hover:text-black'
                             }`}
                     >
                         Audit Logs
@@ -268,7 +256,7 @@ export default function UsersPage() {
                         {/* Add User Form */}
                         {isEditing && (
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
-                                <h2 className="text-lg font-semibold mb-4 text-gray-900">Create New User</h2>
+                                <h2 className="text-lg font-semibold text-black mb-4">Create New User</h2>
                                 <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -347,13 +335,13 @@ export default function UsersPage() {
                                         <button
                                             type="button"
                                             onClick={() => setIsEditing(false)}
-                                            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                            className="px-4 py-2 bg-gray-200 text-black hover:bg-gray-300 rounded-lg"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                                            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg"
                                         >
                                             Create User
                                         </button>
@@ -365,18 +353,18 @@ export default function UsersPage() {
                         {/* Users List */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
+                                <thead className="bg-gray-100 text-black font-medium">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Password</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">User</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">Username</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">Password</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">Role</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">Status</th>
+                                        <th className="px-6 py-3 text-left text-sm font-medium text-black">Last Login</th>
+                                        <th className="px-6 py-3 text-right text-sm font-medium text-black">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
+                                <tbody className="bg-white divide-y divide-gray-200 text-gray-800">
                                     {/* Paginated user rendering for better performance when >50 users */}
                                     {shouldVirtualize && (
                                         <tr>
@@ -393,22 +381,22 @@ export default function UsersPage() {
                                                         {user.name.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div className="ml-4">
-                                                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                                                        <div className="text-sm text-gray-500">{user.email}</div>
+                                                        <div className="text-sm font-medium text-gray-800">{user.name}</div>
+                                                        <div className="text-sm text-gray-600">{user.email}</div>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="text-sm text-gray-900 font-mono">{user.username}</span>
+                                                <span className="text-sm text-gray-800 font-mono">{user.username}</span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {user.plainPassword ? (
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <span className="text-sm text-gray-900 font-mono min-w-0 inline-block max-w-[200px] truncate" title={user.plainPassword}>{user.plainPassword}</span>
+                                                        <span className="text-sm text-gray-800 font-mono min-w-0 inline-block max-w-[200px] truncate" title={user.plainPassword}>{user.plainPassword}</span>
 
                                                     </div>
                                                 ) : (
-                                                    <span className="text-sm text-gray-400 font-mono min-w-0 inline-block max-w-[200px] truncate" title="Password not yet available (user created before this feature)">
+                                                    <span className="text-sm text-gray-600 font-mono min-w-0 inline-block max-w-[200px] truncate" title="Password not yet available (user created before this feature)">
                                                         ••••••••
                                                     </span>
                                                 )}
@@ -429,7 +417,7 @@ export default function UsersPage() {
                                                     {user.isActive ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                                                 {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -482,14 +470,14 @@ export default function UsersPage() {
                                     <button
                                         onClick={() => setUserPage(1)}
                                         disabled={userPage === 1}
-                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                     >
                                         First
                                     </button>
                                     <button
                                         onClick={() => setUserPage(p => Math.max(1, p - 1))}
                                         disabled={userPage === 1}
-                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                     >
                                         Previous
                                     </button>
@@ -499,14 +487,14 @@ export default function UsersPage() {
                                     <button
                                         onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
                                         disabled={userPage === totalUserPages}
-                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                     >
                                         Next
                                     </button>
                                     <button
                                         onClick={() => setUserPage(totalUserPages)}
                                         disabled={userPage === totalUserPages}
-                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                     >
                                         Last
                                     </button>
@@ -516,13 +504,13 @@ export default function UsersPage() {
 
                         {/* Password Reset Modal */}
                         {resetPasswordModal.isOpen && resetPasswordModal.newPassword && (
-                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="fixed inset-0 bg-gray-900/40 flex items-center justify-center z-50">
                                 <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
                                     <div className="flex items-center justify-between mb-4">
                                         <h3 className="text-lg font-semibold text-gray-900">Password Reset Successful</h3>
                                         <button
                                             onClick={closePasswordModal}
-                                            className="text-gray-400 hover:text-gray-600"
+                                            className="text-gray-600 hover:text-black"
                                         >
                                             ✕
                                         </button>
@@ -536,7 +524,7 @@ export default function UsersPage() {
                                         </code>
                                         <button
                                             onClick={() => copyToClipboard(resetPasswordModal.newPassword!)}
-                                            className="ml-3 px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors"
+                                            className="ml-3 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
                                         >
                                             Copy
                                         </button>
@@ -546,7 +534,7 @@ export default function UsersPage() {
                                             ⚠️ Please share this password with the user securely. They should change it after logging in.
                                         </p>
                                     </div>
-                                    <p className="text-xs text-gray-400 text-center">
+                                    <p className="text-xs text-gray-600 text-center">
                                         This dialog will auto-close in 10 seconds
                                     </p>
                                 </div>
@@ -561,14 +549,11 @@ export default function UsersPage() {
                             history={historyModal.history}
                         />
 
-                        <SSOConfigModal
-                            isOpen={ssoModalOpen}
-                            onClose={() => setSsoModalOpen(false)}
-                        />
                     </>
                 )
                 }
-            </div >
+                </div>
+            </div>
         </RoleGuard >
     );
 }
