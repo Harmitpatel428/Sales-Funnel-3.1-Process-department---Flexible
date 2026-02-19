@@ -10,10 +10,114 @@ import {
 import { PERMISSIONS } from '@/app/types/permissions';
 import { requirePermissions } from '@/lib/middleware/permissions';
 
+const LEAD_INSERT_CHUNK_SIZE = 300;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function toTrimmedString(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+}
+
+function normalizeEmail(value: unknown): string {
+    return toTrimmedString(value).toLowerCase();
+}
+
+function toNullableString(value: unknown): string | null {
+    const trimmed = toTrimmedString(value);
+    return trimmed.length > 0 ? trimmed : null;
+}
+
+function toDateOrNull(value: unknown): Date | null {
+    const raw = toTrimmedString(value);
+    if (!raw) return null;
+
+    // Handle DD-MM-YYYY
+    if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
+        const [day, month, year] = raw.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    // Handle DD/MM/YYYY
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+        const [day, month, year] = raw.split('/').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    const parsed = new Date(raw);
+    return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toJsonString(value: unknown, fallback: string): string {
+    if (value === null || value === undefined || value === '') return fallback;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : fallback;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return fallback;
+    }
+}
+
+function normalizeLeadRecord(record: any, tenantId: string, userId: string) {
+    return {
+        clientName: toNullableString(record.clientName),
+        mobileNumber: toNullableString(record.mobileNumber),
+        email: toNullableString(record.email),
+        company: toNullableString(record.company),
+        source: toNullableString(record.source),
+        status: toTrimmedString(record.status) || 'NEW',
+        notes: toNullableString(record.notes),
+        kva: toNullableString(record.kva),
+        connectionDate: toDateOrNull(record.connectionDate),
+        consumerNumber: toNullableString(record.consumerNumber),
+        discom: toNullableString(record.discom),
+        gidc: toNullableString(record.gidc),
+        gstNumber: toNullableString(record.gstNumber),
+        companyLocation: toNullableString(record.companyLocation),
+        unitType: toNullableString(record.unitType),
+        marketingObjective: toNullableString(record.marketingObjective),
+        budget: toNullableString(record.budget),
+        termLoan: toNullableString(record.termLoan),
+        timeline: toNullableString(record.timeline),
+        contactOwner: toNullableString(record.contactOwner),
+        lastActivityDate: toDateOrNull(record.lastActivityDate),
+        followUpDate: toDateOrNull(record.followUpDate),
+        finalConclusion: toNullableString(record.finalConclusion),
+        isDone: Boolean(record.isDone ?? false),
+        isDeleted: Boolean(record.isDeleted ?? false),
+        isUpdated: Boolean(record.isUpdated ?? false),
+        mandateStatus: toNullableString(record.mandateStatus),
+        documentStatus: toNullableString(record.documentStatus),
+        convertedToCaseId: toNullableString(record.convertedToCaseId),
+        convertedAt: toDateOrNull(record.convertedAt),
+        assignedBy: toNullableString(record.assignedBy),
+        assignedAt: toDateOrNull(record.assignedAt),
+        mobileNumbers: toJsonString(record.mobileNumbers, '[]'),
+        activities: toJsonString(record.activities, '[]'),
+        submitted_payload: toJsonString(record.submitted_payload, '{}'),
+        customFields: toJsonString(record.customFields, '{}'),
+        tenantId: tenantId,
+        createdById: userId,
+        assignedToId: toNullableString(record.assignedToId) || userId,
+    };
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+        chunks.push(items.slice(i, i + chunkSize));
+    }
+    return chunks;
+}
+
 /**
  * GET /api/bulk/import
  * Generate bypass token
- * 
+ *
  * Note: This endpoint generates tokens for bulk import operations.
  * Since the token will be used for a specific entityType, we require
  * both LEADS_CREATE and CASES_CREATE permissions (admin-level access).
@@ -47,7 +151,7 @@ export const GET = withApiHandler(
 /**
  * POST /api/bulk/import
  * Bulk data import with optional bypass
- * 
+ *
  * Permission enforcement is entity-specific:
  * - entityType=leads requires LEADS_CREATE
  * - entityType=cases requires CASES_CREATE
@@ -73,7 +177,7 @@ export const POST = withApiHandler(
         let body: any;
         try {
             body = await req.json();
-        } catch (parseError) {
+        } catch {
             return NextResponse.json(
                 { success: false, error: 'INVALID_JSON_BODY', message: 'Invalid JSON in request body' },
                 { status: 400 }
@@ -150,96 +254,147 @@ export const POST = withApiHandler(
         const skipDuplicates = options?.skipDuplicates ?? true;
         const validateOnly = options?.validateOnly ?? false;
 
-        for (let i = 0; i < records.length; i++) {
-            const record = records[i];
-            const rowErrors: string[] = [];
+        if (entityType === 'leads') {
+            const rowsToInsert: Array<{ row: number; source: any; data: any }> = [];
 
-            // Validate based on entity type
-            if (entityType === 'leads') {
+            const existingEmails = new Set<string>();
+            if (skipDuplicates) {
+                const candidateEmails = Array.from(
+                    new Set(
+                        records
+                            .map((r: any) => normalizeEmail(r?.email))
+                            .filter((email: string) => email.length > 0)
+                    )
+                );
+
+                if (candidateEmails.length > 0) {
+                    const existing = await prisma.lead.findMany({
+                        where: {
+                            tenantId,
+                            isDeleted: false,
+                            email: { in: candidateEmails }
+                        },
+                        select: { email: true }
+                    });
+
+                    existing.forEach(lead => {
+                        const email = normalizeEmail(lead.email);
+                        if (email) existingEmails.add(email);
+                    });
+                }
+            }
+
+            for (let i = 0; i < records.length; i++) {
+                const record = records[i] ?? {};
+                const rowErrors: string[] = [];
+
+                const clientName = toTrimmedString(record.clientName);
+                const company = toTrimmedString(record.company);
+                const email = normalizeEmail(record.email);
+
                 if (!isBypassed) {
-                    // Strict Validation (only if not bypassed)
-                    // Required field validation
-                    if (!record.clientName && !record.company && !record.email) {
+                    if (!clientName && !company && !email) {
                         rowErrors.push('At least one of clientName, company, or email is required');
                     }
 
-                    // Email format validation
-                    if (record.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.email)) {
+                    if (email && !EMAIL_REGEX.test(email)) {
                         rowErrors.push('Invalid email format');
                     }
                 }
 
-                // Check for duplicates
-                if (skipDuplicates && record.email) {
+                if (rowErrors.length > 0) {
+                    results.failed++;
+                    results.errors.push({ row: i + 1, data: record, errors: rowErrors });
+                    continue;
+                }
+
+                if (skipDuplicates && email) {
+                    if (existingEmails.has(email)) {
+                        results.skipped++;
+                        continue;
+                    }
+                    existingEmails.add(email);
+                }
+
+                if (validateOnly) {
+                    results.successful++;
+                    continue;
+                }
+
+                rowsToInsert.push({
+                    row: i + 1,
+                    source: record,
+                    data: normalizeLeadRecord(record, tenantId, userId)
+                });
+            }
+
+            if (!validateOnly && rowsToInsert.length > 0) {
+                const insertChunks = chunkArray(rowsToInsert, LEAD_INSERT_CHUNK_SIZE);
+
+                for (const chunk of insertChunks) {
                     try {
-                        const existing = await prisma.lead.findFirst({
-                            where: { email: record.email, tenantId: tenantId, isDeleted: false },
+                        const createResult = await prisma.lead.createMany({
+                            data: chunk.map(item => item.data)
                         });
-                        if (existing) {
-                            results.skipped++;
-                            continue;
+
+                        results.successful += createResult.count;
+
+                        // Extremely rare fallback when DB reports fewer inserts than requested.
+                        if (createResult.count < chunk.length) {
+                            const missing = chunk.length - createResult.count;
+                            results.failed += missing;
                         }
-                    } catch (dupCheckErr) {
-                        console.error('[Bulk Import] Duplicate check failed:', dupCheckErr);
+                    } catch (chunkError) {
+                        // Fallback for safety; keeps import resilient if bulk insert fails.
+                        for (const item of chunk) {
+                            try {
+                                const lead = await prisma.lead.create({ data: item.data });
+                                results.successful++;
+                                results.created.push(lead.id);
+                            } catch {
+                                results.failed++;
+                                results.errors.push({
+                                    row: item.row,
+                                    data: item.source,
+                                    errors: ['Failed to create record'],
+                                });
+                            }
+                        }
                     }
                 }
             }
+        } else {
+            // Existing case import fallback (kept row-by-row for now).
+            for (let i = 0; i < records.length; i++) {
+                const record = records[i];
+                const rowErrors: string[] = [];
 
-            if (rowErrors.length > 0) {
-                results.failed++;
-                results.errors.push({ row: i + 1, data: record, errors: rowErrors });
-                continue;
-            }
-
-            if (validateOnly) {
-                results.successful++;
-                continue;
-            }
-
-            // Create record
-            try {
-                if (entityType === 'leads') {
-                    const lead = await prisma.lead.create({
-                        data: {
-                            clientName: record.clientName,
-                            mobileNumber: record.mobileNumber,
-                            email: record.email,
-                            company: record.company,
-                            source: record.source,
-                            status: record.status || 'NEW',
-                            notes: record.notes,
-                            kva: record.kva,
-                            consumerNumber: record.consumerNumber,
-                            discom: record.discom,
-                            gidc: record.gidc,
-                            gstNumber: record.gstNumber,
-                            companyLocation: record.companyLocation,
-                            unitType: record.unitType,
-                            marketingObjective: record.marketingObjective,
-                            budget: record.budget,
-                            termLoan: record.termLoan,
-                            timeline: record.timeline,
-                            contactOwner: record.contactOwner,
-                            customFields: record.customFields ? JSON.stringify(record.customFields) : '{}',
-                            tenantId: tenantId,
-                            createdById: userId,
-                            assignedToId: userId,
-                            isDone: false,
-                            isDeleted: false,
-                        },
-                    });
-                    results.created.push(lead.id);
+                if (rowErrors.length > 0) {
+                    results.failed++;
+                    results.errors.push({ row: i + 1, data: record, errors: rowErrors });
+                    continue;
                 }
-                results.successful++;
-            } catch (createError: any) {
-                console.error('[Bulk Import] Failed to create lead:', createError);
-                results.failed++;
-                results.errors.push({
-                    row: i + 1,
-                    data: record,
-                    // Generic error message to prevent leaking internal details
-                    errors: ['Failed to create record'],
-                });
+
+                if (validateOnly) {
+                    results.successful++;
+                    continue;
+                }
+
+                try {
+                    if (entityType === 'cases') {
+                        // Preserve existing behavior for case imports.
+                        results.successful++;
+                        continue;
+                    }
+                    results.successful++;
+                } catch {
+                    results.failed++;
+                    results.errors.push({
+                        row: i + 1,
+                        data: record,
+                        errors: ['Failed to create record'],
+                    });
+                }
             }
         }
 

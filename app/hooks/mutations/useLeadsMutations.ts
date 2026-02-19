@@ -67,6 +67,16 @@ interface DeleteResponse {
     message: string;
 }
 
+interface BulkDeleteResponse {
+    success: boolean;
+    message: string;
+    data: {
+        requested: number;
+        deleted: number;
+        skipped: number;
+    };
+}
+
 interface AssignResponse {
     success: boolean;
     message: string;
@@ -587,6 +597,30 @@ export function useBulkImportMutation() {
         },
         onError: (err) => {
             handleError(err, { context: 'Bulk Import' });
+        }
+    });
+}
+
+/**
+ * Bulk delete leads (soft delete)
+ */
+export function useBulkDeleteLeadsMutation() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: { leadIds: string[]; reason?: string }) => {
+            const response = await apiClient.post<BulkDeleteResponse>('/api/leads/bulk-delete', data);
+
+            if (!response.success) {
+                throw new Error(response.message || 'Bulk delete failed');
+            }
+            return response;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: leadKeys.lists(), exact: false });
+        },
+        onError: (err) => {
+            handleError(err, { context: 'Bulk Delete Leads' });
         }
     });
 }
