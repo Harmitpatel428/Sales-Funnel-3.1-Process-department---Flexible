@@ -22,7 +22,7 @@ import { useUpdateLeadMutation } from '../hooks/mutations/useLeadsMutations';
 import { useBulkImportMutation, useBulkDeleteLeadsMutation } from '@/app/hooks/mutations';
 
 
-const LeadDetailModal = lazy(() => import('../components/LeadDetailModal'));
+import LeadDetailModal from '../components/LeadDetailModal';
 const PasswordModal = lazy(() => import('../components/PasswordModal'));
 const IMPORT_DEBUG = false;
 
@@ -2990,18 +2990,16 @@ export default function AllLeadsPage() {
 
       {/* Lead Detail Modal */}
       {showLeadModal && (
-        <Suspense fallback={<LoadingSpinner text="Loading..." />}>
-          <LeadDetailModal
-            isOpen={showLeadModal}
-            onClose={() => {
-              setShowLeadModal(false);
-              document.body.style.overflow = 'unset';
-            }}
-            lead={selectedLead!}
-            onEdit={handleEditLead}
-            onDelete={handleDeleteClick}
-          />
-        </Suspense>
+        <LeadDetailModal
+          isOpen={showLeadModal}
+          onClose={() => {
+            setShowLeadModal(false);
+            document.body.style.overflow = 'unset';
+          }}
+          lead={selectedLead!}
+          onEdit={handleEditLead}
+          onDelete={handleDeleteClick}
+        />
       )}
 
       {/* Password Protection Modal */}

@@ -19,17 +19,11 @@ export function FieldPermissionGuard({
     mode = 'view'
 }: FieldPermissionGuardProps) {
     const { canViewField, canEditField } = useUsers();
-    const [hasPermission, setHasPermission] = useState(false);
 
-    useEffect(() => {
-        const checkPermission = async () => {
-            const allowed = mode === 'view'
-                ? await canViewField(resource, fieldName)
-                : await canEditField(resource, fieldName);
-            setHasPermission(allowed);
-        };
-        checkPermission();
-    }, [resource, fieldName, mode, canViewField, canEditField]);
+    // Now synchronous!
+    const hasPermission = mode === 'view'
+        ? canViewField(resource, fieldName)
+        : canEditField(resource, fieldName);
 
     if (!hasPermission) return <>{fallback}</>;
     return <>{children}</>;

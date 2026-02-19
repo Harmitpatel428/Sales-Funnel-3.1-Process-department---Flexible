@@ -393,6 +393,10 @@ export interface UserContextType {
     canAccessProcessDashboard: () => boolean;
     canDeleteLeads: () => boolean;
     canAssignBenefitTypes: () => boolean;
+
+    // Field Permissions
+    canViewField: (resource: string, fieldName: string) => boolean;
+    canEditField: (resource: string, fieldName: string) => boolean;
 }
 
 /**

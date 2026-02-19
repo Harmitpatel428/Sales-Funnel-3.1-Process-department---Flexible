@@ -7,6 +7,8 @@ import { useSession, AuthState } from '@/app/hooks/useSession';
 import { useMultiTabSync } from '@/app/hooks/useMultiTabSync';
 import SessionExpiryWarning from '../components/SessionExpiryWarning';
 
+import { getFieldPermissionsAction } from '../actions/permissions';
+
 export interface UserContextType {
     currentUser: UserSession | null;
     users: User[];
@@ -54,8 +56,12 @@ export interface UserContextType {
     hasPermission: (permission: string) => boolean;
     hasAnyPermission: (permissions: string[]) => boolean;
     hasAllPermissions: (permissions: string[]) => boolean;
-    canViewField: (resource: string, fieldName: string) => Promise<boolean>;
-    canEditField: (resource: string, fieldName: string) => Promise<boolean>;
+    canViewField: (resource: string, fieldName: string) => boolean;
+    canEditField: (resource: string, fieldName: string) => boolean;
+
+    // Helper methods
+    getUserById: (userId: string) => User | undefined;
+    getUsersByRole: (role: string) => User[];
 }
 
 
@@ -69,6 +75,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    // Cache field permissions: resource -> { canView: [], canEdit: [] }
+    const [fieldPermissions, setFieldPermissions] = useState<Record<string, { canView: string[], canEdit: string[] }>>({});
 
     // Session Management Integration
     const { sessionState, authState, refreshSession: extendSession, refetch: refetchSession, isLoading: sessionLoading } = useSession();
@@ -469,6 +477,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return hasRole(['ADMIN', 'PROCESS_MANAGER']);
     }, [hasRole]);
 
+    // Load field permissions on login
+    useEffect(() => {
+        if (currentUser) {
+            // Pre-load common resources
+            const loadPermissions = async () => {
+                try {
+                    const leadsPerms = await getFieldPermissionsAction('leads');
+                    setFieldPermissions(prev => ({ ...prev, leads: leadsPerms }));
+                } catch (error) {
+                    console.error('Failed to load field permissions', error);
+                }
+            };
+            loadPermissions();
+        } else {
+            setFieldPermissions({});
+        }
+    }, [currentUser]);
+
 
 
     // ============================================================================
@@ -500,21 +526,33 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Importing server action dynamically to avoid build issues if mixed? 
     // No, standard import is fine.
 
-    const canViewField = useCallback(async (resource: string, fieldName: string): Promise<boolean> => {
+    const canViewField = useCallback((resource: string, fieldName: string): boolean => {
         if (!currentUser) return false;
-        const { getFieldPermissionsAction } = await import('../actions/permissions');
-        const perms = await getFieldPermissionsAction(resource);
+        const perms = fieldPermissions[resource];
+        if (!perms) return false; // Default to hidden if not loaded
         // Check for wildcard '*' which means all fields are allowed
         return perms.canView.includes('*') || perms.canView.includes(fieldName);
-    }, [currentUser]);
+    }, [currentUser, fieldPermissions]);
 
-    const canEditField = useCallback(async (resource: string, fieldName: string): Promise<boolean> => {
+    const canEditField = useCallback((resource: string, fieldName: string): boolean => {
         if (!currentUser) return false;
-        const { getFieldPermissionsAction } = await import('../actions/permissions');
-        const perms = await getFieldPermissionsAction(resource);
+        const perms = fieldPermissions[resource];
+        if (!perms) return false; // Default to read-only if not loaded
         // Check for wildcard '*' which means all fields are allowed
         return perms.canEdit.includes('*') || perms.canEdit.includes(fieldName);
-    }, [currentUser]);
+    }, [currentUser, fieldPermissions]);
+
+    // ============================================================================
+    // HELPER METHODS
+    // ============================================================================
+
+    const getUserById = useCallback((userId: string): User | undefined => {
+        return users.find(u => u.userId === userId);
+    }, [users]);
+
+    const getUsersByRole = useCallback((role: string): User[] => {
+        return users.filter(u => u.role === role);
+    }, [users]);
 
     const contextValue: UserContextType = useMemo(() => ({
         currentUser,
@@ -555,6 +593,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
         hasAllPermissions,
         canViewField,
         canEditField,
+        getUserById,
+        getUsersByRole,
     }), [
         currentUser,
         users,
@@ -594,7 +634,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
         hasAnyPermission,
         hasAllPermissions,
         canViewField,
-        canEditField
+        canEditField,
+        getUserById,
+        getUsersByRole
     ]);
 
     // Handle invalid session (Comment 1) - Placed after logout definition

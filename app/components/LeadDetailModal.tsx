@@ -11,9 +11,6 @@ import QuickBenefitModal from './QuickBenefitModal';
 import ForwardToProcessModal from './ForwardToProcessModal';
 import { getGlobalTemplate, saveGlobalTemplate, resolveToTemplate, getResolvedScriptForLead } from '../utils/callScript';
 import { FieldPermissionGuard } from './FieldPermissionGuard';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import ActivityTimeline from './ActivityTimeline';
-import CalendarIntegration from './CalendarIntegration';
 import { PresenceIndicator } from './PresenceIndicator';
 
 
@@ -368,280 +365,240 @@ export default React.memo(function LeadDetailModal({
             </button>
           </div>
 
-          <Tabs defaultValue="details" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="communication">Communication & Calendar</TabsTrigger>
-            </TabsList>
+          <div className="max-h-[70vh] overflow-y-auto pr-2">
+            <div className="space-y-2">
+              {/* Permanent Fields Section */}
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {/* Mobile Numbers */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-medium text-black">Main Phone</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const phoneNumber = getPrimaryPhoneNumber(lead);
+                        copyToClipboard(phoneNumber, 'mainPhone');
+                      }}
+                      className="text-gray-400 hover:text-black transition-colors"
+                      title="Copy main phone number"
+                      aria-label="Copy main phone number"
+                    >
+                      {copiedField === 'mainPhone' ? (
+                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs font-medium text-black">
+                    {(() => {
+                      // Try to get phone from submitted_payload first
+                      const payloadMobileNumbers = lead.submitted_payload?.mobileNumbers;
+                      if (payloadMobileNumbers && Array.isArray(payloadMobileNumbers) && payloadMobileNumbers.length > 0) {
+                        const mainMobile = payloadMobileNumbers.find((m: any) => m.isMain) || payloadMobileNumbers[0];
+                        if (mainMobile?.number) return mainMobile.number;
+                      }
+                      return getPrimaryPhoneNumber(lead);
+                    })()}
+                  </p>
+                </div>
 
-            <TabsContent value="details" className="max-h-[70vh] overflow-y-auto pr-2">
-              <div className="space-y-2">
-                {/* Permanent Fields Section */}
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {/* Mobile Numbers */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-xs font-medium text-black">Main Phone</label>
+                {/* Unit Type */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Unit Type</label>
+                  <p className="text-xs font-medium text-black">{getDisplayValue('unitType') || lead.unitType}</p>
+                </div>
+
+                {/* Status */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Status</label>
+                  {(() => {
+                    const statusValue = getDisplayValue('status') || lead.status;
+                    return (
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusValue === 'New' ? 'bg-blue-100 text-blue-800' :
+                        statusValue === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
+                          statusValue === 'CNR' ? 'bg-orange-100 text-orange-800' :
+                            statusValue === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
+                              statusValue === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
+                                statusValue === 'Deal Close' ? 'bg-green-100 text-green-800' :
+                                  statusValue === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
+                                    statusValue === 'Hotlead' ? 'bg-red-100 text-red-800' :
+                                      statusValue === 'Others' ? 'bg-gray-100 text-black' :
+                                        'bg-gray-100 text-black'
+                        }`}>
+                        {statusValue === 'Work Alloted' ? 'WAO' : statusValue === 'Fresh Lead' ? 'FL1' : statusValue}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                {/* Follow-up Date */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Follow-up Date</label>
+                  <p className="text-xs font-medium text-black">
+                    {(() => {
+                      const followUpValue = getDisplayValue('followUpDate') || lead.followUpDate;
+                      return followUpValue ? formatDateToDDMMYYYY(followUpValue) : 'N/A';
+                    })()}
+                  </p>
+                </div>
+
+                {/* Address */}
+                {(() => {
+                  const locationValue = getDisplayValue('companyLocation') || lead.companyLocation;
+                  return locationValue ? (
+                    <div className="bg-gray-50 p-2 rounded-md">
+                      <label className="block text-xs font-medium text-black mb-1">Address</label>
+                      <p className="text-xs font-medium text-black">{locationValue}</p>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Notes */}
+                {(() => {
+                  const notesValue = getDisplayValue('notes') || lead.notes;
+                  return notesValue ? (
+                    <div className="bg-gray-50 p-2 rounded-md">
+                      <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
+                      <p className="text-xs font-medium text-black break-words">{notesValue}</p>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Last Activity Date */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
+                  <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(getDisplayValue('lastActivityDate') || lead.lastActivityDate)}</p>
+                </div>
+
+                {/* Assigned To - Sales Lead Assignment */}
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-medium text-black">Assigned To</label>
+                    {canAssign && (
                       <button
                         type="button"
-                        onClick={() => {
-                          const phoneNumber = getPrimaryPhoneNumber(lead);
-                          copyToClipboard(phoneNumber, 'mainPhone');
-                        }}
-                        className="text-gray-400 hover:text-black transition-colors"
-                        title="Copy main phone number"
-                        aria-label="Copy main phone number"
+                        onClick={() => setShowAssignModal(true)}
+                        className="text-purple-600 hover:text-purple-800 text-xs font-medium"
+                        title="Reassign lead"
                       >
-                        {copiedField === 'mainPhone' ? (
-                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
+                        {lead.assignedTo ? 'Reassign' : 'Assign'}
                       </button>
-                    </div>
-                    <p className="text-xs font-medium text-black">
-                      {(() => {
-                        // Try to get phone from submitted_payload first
-                        const payloadMobileNumbers = lead.submitted_payload?.mobileNumbers;
-                        if (payloadMobileNumbers && Array.isArray(payloadMobileNumbers) && payloadMobileNumbers.length > 0) {
-                          const mainMobile = payloadMobileNumbers.find((m: any) => m.isMain) || payloadMobileNumbers[0];
-                          if (mainMobile?.number) return mainMobile.number;
-                        }
-                        return getPrimaryPhoneNumber(lead);
-                      })()}
-                    </p>
-                  </div>
-
-                  {/* Unit Type */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Unit Type</label>
-                    <p className="text-xs font-medium text-black">{getDisplayValue('unitType') || lead.unitType}</p>
-                  </div>
-
-                  {/* Status */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Status</label>
-                    {(() => {
-                      const statusValue = getDisplayValue('status') || lead.status;
-                      return (
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusValue === 'New' ? 'bg-blue-100 text-blue-800' :
-                          statusValue === 'Fresh Lead' ? 'bg-emerald-100 text-emerald-800' :
-                            statusValue === 'CNR' ? 'bg-orange-100 text-orange-800' :
-                              statusValue === 'Busy' ? 'bg-yellow-100 text-yellow-800' :
-                                statusValue === 'Follow-up' ? 'bg-purple-100 text-purple-800' :
-                                  statusValue === 'Deal Close' ? 'bg-green-100 text-green-800' :
-                                    statusValue === 'Work Alloted' ? 'bg-indigo-100 text-indigo-800' :
-                                      statusValue === 'Hotlead' ? 'bg-red-100 text-red-800' :
-                                        statusValue === 'Others' ? 'bg-gray-100 text-black' :
-                                          'bg-gray-100 text-black'
-                          }`}>
-                          {statusValue === 'Work Alloted' ? 'WAO' : statusValue === 'Fresh Lead' ? 'FL1' : statusValue}
-                        </span>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Follow-up Date */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Follow-up Date</label>
-                    <p className="text-xs font-medium text-black">
-                      {(() => {
-                        const followUpValue = getDisplayValue('followUpDate') || lead.followUpDate;
-                        return followUpValue ? formatDateToDDMMYYYY(followUpValue) : 'N/A';
-                      })()}
-                    </p>
-                  </div>
-
-                  {/* Address */}
-                  {(() => {
-                    const locationValue = getDisplayValue('companyLocation') || lead.companyLocation;
-                    return locationValue ? (
-                      <div className="bg-gray-50 p-2 rounded-md">
-                        <label className="block text-xs font-medium text-black mb-1">Address</label>
-                        <p className="text-xs font-medium text-black">{locationValue}</p>
-                      </div>
-                    ) : null;
-                  })()}
-
-                  {/* Notes */}
-                  {(() => {
-                    const notesValue = getDisplayValue('notes') || lead.notes;
-                    return notesValue ? (
-                      <div className="bg-gray-50 p-2 rounded-md">
-                        <label className="block text-xs font-medium text-black mb-1">Last Discussion</label>
-                        <p className="text-xs font-medium text-black break-words">{notesValue}</p>
-                      </div>
-                    ) : null;
-                  })()}
-
-                  {/* Last Activity Date */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Last Activity</label>
-                    <p className="text-xs font-medium text-black">{formatDateToDDMMYYYY(getDisplayValue('lastActivityDate') || lead.lastActivityDate)}</p>
-                  </div>
-
-                  {/* Assigned To - Sales Lead Assignment */}
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-xs font-medium text-black">Assigned To</label>
-                      {canAssign && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAssignModal(true)}
-                          className="text-purple-600 hover:text-purple-800 text-xs font-medium"
-                          title="Reassign lead"
-                        >
-                          {lead.assignedTo ? 'Reassign' : 'Assign'}
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-xs font-medium text-black">
-                      {lead.assignedTo
-                        ? getUserById(lead.assignedTo)?.name || 'Unknown User'
-                        : 'Unassigned'}
-                    </p>
-                    {lead.assignedAt && (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Assigned: {formatDateToDDMMYYYY(lead.assignedAt.split('T')[0])}
-                      </p>
                     )}
                   </div>
+                  <p className="text-xs font-medium text-black">
+                    {lead.assignedTo
+                      ? getUserById(lead.assignedTo)?.name || 'Unknown User'
+                      : 'Unassigned'}
+                  </p>
+                  {lead.assignedAt && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Assigned: {formatDateToDDMMYYYY(lead.assignedAt.split('T')[0])}
+                    </p>
+                  )}
                 </div>
+              </div>
 
-                {/* Additional Numbers */}
-                {lead.mobileNumbers && lead.mobileNumbers.length > 0 && (
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">All Mobile Numbers</label>
-                    <div className="space-y-1">
-                      {lead.mobileNumbers.filter(m => m.number && m.number.trim()).map((mobile, index) => (
-                        <div key={index} className="flex items-center justify-between bg-white px-2 py-1 rounded border">
-                          <div className="flex-1">
-                            <div className="text-xs font-medium text-black">
-                              {mobile.name ? `${mobile.name}` : `Mobile ${index + 1}`}
-                            </div>
-                            <div className="text-xs text-black">{mobile.number}</div>
+              {/* Additional Numbers */}
+              {lead.mobileNumbers && lead.mobileNumbers.length > 0 && (
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">All Mobile Numbers</label>
+                  <div className="space-y-1">
+                    {lead.mobileNumbers.filter(m => m.number && m.number.trim()).map((mobile, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white px-2 py-1 rounded border">
+                        <div className="flex-1">
+                          <div className="text-xs font-medium text-black">
+                            {mobile.name ? `${mobile.name}` : `Mobile ${index + 1}`}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {mobile.isMain && (
-                              <span className="px-2 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
-                                Main
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(mobile.number, `mobile${index + 1}`)}
-                              className="text-gray-400 hover:text-black transition-colors"
-                              title="Copy mobile number"
-                              aria-label={`Copy mobile number ${index + 1}`}
-                            >
-                              {copiedField === `mobile${index + 1}` ? (
-                                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                              )}
-                            </button>
-                          </div>
+                          <div className="text-xs text-black">{mobile.number}</div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Dynamic Fields Section */}
-                {customColumns.length > 0 && (
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Additional Information</label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {customColumns.map((column) => {
-                        const value = (lead as unknown as Record<string, unknown>)[column.fieldKey] as unknown;
-                        const displayValue = formatFieldValue(value, column.type);
-
-                        return (
-                          <FieldPermissionGuard key={column.fieldKey} resource="leads" fieldName={column.fieldKey} mode="view">
-                            <div className="bg-white p-2 rounded border">
-                              <div className="flex justify-between items-center mb-1">
-                                <div className="text-xs font-medium text-black">{column.label}</div>
-                                {displayValue !== 'N/A' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => copyToClipboard(String(value), column.fieldKey)}
-                                    className="text-gray-400 hover:text-black transition-colors"
-                                    title={`Copy ${column.label}`}
-                                    aria-label={`Copy ${column.label} to clipboard`}
-                                  >
-                                    {copiedField === column.fieldKey ? (
-                                      <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    ) : (
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                      </svg>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                              <div className="text-xs text-black">{displayValue}</div>
-                            </div>
-                          </FieldPermissionGuard>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Final Conclusion */}
-                {lead.finalConclusion && (
-                  <div className="bg-gray-50 p-2 rounded-md">
-                    <label className="block text-xs font-medium text-black mb-1">Final Conclusion</label>
-                    <p className="text-xs font-medium text-black break-words">{lead.finalConclusion}</p>
-                  </div>
-                )}
-
-              </div>
-            </TabsContent>
-
-            <TabsContent value="communication" className="max-h-[70vh] overflow-y-auto pr-2">
-              <div className="space-y-4 pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[400px]">
-                  <div className="border rounded-md p-2 overflow-y-auto">
-                    <h4 className="font-semibold mb-2">Activities & Emails</h4>
-                    <ActivityTimeline
-                      activities={[]} // Should ideally fetch activities or use context. Timeline component usually fetches? 
-                      // Actually, ActivityTimeline props in previous step took 'activities'. 
-                      // I need to fetch them here or pass them properly.
-                      // For now, I'll assume ActivityTimeline handles fetching if I pass leadId (I need to check my implementation).
-                      // Checking my implementation of ActivityTimeline in Step 128:
-                      // It takes 'activities' prop. It does NOT fetch.
-                      // I need to fetch activities for this lead here or use a fetching wrapper.
-                      // I'll use a placeholder 'activities={[]}' and rely on a TODO or fetch hook if easy.
-                      // Ideally 'useLeads' or 'useActivities' hook exists.
-                      // I'll pass leadId and hope I can update ActivityTimeline to fetch if needed or use a wrapper.
-                      // Wait, the existing code didn't use ActivityTimeline in the modal.
-                      // I will check if 'ActivityTimeline' component I enhanced can fetch? No.
-                      // I'll assume for this MVP integration:
-                      // <ActivityTimeline activities={lead.activities || []} leadId={lead.id} />
-                      leadId={lead.id}
-                      activities={(lead as any).activities || []} // Assuming lead object has activities or we accept empty for now.
-                      onAddActivity={() => { }} // Placeholder
-                    />
-                  </div>
-                  <div className="border rounded-md p-2 h-full overflow-y-auto">
-                    <h4 className="font-semibold mb-2">Calendar</h4>
-                    <CalendarIntegration leadId={lead.id} />
+                        <div className="flex items-center gap-2">
+                          {mobile.isMain && (
+                            <span className="px-2 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded-full">
+                              Main
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(mobile.number, `mobile${index + 1}`)}
+                            className="text-gray-400 hover:text-black transition-colors"
+                            title="Copy mobile number"
+                            aria-label={`Copy mobile number ${index + 1}`}
+                          >
+                            {copiedField === `mobile${index + 1}` ? (
+                              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+              )}
+
+              {/* Dynamic Fields Section */}
+              {customColumns.length > 0 && (
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Additional Information</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {customColumns.map((column) => {
+                      const value = (lead as unknown as Record<string, unknown>)[column.fieldKey] as unknown;
+                      const displayValue = formatFieldValue(value, column.type);
+
+                      return (
+                        <FieldPermissionGuard key={column.fieldKey} resource="leads" fieldName={column.fieldKey} mode="view">
+                          <div className="bg-white p-2 rounded border">
+                            <div className="flex justify-between items-center mb-1">
+                              <div className="text-xs font-medium text-black">{column.label}</div>
+                              {displayValue !== 'N/A' && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(String(value), column.fieldKey)}
+                                  className="text-gray-400 hover:text-black transition-colors"
+                                  title={`Copy ${column.label}`}
+                                  aria-label={`Copy ${column.label} to clipboard`}
+                                >
+                                  {copiedField === column.fieldKey ? (
+                                    <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-xs text-black">{displayValue}</div>
+                          </div>
+                        </FieldPermissionGuard>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Final Conclusion */}
+              {lead.finalConclusion && (
+                <div className="bg-gray-50 p-2 rounded-md">
+                  <label className="block text-xs font-medium text-black mb-1">Final Conclusion</label>
+                  <p className="text-xs font-medium text-black break-words">{lead.finalConclusion}</p>
+                </div>
+              )}
+
+            </div>
+          </div>
 
           {/* Modal Footer */}
           <div className="flex justify-between items-center mt-3 pt-2 border-t">
