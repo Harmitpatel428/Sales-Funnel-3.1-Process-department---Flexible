@@ -503,6 +503,7 @@ export default function AllLeadsPage() {
 
   // Editable table states
   const [validationErrors, setValidationErrors] = useState<Record<string, Record<string, string>>>({});
+  const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
 
 
   // Import progress tracking state
@@ -740,6 +741,7 @@ export default function AllLeadsPage() {
   const openModal = (lead: Lead) => {
     setSelectedLead(lead);
     setShowLeadModal(true);
+    setHighlightedLeadId(lead.id);
     document.body.style.overflow = 'hidden';
   };
 
@@ -2935,12 +2937,15 @@ export default function AllLeadsPage() {
             onLeadClick={handleLeadClick}
             selectedLeads={selectedLeads}
             onLeadSelection={handleSelectLead}
+            selectAll={selectedLeads.size === allLeads.length && allLeads.length > 0}
+            onSelectAll={(checked) => { if (checked) { setSelectedLeads(new Set(allLeads.map(l => l.id))); } else { setSelectedLeads(new Set()); } }}
             showActions={false}
             emptyMessage="No leads found in the system"
             editable={true}
             headerEditable={true}
             onCellUpdate={handleCellUpdate}
             validationErrors={validationErrors}
+            highlightedLeadId={highlightedLeadId}
             onColumnAdded={(column) => {
               // Handle column addition
               if (IMPORT_DEBUG && process.env.NODE_ENV === 'development') {
@@ -2995,6 +3000,7 @@ export default function AllLeadsPage() {
           onClose={() => {
             setShowLeadModal(false);
             document.body.style.overflow = 'unset';
+            setTimeout(() => setHighlightedLeadId(null), 3000);
           }}
           lead={selectedLead!}
           onEdit={handleEditLead}

@@ -255,7 +255,7 @@ const EditableHeaderCell = React.memo(function EditableHeaderCell({
             {getColumnTypeIcon(column.type)}
           </span>
         )}
-        <span className="font-medium text-gray-900 truncate">
+        <span className="font-bold text-gray-900 truncate">
           {currentLabel}
         </span>
         {column?.required && (

@@ -32,7 +32,7 @@ interface EditableTableProps {
   onRowsDeleted?: (count: number) => void;
   onExportClick?: () => void;
   highlightedLeadId?: string | null;
-  roleFilter?: (leads: Lead[]) => Lead[]; // Role-based filter function for SALES_EXECUTIVE visibility
+  roleFilter?: (leads: Lead[]) => Lead[];
 }
 
 const EditableTable: React.FC<EditableTableProps> = ({
@@ -70,7 +70,22 @@ const EditableTable: React.FC<EditableTableProps> = ({
   const [passwordSettingsOpen, setPasswordSettingsOpen] = useState(false);
   const [columnManagementOpen, setColumnManagementOpen] = useState(false);
   const [rowManagementOpen, setRowManagementOpen] = useState(false);
+
   const [pendingOperation, setPendingOperation] = useState<string | null>(null);
+  const [freezeHeader, setFreezeHeader] = useState(false);
+
+  // Load saved freeze header state
+  React.useEffect(() => {
+    const saved = localStorage.getItem('freezeLeadHeader');
+    if (saved !== null) {
+      setFreezeHeader(saved === 'true');
+    }
+  }, []);
+
+  const handleFreezeToggle = useCallback((value: boolean) => {
+    setFreezeHeader(value);
+    localStorage.setItem('freezeLeadHeader', value.toString());
+  }, []);
 
   // Toggle header edit mode
   const toggleHeaderEditMode = useCallback(() => {
@@ -254,7 +269,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
   };
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative bg-white rounded-lg shadow-sm ${className}`}>
       {/* Editable Table Toolbar */}
       {editable && (
         <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
@@ -316,7 +331,18 @@ const EditableTable: React.FC<EditableTableProps> = ({
             {editMode && getSaveStatusIcon()}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-4">
+            {/* Freeze Header Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={freezeHeader}
+                onChange={(e) => handleFreezeToggle(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Freeze Header</span>
+            </label>
+
             {/* Password Settings */}
             <button
               onClick={() => setPasswordSettingsOpen(true)}
@@ -361,6 +387,7 @@ const EditableTable: React.FC<EditableTableProps> = ({
         {...(onColumnReorder && { onColumnReorder })}
         highlightedLeadId={highlightedLeadId}
         {...(roleFilter && { roleFilter })}
+        stickyHeader={freezeHeader}
       />
 
       {/* Keyboard Shortcuts Help */}
