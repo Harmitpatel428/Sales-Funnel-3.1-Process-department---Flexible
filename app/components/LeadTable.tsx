@@ -14,6 +14,8 @@ import { LeadSchema } from '@/lib/validation/schemas';
 const MobileNumbersModal = lazy(() => import('./MobileNumbersModal'));
 const ColumnManagementModal = lazy(() => import('./ColumnManagementModal'));
 
+const VIRTUALIZATION_THRESHOLD = 50;
+
 type SortField = keyof Lead | '';
 type SortDirection = 'asc' | 'desc';
 
@@ -38,6 +40,188 @@ interface LeadTableProps {
   highlightedLeadId?: string | null;
   roleFilter?: (leads: Lead[]) => Lead[]; // Role-based filter function for SALES_EXECUTIVE visibility
 }
+
+interface LeadRowData {
+  leads: Lead[];
+  onLeadClick?: (lead: Lead) => void;
+  selectedLeads: Set<string>;
+  onLeadSelection?: (leadId: string, checked: boolean) => void;
+  getVisibleColumns: () => ColumnConfig[];
+  editable: boolean;
+  handleCellUpdate: (leadId: string, field: string, value: string) => Promise<void>;
+  validationErrors: Record<string, Record<string, string>>;
+  showActions: boolean;
+  actionButtons?: (lead: Lead) => React.ReactNode;
+  getStatusColor: (status: Lead['status']) => string;
+  formatDate: (dateString: string) => string;
+  getColumnByKey: (fieldKey: string) => ColumnConfig | undefined;
+  setMobileModalOpen: (leadId: string | null) => void;
+  getMobileNumbers: (lead: Lead) => any[];
+  getMainMobileNumber: (lead: Lead) => string;
+  getDisplayValue: (lead: Lead, fieldKey: string) => any;
+  highlightedLeadId?: string | null;
+  gridTemplateColumns: string;
+}
+
+const LeadRow = React.memo(function LeadRow({ index, style, data }: {
+  index: number;
+  style: React.CSSProperties;
+  data: LeadRowData;
+}) {
+  const lead = data.leads[index];
+  if (!lead) return null;
+
+  // Grid row styles with react-window positioning
+  const rowStyle: React.CSSProperties = {
+    ...style,
+    display: 'grid',
+    gridTemplateColumns: data.gridTemplateColumns,
+    alignItems: 'center',
+    borderBottom: '1px solid #e5e7eb',
+    backgroundColor: lead.id === data.highlightedLeadId ? '#eff6ff' : 'white',
+  };
+
+  const rowClassName = `cursor-pointer transition-colors duration-150 hover:bg-gray-50 ${lead.id === data.highlightedLeadId ? 'border-l-4 border-blue-400' : ''}`;
+  const cellClassName = 'px-0.5 py-0.5 whitespace-nowrap overflow-hidden';
+
+  // Check if lead is new (created within last 24 hours)
+  const getBadgeStatus = (lead: Lead): 'JUST_ADDED' | 'NEW' | null => {
+    const isManualNew = lead.status === 'New';
+    if (!lead.createdAt) return isManualNew ? 'NEW' : null;
+    try {
+      const created = new Date(lead.createdAt);
+      const now = new Date();
+      const diffInMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+      if (diffInMinutes < 20) return 'JUST_ADDED';
+      if (diffInMinutes < 24 * 60) return 'NEW';
+    } catch {
+      return isManualNew ? 'NEW' : null;
+    }
+    return isManualNew ? 'NEW' : null;
+  };
+
+  const badgeStatus = getBadgeStatus(lead);
+
+  return (
+    <div
+      style={rowStyle}
+      className={rowClassName}
+      onClick={() => data.onLeadClick && data.onLeadClick(lead)}
+    >
+      {data.onLeadSelection && (
+        <div className={cellClassName}>
+          <div className="w-9 h-8 flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={data.selectedLeads.has(lead.id)}
+              onChange={(e) => data.onLeadSelection && data.onLeadSelection(lead.id, e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+              aria-label={`Select lead ${lead.kva}`}
+            />
+          </div>
+        </div>
+      )}
+      {data.getVisibleColumns().map((column) => {
+        const fieldKey = column.fieldKey;
+        const mutableValue = (lead as any)[fieldKey] ?? '';
+        const snapshotValue = data.getDisplayValue(lead, fieldKey);
+        const columnConfig = data.getColumnByKey(fieldKey);
+        const defaultValue = columnConfig?.defaultValue || '';
+        const displayValue = snapshotValue ?? defaultValue;
+
+        // Mobile number field
+        if (fieldKey === 'mobileNumber') {
+          return (
+            <div key={fieldKey} className={cellClassName}>
+              {data.editable ? (
+                <div className="flex items-center space-x-1">
+                  <EditableCell
+                    value={data.getMainMobileNumber(lead).replace(/-/g, '')}
+                    type="number"
+                    onSave={(val) => {
+                      const mobileNumbers = data.getMobileNumbers(lead);
+                      const updatedMobileNumbers = [...mobileNumbers];
+                      const mainIndex = updatedMobileNumbers.findIndex(m => m.isMain);
+                      if (mainIndex >= 0) {
+                        const existing = updatedMobileNumbers[mainIndex];
+                        if (existing) {
+                          updatedMobileNumbers[mainIndex] = { id: existing.id, number: val, name: existing.name, isMain: existing.isMain };
+                        }
+                      } else if (updatedMobileNumbers.length > 0) {
+                        const existing = updatedMobileNumbers[0];
+                        if (existing) {
+                          updatedMobileNumbers[0] = { id: existing.id, number: val, name: existing.name, isMain: existing.isMain };
+                        }
+                      }
+                      data.handleCellUpdate(lead.id, 'mobileNumbers', JSON.stringify(updatedMobileNumbers));
+                      data.handleCellUpdate(lead.id, 'mobileNumber', val);
+                    }}
+                    placeholder="Mobile number"
+                    fieldName="mobileNumber"
+                    lead={lead}
+                    schema={LeadSchema}
+                    entityType="lead"
+                    className="text-xs max-w-12 truncate flex-1"
+                  />
+                  <button type="button" onClick={(e) => { e.stopPropagation(); data.setMobileModalOpen(lead.id); }} className="px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors" title="Edit all mobile numbers">...</button>
+                </div>
+              ) : (
+                <div className="px-1 text-xs text-black max-w-12 truncate">{data.getMainMobileNumber(lead).replace(/-/g, '')}</div>
+              )}
+            </div>
+          );
+        }
+
+        // Status field
+        if (fieldKey === 'status') {
+          const statusDisplayValue = snapshotValue ?? mutableValue;
+          return (
+            <div key={fieldKey} className={cellClassName}>
+              {data.editable ? (
+                <EditableCell value={mutableValue} type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type} options={column.options || ['New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'Work Alloted', 'Hotlead', 'Mandate Sent', 'Documentation', 'Others']} onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder="Select Status" fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs" />
+              ) : (
+                <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${data.getStatusColor(statusDisplayValue || lead.status)}`}>{statusDisplayValue === 'Work Alloted' ? 'WAO' : statusDisplayValue}</span>
+              )}
+            </div>
+          );
+        }
+
+        // Date fields
+        if (column.type === 'date') {
+          const dateDisplayValue = snapshotValue ?? mutableValue;
+          return (
+            <div key={fieldKey} className={cellClassName}>
+              {data.editable ? (
+                <EditableCell value={data.formatDate(mutableValue)} type="date" onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder="DD-MM-YYYY" fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs min-w-16" />
+              ) : (
+                <div className="text-xs text-black min-w-16">{data.formatDate(dateDisplayValue)}</div>
+              )}
+            </div>
+          );
+        }
+
+        // Default fields
+        return (
+          <div key={fieldKey} className={cellClassName}>
+            {data.editable ? (
+              <EditableCell value={displayValue} type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type} {...(column.options && { options: column.options })} onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder={`Enter ${column.label.toLowerCase()}`} fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs" />
+            ) : (
+              <div className="flex items-center gap-1">
+                <div className="text-xs text-black truncate" title={displayValue}>{displayValue || defaultValue || 'N/A'}</div>
+                {fieldKey === 'clientName' && badgeStatus === 'JUST_ADDED' && (<span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-green-200 shadow-sm animate-pulse whitespace-nowrap">JUST ADDED</span>)}
+                {fieldKey === 'clientName' && badgeStatus === 'NEW' && (<span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-200 shadow-sm animate-pulse">NEW</span>)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {data.showActions && (
+        <div className={cellClassName} onClick={(e) => e.stopPropagation()}>{data.actionButtons && data.actionButtons(lead)}</div>
+      )}
+    </div>
+  );
+});
 
 const LeadTable = React.memo(function LeadTable({
   filters = {},
@@ -65,6 +249,8 @@ const LeadTable = React.memo(function LeadTable({
   const { getVisibleColumns, getColumnByKey } = useColumns();
   const [sortField, setSortField] = useState<SortField>('');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [useVirtualization, setUseVirtualization] = useState(false);
+  const [virtualizationError, setVirtualizationError] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const [mobileModalOpen, setMobileModalOpen] = useState<string | null>(null);
   const [editingHeader, setEditingHeader] = useState<string | null>(null);
@@ -529,187 +715,7 @@ const LeadTable = React.memo(function LeadTable({
     gridTemplateColumns,
   ]);
 
-  // Memoized row component for virtualized grid - using divs only
-  const LeadRow = React.memo<{
-    index: number;
-    style: React.CSSProperties;
-    data: {
-      leads: Lead[];
-      onLeadClick?: (lead: Lead) => void;
-      selectedLeads: Set<string>;
-      onLeadSelection?: (leadId: string, checked: boolean) => void;
-      getVisibleColumns: () => ColumnConfig[];
-      editable: boolean;
-      handleCellUpdate: (leadId: string, field: string, value: string) => Promise<void>;
-      validationErrors: Record<string, Record<string, string>>;
-      showActions: boolean;
-      actionButtons?: (lead: Lead) => React.ReactNode;
-      getStatusColor: (status: Lead['status']) => string;
-      formatDate: (dateString: string) => string;
-      getColumnByKey: (fieldKey: string) => ColumnConfig | undefined;
-      setMobileModalOpen: (leadId: string | null) => void;
-      getMobileNumbers: (lead: Lead) => any[];
-      getMainMobileNumber: (lead: Lead) => string;
-      getDisplayValue: (lead: Lead, fieldKey: string) => any;
-      highlightedLeadId?: string | null;
-      gridTemplateColumns: string;
-    };
-  }>(({ index, style, data }) => {
-    const lead = data.leads[index];
-    if (!lead) return null;
-
-    // Grid row styles with react-window positioning
-    const rowStyle: React.CSSProperties = {
-      ...style,
-      display: 'grid',
-      gridTemplateColumns: data.gridTemplateColumns,
-      alignItems: 'center',
-      borderBottom: '1px solid #e5e7eb',
-      backgroundColor: lead.id === data.highlightedLeadId ? '#eff6ff' : 'white',
-    };
-
-    const rowClassName = `cursor-pointer transition-colors duration-150 hover:bg-gray-50 ${lead.id === data.highlightedLeadId ? 'border-l-4 border-blue-400' : ''}`;
-    const cellClassName = 'px-0.5 py-0.5 whitespace-nowrap overflow-hidden';
-
-    // Check if lead is new (created within last 24 hours)
-    const getBadgeStatus = (lead: Lead): 'JUST_ADDED' | 'NEW' | null => {
-      const isManualNew = lead.status === 'New';
-      if (!lead.createdAt) return isManualNew ? 'NEW' : null;
-      try {
-        const created = new Date(lead.createdAt);
-        const now = new Date();
-        const diffInMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
-        if (diffInMinutes < 20) return 'JUST_ADDED';
-        if (diffInMinutes < 24 * 60) return 'NEW';
-      } catch {
-        return isManualNew ? 'NEW' : null;
-      }
-      return isManualNew ? 'NEW' : null;
-    };
-
-    const badgeStatus = getBadgeStatus(lead);
-
-    return (
-      <div
-        style={rowStyle}
-        className={rowClassName}
-        onClick={() => data.onLeadClick && data.onLeadClick(lead)}
-      >
-        {data.onLeadSelection && (
-          <div className={cellClassName}>
-            <div className="w-9 h-8 flex items-center justify-center">
-              <input
-                type="checkbox"
-                checked={data.selectedLeads.has(lead.id)}
-                onChange={(e) => data.onLeadSelection && data.onLeadSelection(lead.id, e.target.checked)}
-                onClick={(e) => e.stopPropagation()}
-                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                aria-label={`Select lead ${lead.kva}`}
-              />
-            </div>
-          </div>
-        )}
-        {data.getVisibleColumns().map((column) => {
-          const fieldKey = column.fieldKey;
-          const mutableValue = (lead as any)[fieldKey] ?? '';
-          const snapshotValue = data.getDisplayValue(lead, fieldKey);
-          const columnConfig = data.getColumnByKey(fieldKey);
-          const defaultValue = columnConfig?.defaultValue || '';
-          const displayValue = snapshotValue ?? defaultValue;
-
-          // Mobile number field
-          if (fieldKey === 'mobileNumber') {
-            return (
-              <div key={fieldKey} className={cellClassName}>
-                {data.editable ? (
-                  <div className="flex items-center space-x-1">
-                    <EditableCell
-                      value={data.getMainMobileNumber(lead).replace(/-/g, '')}
-                      type="number"
-                      onSave={(val) => {
-                        const mobileNumbers = data.getMobileNumbers(lead);
-                        const updatedMobileNumbers = [...mobileNumbers];
-                        const mainIndex = updatedMobileNumbers.findIndex(m => m.isMain);
-                        if (mainIndex >= 0) {
-                          const existing = updatedMobileNumbers[mainIndex];
-                          if (existing) {
-                            updatedMobileNumbers[mainIndex] = { id: existing.id, number: val, name: existing.name, isMain: existing.isMain };
-                          }
-                        } else if (updatedMobileNumbers.length > 0) {
-                          const existing = updatedMobileNumbers[0];
-                          if (existing) {
-                            updatedMobileNumbers[0] = { id: existing.id, number: val, name: existing.name, isMain: existing.isMain };
-                          }
-                        }
-                        data.handleCellUpdate(lead.id, 'mobileNumbers', JSON.stringify(updatedMobileNumbers));
-                        data.handleCellUpdate(lead.id, 'mobileNumber', val);
-                      }}
-                      placeholder="Mobile number"
-                      fieldName="mobileNumber"
-                      lead={lead}
-                      schema={LeadSchema}
-                      entityType="lead"
-                      className="text-xs max-w-12 truncate flex-1"
-                    />
-                    <button type="button" onClick={(e) => { e.stopPropagation(); data.setMobileModalOpen(lead.id); }} className="px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors" title="Edit all mobile numbers">...</button>
-                  </div>
-                ) : (
-                  <div className="px-1 text-xs text-black max-w-12 truncate">{data.getMainMobileNumber(lead).replace(/-/g, '')}</div>
-                )}
-              </div>
-            );
-          }
-
-          // Status field
-          if (fieldKey === 'status') {
-            const statusDisplayValue = snapshotValue ?? mutableValue;
-            return (
-              <div key={fieldKey} className={cellClassName}>
-                {data.editable ? (
-                  <EditableCell value={mutableValue} type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type} options={column.options || ['New', 'CNR', 'Busy', 'Follow-up', 'Deal Close', 'Work Alloted', 'Hotlead', 'Mandate Sent', 'Documentation', 'Others']} onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder="Select Status" fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs" />
-                ) : (
-                  <span className={`px-1 inline-flex text-xs leading-5 font-semibold rounded-full max-w-16 truncate ${data.getStatusColor(statusDisplayValue || lead.status)}`}>{statusDisplayValue === 'Work Alloted' ? 'WAO' : statusDisplayValue}</span>
-                )}
-              </div>
-            );
-          }
-
-          // Date fields
-          if (column.type === 'date') {
-            const dateDisplayValue = snapshotValue ?? mutableValue;
-            return (
-              <div key={fieldKey} className={cellClassName}>
-                {data.editable ? (
-                  <EditableCell value={data.formatDate(mutableValue)} type="date" onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder="DD-MM-YYYY" fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs min-w-16" />
-                ) : (
-                  <div className="text-xs text-black min-w-16">{data.formatDate(dateDisplayValue)}</div>
-                )}
-              </div>
-            );
-          }
-
-          // Default fields
-          return (
-            <div key={fieldKey} className={cellClassName}>
-              {data.editable ? (
-                <EditableCell value={displayValue} type={column.type === 'email' || column.type === 'phone' ? 'text' : column.type} {...(column.options && { options: column.options })} onSave={(val) => data.handleCellUpdate(lead.id, fieldKey, val)} placeholder={`Enter ${column.label.toLowerCase()}`} fieldName={fieldKey} lead={lead} schema={LeadSchema} entityType="lead" className="text-xs" />
-              ) : (
-                <div className="flex items-center gap-1">
-                  <div className="text-xs text-black truncate" title={displayValue}>{displayValue || defaultValue || 'N/A'}</div>
-                  {fieldKey === 'clientName' && badgeStatus === 'JUST_ADDED' && (<span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-green-200 shadow-sm animate-pulse whitespace-nowrap">JUST ADDED</span>)}
-                  {fieldKey === 'clientName' && badgeStatus === 'NEW' && (<span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-purple-200 shadow-sm animate-pulse">NEW</span>)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {data.showActions && (
-          <div className={cellClassName} onClick={(e) => e.stopPropagation()}>{data.actionButtons && data.actionButtons(lead)}</div>
-        )}
-      </div>
-  });
-  LeadRow.displayName = 'LeadRow';
-
+  // LeadRow is defined as a top-level component above LeadTable
   return (
     <div className={`relative ${className}`}>
       {/* Count badge */}

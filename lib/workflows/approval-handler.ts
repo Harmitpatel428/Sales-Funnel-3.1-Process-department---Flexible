@@ -145,17 +145,8 @@ export class ApprovalHandler {
     }
 
     static async notifyApprovers(requestId: string, approverIds: string[], message?: string): Promise<void> {
-        const { sendEmail } = await import('../email-service');
-        for (const approverId of approverIds) {
-            const user = await prisma.user.findUnique({ where: { id: approverId } });
-            if (user?.email) {
-                await sendEmail({
-                    to: user.email,
-                    subject: 'Approval Required',
-                    html: `<p>${message || 'An approval has been requested.'}</p>`
-                }).catch(console.error);
-            }
-        }
+        // Email service has been removed.
+        console.log(`Approval requested from [${approverIds.join(', ')}]: ${message || 'No message'}`);
     }
 
     static async getPendingApprovals(userId: string, tenantId: string): Promise<ApprovalRequest[]> {

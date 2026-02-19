@@ -120,14 +120,14 @@ export function LeadProvider({ children }: { children: ReactNode }) {
   }, [updateLeadMutation]);
 
   const deleteLead = useCallback(async (id: string) => {
-    // Use React Query mutation
-    deleteLeadMutation.mutate(id);
+    // Use React Query mutation and await for proper error propagation
+    await deleteLeadMutation.mutateAsync(id);
   }, [deleteLeadMutation]);
 
   const permanentlyDeleteLead = useCallback(async (id: string) => {
     // For permanent delete, use the same delete endpoint
     // Backend handles soft vs hard delete based on implementation
-    deleteLeadMutation.mutate(id);
+    await deleteLeadMutation.mutateAsync(id);
   }, [deleteLeadMutation]);
 
   const markAsDone = useCallback(async (id: string) => {

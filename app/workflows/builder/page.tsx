@@ -29,7 +29,7 @@ interface Workflow {
 }
 
 const actionTypes = [
-    { value: 'SEND_EMAIL', label: 'Send Email', icon: '📧' },
+
     { value: 'ASSIGN_USER', label: 'Assign User', icon: '👤' },
     { value: 'UPDATE_FIELD', label: 'Update Field', icon: '✏️' },
     { value: 'CREATE_TASK', label: 'Create Task', icon: '📝' },
@@ -98,7 +98,7 @@ export default function WorkflowBuilderPage() {
             id: `step-${Date.now()}`,
             stepType: type,
             stepOrder: workflow.steps.length,
-            actionType: type === 'ACTION' ? 'SEND_EMAIL' : undefined,
+            actionType: type === 'ACTION' ? 'ASSIGN_USER' : undefined,
             actionConfig: {},
             conditionType: type === 'CONDITION' ? 'IF' : undefined,
             conditionConfig: {}
@@ -243,8 +243,8 @@ export default function WorkflowBuilderPage() {
                                 <div className="w-px h-6 bg-gray-300 mx-auto" />
                                 <div
                                     className={`rounded-lg p-4 shadow cursor-pointer transition-all ${step.stepType === 'CONDITION'
-                                            ? 'bg-yellow-50 border-2 border-yellow-300'
-                                            : 'bg-green-50 border-2 border-green-300'
+                                        ? 'bg-yellow-50 border-2 border-yellow-300'
+                                        : 'bg-green-50 border-2 border-green-300'
                                         } ${selectedStep === index ? 'ring-2 ring-blue-500' : ''}`}
                                     onClick={() => setSelectedStep(index)}
                                 >
@@ -298,44 +298,7 @@ export default function WorkflowBuilderPage() {
                                     </div>
 
                                     {/* Action-specific configuration */}
-                                    {workflow.steps[selectedStep].actionType === 'SEND_EMAIL' && (
-                                        <div className="space-y-3">
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">To</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="{{lead.email}}"
-                                                    value={(workflow.steps[selectedStep].actionConfig.to as string) || ''}
-                                                    onChange={(e) => updateStep(selectedStep, {
-                                                        actionConfig: { ...workflow.steps[selectedStep].actionConfig, to: e.target.value }
-                                                    })}
-                                                    className="w-full border rounded px-3 py-2 text-sm"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Subject</label>
-                                                <input
-                                                    type="text"
-                                                    value={(workflow.steps[selectedStep].actionConfig.subject as string) || ''}
-                                                    onChange={(e) => updateStep(selectedStep, {
-                                                        actionConfig: { ...workflow.steps[selectedStep].actionConfig, subject: e.target.value }
-                                                    })}
-                                                    className="w-full border rounded px-3 py-2 text-sm"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Body</label>
-                                                <textarea
-                                                    rows={4}
-                                                    value={(workflow.steps[selectedStep].actionConfig.body as string) || ''}
-                                                    onChange={(e) => updateStep(selectedStep, {
-                                                        actionConfig: { ...workflow.steps[selectedStep].actionConfig, body: e.target.value }
-                                                    })}
-                                                    className="w-full border rounded px-3 py-2 text-sm"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
+
 
                                     {workflow.steps[selectedStep].actionType === 'ASSIGN_USER' && (
                                         <div className="space-y-3">

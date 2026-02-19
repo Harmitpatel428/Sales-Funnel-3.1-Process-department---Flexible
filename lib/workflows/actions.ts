@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 
 // Action types
 export enum ActionType {
-    SEND_EMAIL = 'SEND_EMAIL',
+
     ASSIGN_USER = 'ASSIGN_USER',
     UPDATE_FIELD = 'UPDATE_FIELD',
     CREATE_TASK = 'CREATE_TASK',
@@ -34,15 +34,7 @@ export interface ActionResult {
 }
 
 // Action configuration interfaces
-export interface SendEmailConfig {
-    templateId?: string;
-    to: string; // Email or field reference like "{{lead.email}}"
-    cc?: string;
-    bcc?: string;
-    subject: string;
-    body: string;
-    attachments?: string[];
-}
+
 
 export interface AssignUserConfig {
     userId?: string;
@@ -132,8 +124,7 @@ export class ActionExecutor {
     async execute(actionType: ActionType, config: Record<string, unknown>): Promise<ActionResult> {
         try {
             switch (actionType) {
-                case ActionType.SEND_EMAIL:
-                    return await this.executeSendEmail(config as unknown as SendEmailConfig);
+
                 case ActionType.ASSIGN_USER:
                     return await this.executeAssignUser(config as unknown as AssignUserConfig);
                 case ActionType.UPDATE_FIELD:
@@ -194,46 +185,7 @@ export class ActionExecutor {
         return results;
     }
 
-    /**
-     * Send Email Action
-     */
-    private async executeSendEmail(config: SendEmailConfig): Promise<ActionResult> {
-        const to = this.resolveTemplate(config.to);
-        const subject = this.resolveTemplate(config.subject);
-        const body = this.resolveTemplate(config.body);
-        const cc = config.cc ? this.resolveTemplate(config.cc) : undefined;
-        const bcc = config.bcc ? this.resolveTemplate(config.bcc) : undefined;
 
-        try {
-            // Use the existing email service
-            const { sendEmail } = await import('../email-service');
-
-            await sendEmail({
-                to,
-                subject,
-                html: body,
-                cc,
-                bcc
-            });
-
-            // Log activity
-            await this.logActivity('email_outbound', `Workflow email sent to ${to}: ${subject}`);
-
-            return {
-                success: true,
-                actionType: ActionType.SEND_EMAIL,
-                message: `Email sent to ${to}`,
-                data: { to, subject }
-            };
-        } catch (error) {
-            return {
-                success: false,
-                actionType: ActionType.SEND_EMAIL,
-                message: `Failed to send email: ${(error as Error).message}`,
-                error: (error as Error).message
-            };
-        }
-    }
 
     /**
      * Assign User Action
@@ -693,19 +645,12 @@ export class ActionExecutor {
         });
     }
 
-    /**
-     * Send a notification to a user
-     */
     private async notifyUser(userId: string, message: string): Promise<void> {
         try {
             const user = await prisma.user.findUnique({ where: { id: userId } });
             if (user?.email) {
-                const { sendEmail } = await import('../email-service');
-                await sendEmail({
-                    to: user.email,
-                    subject: 'Workflow Notification',
-                    html: `<p>${message}</p>`
-                });
+                // Email service removed
+                console.log(`[Workflow] Notification for ${user.email}: ${message}`);
             }
         } catch (error) {
             console.error('Failed to notify user:', error);

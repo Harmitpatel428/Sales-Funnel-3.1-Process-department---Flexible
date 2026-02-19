@@ -104,7 +104,7 @@ const _LEGACY_IMPORT_FIELD_MAPPINGS = {
 
 export default function AllLeadsPage() {
   const router = useRouter();
-  const { leads, setLeads, permanentlyDeleteLead, updateLead, forwardToProcess } = useLeads();
+  const { leads, setLeads, permanentlyDeleteLead, updateLead } = useLeads();
   // const { cases, updateCase } = useCases();
   const { headerConfig } = useHeaders();
   const { getVisibleColumns } = useColumns();
@@ -142,6 +142,13 @@ export default function AllLeadsPage() {
   // Memoized to avoid rebuilding on every cell mapping
   const fieldMapping = useMemo(() => {
     const dynamicMapping: Record<string, keyof Lead> = {};
+    const addMapping = (header: string, field: keyof Lead) => {
+      if (!header) return;
+      const lower = header.toLowerCase().trim();
+      const normalized = normalizeHeader(header);
+      dynamicMapping[lower] = field;
+      dynamicMapping[normalized] = field;
+    };
 
     // Load saved mappings from localStorage (highest priority)
     try {
@@ -149,7 +156,7 @@ export default function AllLeadsPage() {
       if (savedMappings) {
         const parsedMappings = JSON.parse(savedMappings);
         Object.entries(parsedMappings).forEach(([excelHeader, systemField]) => {
-          dynamicMapping[normalizeHeader(excelHeader)] = systemField as keyof Lead;
+          addMapping(excelHeader, systemField as keyof Lead);
           if (process.env.NODE_ENV === 'development') {
             console.log(`📌 Applied saved mapping: '${excelHeader}' → '${systemField}'`);
           }
@@ -163,15 +170,14 @@ export default function AllLeadsPage() {
 
     // Add current custom header names to the mapping
     Object.entries(headerConfig).forEach(([fieldKey, customLabel]) => {
-      const labelLower = customLabel.toLowerCase().trim();
-      const normalized = labelLower.replace(/\s+/g, ' '); // Normalize multiple spaces
-      dynamicMapping[labelLower] = fieldKey as keyof Lead;
-      dynamicMapping[normalized] = fieldKey as keyof Lead;
+      const normalizedLabel = customLabel.toLowerCase().trim().replace(/\s+/g, ' ');
+      addMapping(normalizedLabel, fieldKey as keyof Lead);
+      addMapping(customLabel, fieldKey as keyof Lead);
 
       // Generate header variations using stringUtils
       const variations = getHeaderVariations(customLabel);
       variations.forEach(variation => {
-        dynamicMapping[variation] = fieldKey as keyof Lead;
+        addMapping(variation, fieldKey as keyof Lead);
       });
 
       // Add reverse mapping for exported headers
@@ -189,13 +195,12 @@ export default function AllLeadsPage() {
       };
 
       if (defaultLabels[fieldKey]) {
-        const defaultLabel = defaultLabels[fieldKey].toLowerCase();
-        dynamicMapping[defaultLabel] = fieldKey as keyof Lead;
+        addMapping(defaultLabels[fieldKey], fieldKey as keyof Lead);
 
         // Generate variations for default labels too
         const defaultVariations = getHeaderVariations(defaultLabels[fieldKey]);
         defaultVariations.forEach(variation => {
-          dynamicMapping[variation] = fieldKey as keyof Lead;
+          addMapping(variation, fieldKey as keyof Lead);
         });
       }
     });
@@ -203,15 +208,14 @@ export default function AllLeadsPage() {
     // Add current column configuration to the mapping
     const visibleColumns = getVisibleColumns();
     visibleColumns.forEach(column => {
-      const labelLower = column.label.toLowerCase().trim();
-      const normalized = labelLower.replace(/\s+/g, ' '); // Normalize multiple spaces
-      dynamicMapping[labelLower] = column.fieldKey as keyof Lead;
-      dynamicMapping[normalized] = column.fieldKey as keyof Lead;
+      const normalizedLabel = column.label.toLowerCase().trim().replace(/\s+/g, ' ');
+      addMapping(normalizedLabel, column.fieldKey as keyof Lead);
+      addMapping(column.label, column.fieldKey as keyof Lead);
 
       // Generate header variations using centralized function
       const variations = getHeaderVariations(column.label);
       variations.forEach(variation => {
-        dynamicMapping[variation] = column.fieldKey as keyof Lead;
+        addMapping(variation, column.fieldKey as keyof Lead);
       });
     });
 
@@ -240,7 +244,7 @@ export default function AllLeadsPage() {
     };
 
     Object.entries(mobileNumberMappings).forEach(([header, field]) => {
-      dynamicMapping[header] = field as keyof Lead;
+      addMapping(header, field as keyof Lead);
     });
 
     // Add legacy static mappings for backward compatibility
@@ -382,10 +386,30 @@ export default function AllLeadsPage() {
 
     // Add legacy mappings to dynamic mapping
     Object.entries(legacyMappings).forEach(([header, field]) => {
-      if (!dynamicMapping[header]) {
-        dynamicMapping[header] = field as keyof Lead;
+      if (!dynamicMapping[header] && !dynamicMapping[normalizeHeader(header)]) {
+        addMapping(header, field as keyof Lead);
       }
     });
+
+    // Explicit aliases for common export/import header variants
+    const followUpAliases = [
+      'Next Follow-up Date',
+      'Next Follow Up Date',
+      'Next Followup Date',
+      'Follow-up Date',
+      'Follow Up Date',
+      'Followup Date'
+    ];
+    followUpAliases.forEach(alias => addMapping(alias, 'followUpDate'));
+
+    const termLoanAliases = [
+      'Term Loan',
+      'Term Loan Suggestions',
+      'Term Loan Suggestion',
+      'Loan Suggestion',
+      'Loan Suggestions'
+    ];
+    termLoanAliases.forEach(alias => addMapping(alias, 'termLoan'));
 
     // Add logging for mapping conflicts
     const duplicates = Object.entries(dynamicMapping).filter(([, v], i, arr) =>
@@ -782,17 +806,12 @@ export default function AllLeadsPage() {
   };
 
   // Helper functions for delete operations
-  const performSingleDelete = async (leadId: string, reason?: string) => {
-    // Pass empty array for benefitTypes as this is a delete/forward operation from all-leads
-    const result = await forwardToProcess(leadId, [], reason, 'all_leads');
-
-    if (result.success) {
-      showToastNotification(
-        `Lead forwarded to Process pipeline and deleted. Case ${result.caseIds?.[0] || ''} created.`,
-        'success'
-      );
-    } else {
-      showToastNotification(`Failed to delete lead: ${result.message}`, 'error');
+  const performSingleDelete = async (leadId: string, _reason?: string) => {
+    try {
+      await permanentlyDeleteLead(leadId);
+      showToastNotification('Lead deleted successfully.', 'success');
+    } catch (error: any) {
+      showToastNotification(`Failed to delete lead: ${error?.message || 'Unknown error'}`, 'error');
     }
 
     // Close Lead Detail Modal if it's open
@@ -802,25 +821,25 @@ export default function AllLeadsPage() {
     }
   };
 
-  const performBulkDelete = async (leadIds: string[], reason?: string) => {
-    const forwardPromises = leadIds.map(leadId =>
-      forwardToProcess(leadId, [], reason, 'all_leads')
+  const performBulkDelete = async (leadIds: string[], _reason?: string) => {
+    const results = await Promise.allSettled(
+      leadIds.map(leadId => permanentlyDeleteLead(leadId))
     );
-
-    const results = await Promise.all(forwardPromises);
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter(r => r.status === 'fulfilled').length;
     const failCount = results.length - successCount;
 
     setSelectedLeads(new Set());
 
     if (failCount === 0) {
       showToastNotification(
-        `${successCount} lead(s) forwarded to Process pipeline and deleted successfully`,
+        `${successCount} lead(s) deleted successfully`,
         'success'
       );
     } else {
+      const firstFailure = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      const failureMessage = firstFailure?.reason?.message || 'Some deletions failed';
       showToastNotification(
-        `${successCount} succeeded, ${failCount} failed. Check console for details.`,
+        `${successCount} succeeded, ${failCount} failed. ${failureMessage}`,
         'error'
       );
     }
@@ -936,7 +955,7 @@ export default function AllLeadsPage() {
     return typeof value === 'number' && !isNaN(value) && value > 0;
   };
 
-  // Convert Excel serial date to readable date string in DD-MM-YYYY format
+  // Convert Excel serial date to ISO-8601 string for backend compatibility
   const convertExcelDate = (value: string | number | Date | null | undefined): string => {
     const inputValue = value;
     const inputType = typeof value;
@@ -946,62 +965,48 @@ export default function AllLeadsPage() {
     }
 
     if (!value) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📅 Empty value, returning empty string');
-      }
       return '';
     }
 
-    // If it's already a string, return as is
+    // If it's already a string, process it
     if (typeof value === 'string') {
       const trimmed = value.trim();
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📅 Processing string value:', trimmed);
-      }
 
-      // Check if it's already in DD-MM-YYYY format
+      // Check if it's in DD-MM-YYYY format
       if (trimmed.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [day, month, year] = trimmed.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const iso = date.toISOString();
         if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Already in DD-MM-YYYY format:', trimmed);
+          console.log(`✅ Converting DD-MM-YYYY: ${trimmed} → ISO: ${iso}`);
         }
-        return trimmed;
+        return iso;
       } else if (trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        // Convert from YYYY-MM-DD to DD-MM-YYYY
-        const parts = trimmed.split('-');
-        const year = parts[0];
-        const month = parts[1];
-        const day = parts[2];
-        const converted = `${day}-${month}-${year}`;
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`✅ Converting YYYY-MM-DD: ${trimmed} → DD-MM-YYYY: ${converted}`);
-        }
-        return converted;
+        // YYYY-MM-DD - treat as UTC date part
+        const [year, month, day] = trimmed.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const iso = date.toISOString();
+        return iso;
       } else if (trimmed.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
         // Handle MM/DD/YYYY or DD/MM/YYYY format
         const parts = trimmed.split('/');
-        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-          // Assume DD/MM/YYYY format
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          const converted = `${day}-${month}-${year}`;
+        if (parts.length === 3) {
+          // Assume DD/MM/YYYY
+          const day = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10);
+          const year = parseInt(parts[2], 10);
+          const date = new Date(Date.UTC(year, month - 1, day));
+          const iso = date.toISOString();
           if (process.env.NODE_ENV === 'development') {
-            console.log(`✅ Converting DD/MM/YYYY: ${trimmed} → DD-MM-YYYY: ${converted}`);
+            console.log(`✅ Converting DD/MM/YYYY: ${trimmed} → ISO: ${iso}`);
           }
-          return converted;
+          return iso;
         }
       } else {
         // Try to parse as date and convert
         const date = new Date(trimmed);
         if (!isNaN(date.getTime())) {
-          const day = String(date.getDate()).padStart(2, '0');
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const year = date.getFullYear();
-          const converted = `${day}-${month}-${year}`;
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`✅ Converting parsed date: ${trimmed} → DD-MM-YYYY: ${converted}`);
-          }
-          return converted;
+          return date.toISOString();
         }
         if (process.env.NODE_ENV === 'development') {
           console.warn('⚠️ Date conversion failed for string value:', trimmed);
@@ -1012,75 +1017,26 @@ export default function AllLeadsPage() {
 
     // If it's a number (Excel serial date), convert it
     if (typeof value === 'number') {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📅 Processing Excel serial number:', value);
-      }
-      // Excel serial date (days since 1900-01-01, but Excel incorrectly treats 1900 as leap year)
-      const excelEpoch = new Date(1900, 0, 1);
+      // Excel serial date (days since 1900-01-01)
+      const excelEpoch = new Date(Date.UTC(1900, 0, 1));
       const date = new Date(excelEpoch.getTime() + (value - 2) * 24 * 60 * 60 * 1000);
 
       if (!isNaN(date.getTime())) {
-        const day = date.getDate();
-        const month = date.getMonth() + 1;
-        const year = date.getFullYear();
-
-        // Validate date components before formatting
-        if (isNaN(day) || isNaN(month) || isNaN(year) || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900) {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('⚠️ Invalid date components:', { day, month, year });
-          }
-          return '';
-        }
-
-        const converted = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
+        const iso = date.toISOString();
         if (process.env.NODE_ENV === 'development') {
-          console.log(`✅ Converting Excel serial: ${value} → DD-MM-YYYY: ${converted}`);
+          console.log(`✅ Converting Excel serial: ${value} → ISO: ${iso}`);
         }
-        return converted;
-      } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('⚠️ Invalid Excel serial date:', value);
-        }
-        return '';
+        return iso;
       }
     }
 
     // If it's a Date object
     if (value instanceof Date) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📅 Processing Date object:', value);
+      if (!isNaN(value.getTime())) {
+        return value.toISOString();
       }
-
-      // Validate date object
-      if (isNaN(value.getTime())) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('⚠️ Invalid Date object');
-        }
-        return '';
-      }
-
-      const day = value.getDate();
-      const month = value.getMonth() + 1;
-      const year = value.getFullYear();
-
-      // Validate date components before formatting
-      if (isNaN(day) || isNaN(month) || isNaN(year) || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('⚠️ Invalid date components:', { day, month, year });
-        }
-        return '';
-      }
-
-      const converted = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ Converting Date object → DD-MM-YYYY: ${converted}`);
-      }
-      return converted;
     }
 
-    if (process.env.NODE_ENV === 'development') {
-      console.error('❌ Date conversion failed - unsupported value type:', { value: inputValue, type: inputType });
-    }
     return '';
   };
 
@@ -1088,7 +1044,7 @@ export default function AllLeadsPage() {
   const setDefaultValues = (lead: Partial<Lead>, skipValidation = false) => {
     if (!lead.status) lead.status = 'New';
     if (!lead.unitType) lead.unitType = 'New';
-    if (!lead.lastActivityDate) lead.lastActivityDate = new Date().toLocaleDateString('en-GB');
+    if (!lead.lastActivityDate) lead.lastActivityDate = new Date().toISOString();
     if (!lead.isDone) lead.isDone = false;
     if (!lead.isDeleted) lead.isDeleted = false;
     if (!lead.isUpdated) lead.isUpdated = false;
@@ -1111,7 +1067,7 @@ export default function AllLeadsPage() {
         if (defaultValue === undefined) {
           switch (column.type) {
             case 'date':
-              defaultValue = new Date().toLocaleDateString('en-GB');
+              defaultValue = new Date().toISOString();
               break;
             case 'number':
               defaultValue = 0;
@@ -1194,9 +1150,11 @@ export default function AllLeadsPage() {
 
   const mapHeaderToField = (lead: Partial<Lead>, header: string, value: any) => {
     const headerLower = header.toLowerCase().trim();
+    const headerNormalized = normalizeHeader(header);
     if (process.env.NODE_ENV === 'development') {
       console.log('=== MAPPING DEBUG ===');
       console.log('Header: "' + header + '" -> "' + headerLower + '"');
+      console.log('Header normalized: "' + headerNormalized + '"');
       console.log('Value: "' + value + '" (type: ' + typeof value + ')');
       console.log('Value length: ' + (value ? value.toString().length : 'undefined'));
       console.log('Is empty: ' + (!value || value === '' || value === null || value === undefined));
@@ -1205,7 +1163,7 @@ export default function AllLeadsPage() {
 
     // First, try to map using dynamic field mapping (includes custom headers and columns)
     const dynamicMapping = fieldMapping;
-    const fieldKey = dynamicMapping[headerLower];
+    const fieldKey = dynamicMapping[headerLower] || dynamicMapping[headerNormalized];
 
     if (fieldKey) {
       if (process.env.NODE_ENV === 'development') {
@@ -1221,7 +1179,7 @@ export default function AllLeadsPage() {
         ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fieldKey)) {
         // Handle date fields
         if (value && value !== '') {
-          const dateValue = isExcelDate(value) ? convertExcelDate(value) : String(value);
+          const dateValue = convertExcelDate(value);
           (lead as any)[fieldKey] = dateValue;
           if (process.env.NODE_ENV === 'development') {
             console.log('Mapped date field:', fieldKey, '=', dateValue);
@@ -1286,7 +1244,7 @@ export default function AllLeadsPage() {
         ['connectionDate', 'lastActivityDate', 'followUpDate'].includes(fuzzyMatch.fieldKey)) {
         // Handle date fields
         if (value && value !== '') {
-          const dateValue = isExcelDate(value) ? convertExcelDate(value) : String(value);
+          const dateValue = convertExcelDate(value);
           (lead as any)[fuzzyMatch.fieldKey] = dateValue;
           if (process.env.NODE_ENV === 'development') {
             console.log('Mapped date field (fuzzy):', fuzzyMatch.fieldKey, '=', dateValue);
@@ -2179,7 +2137,10 @@ export default function AllLeadsPage() {
 
     const mappingPreview = headers.map(header => {
       const headerLower = header.toLowerCase().trim();
-      const mappedField = dynamicMapping[headerLower];
+      const headerNormalized = normalizeHeader(header);
+      const exactMappedField = dynamicMapping[headerLower] || dynamicMapping[headerNormalized];
+      const fuzzyMappedField = !exactMappedField ? fuzzyMatchHeader(header, dynamicMapping)?.fieldKey : null;
+      const mappedField = exactMappedField || fuzzyMappedField;
       const columnConfig = visibleColumns.find(col => col.fieldKey === mappedField);
 
       return {
@@ -2359,142 +2320,163 @@ export default function AllLeadsPage() {
         };
       }) as Lead[];
 
-      // ============================================================================
-      // SIMPLE DUPLICATE DETECTION & IMPORT
-      // ============================================================================
-      // - If a match is found (active OR deleted): SKIP IT (duplicate)
-      // - If no match is found: CREATE new lead
+      const isMeaningfulLead = (lead: Partial<Lead>): boolean => {
+        const hasMainData = [
+          lead.kva,
+          lead.connectionDate,
+          lead.consumerNumber,
+          lead.company,
+          lead.clientName,
+          lead.discom,
+          lead.gidc,
+          lead.gstNumber,
+          lead.mobileNumber,
+          lead.companyLocation,
+          lead.unitType,
+          lead.termLoan,
+          lead.status,
+          lead.lastActivityDate,
+          lead.followUpDate,
+          lead.notes
+        ].some(value => String(value ?? '').trim() !== '');
 
-      // Helper: Sanitize mobile number to last 10 digits for consistent matching
-      const sanitizeMobileNumber = (phone: string | undefined | null): string => {
-        if (!phone) return '';
-        const digits = phone.replace(/[^0-9]/g, '');
-        return digits.slice(-10);
+        const hasAdditionalContacts = (lead.mobileNumbers || []).some(m =>
+          String(m.number ?? '').trim() !== '' || String(m.name ?? '').trim() !== ''
+        );
+
+        return hasMainData || hasAdditionalContacts;
       };
 
-      // Build lookup maps for O(1) duplicate detection
-      const mobileToLeadMap = new Map<string, boolean>();
-      const consumerToLeadMap = new Map<string, boolean>();
+      // Import all meaningful rows from the file and only drop truly empty rows.
+      const leadsToCreate: Lead[] = leadsWithIds
+        .filter(isMeaningfulLead)
+        .map((lead, index) => {
+          const normalizedLead = { ...lead } as Lead;
+          const clientName = String(normalizedLead.clientName ?? '').trim();
+          const company = String(normalizedLead.company ?? '').trim();
+          const email = String((normalizedLead as any).email ?? '').trim();
 
-      leads.forEach(existingLead => {
-        // Map by consumer number (mark as exists)
-        if (existingLead.consumerNumber && existingLead.consumerNumber.trim() !== '') {
-          consumerToLeadMap.set(existingLead.consumerNumber.trim().toLowerCase(), true);
-        }
-
-        // Map by sanitized mobile number
-        const sanitizedMobile = sanitizeMobileNumber(existingLead.mobileNumber);
-        if (sanitizedMobile.length === 10) {
-          mobileToLeadMap.set(sanitizedMobile, true);
-        }
-
-        // Map additional mobile numbers
-        (existingLead.mobileNumbers || []).forEach(m => {
-          const sanitized = sanitizeMobileNumber(m.number);
-          if (sanitized.length === 10) {
-            mobileToLeadMap.set(sanitized, true);
+          // API bulk-import requires at least one of clientName/company/email.
+          if (!clientName && !company && !email) {
+            normalizedLead.clientName = String(
+              normalizedLead.kva ||
+              normalizedLead.consumerNumber ||
+              normalizedLead.mobileNumber ||
+              `Imported Lead ${index + 1}`
+            );
           }
+
+          return normalizedLead;
         });
-      });
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📊 Built lookup maps: ${mobileToLeadMap.size} mobile, ${consumerToLeadMap.size} consumer`);
-      }
-
-      // Check if lead is a duplicate (exists in any form)
-      const isDuplicate = (newLead: Lead): boolean => {
-        // Check consumer number
-        if (newLead.consumerNumber && newLead.consumerNumber.trim() !== '') {
-          if (consumerToLeadMap.has(newLead.consumerNumber.trim().toLowerCase())) {
-            return true;
-          }
-        }
-
-        // Check main mobile number
-        const newMobileSanitized = sanitizeMobileNumber(newLead.mobileNumber);
-        if (newMobileSanitized.length === 10 && mobileToLeadMap.has(newMobileSanitized)) {
-          return true;
-        }
-
-        // Check additional mobile numbers
-        for (const m of (newLead.mobileNumbers || [])) {
-          const sanitized = sanitizeMobileNumber(m.number);
-          if (sanitized.length === 10 && mobileToLeadMap.has(sanitized)) {
-            return true;
-          }
-        }
-
-        return false;
-      };
-
-      // Process imported leads
-      const leadsToCreate: Lead[] = [];
-      let skippedDuplicateCount = 0;
-
-      leadsWithIds.forEach(newLead => {
-        if (isDuplicate(newLead)) {
-          skippedDuplicateCount++;
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`🚫 Skipped duplicate: ${newLead.clientName || newLead.kva || 'Unknown'}`);
-          }
-        } else {
-          leadsToCreate.push(newLead);
-        }
-      });
+      const filteredOutEmptyCount = leadsWithIds.length - leadsToCreate.length;
 
       // Add new leads to state -> NOW using Server Mutation
       if (leadsToCreate.length > 0) {
         setIsImporting(true);
-        setImportProgress({ current: 0, total: leadsToCreate.length }); // Indeterminate state really
+        setImportProgress({ current: 0, total: leadsToCreate.length });
 
-        bulkImportMutation.mutate(
-          { records: leadsToCreate, entityType: 'leads' },
-          {
-            onSuccess: (response) => {
-              setIsImporting(false);
-              const results = response.data;
+        const CHUNK_SIZE = 100;
+        let processedCount = 0;
+        let requestLevelFailures = 0;
+        const serverErrorSamples: string[] = [];
+        const aggregatedResults = {
+          successful: 0,
+          failed: 0,
+          skipped: 0
+        };
 
-              // Show success notification
-              setShowToast(true);
-              let message = `Import complete: ${results.successful} created.`;
-              if (skippedDuplicateCount > 0) {
-                message += ` ${skippedDuplicateCount} duplicates skipped locally.`;
+        const importChunk = async (records: Lead[]) => {
+          const response = await bulkImportMutation.mutateAsync({
+            records,
+            entityType: 'leads',
+            options: { skipDuplicates: false }
+          });
+          const results = response.data || { successful: 0, failed: 0, skipped: 0 };
+          aggregatedResults.successful += results.successful || 0;
+          aggregatedResults.failed += results.failed || 0;
+          aggregatedResults.skipped += results.skipped || 0;
+          const errors = Array.isArray((results as any).errors) ? (results as any).errors : [];
+          errors.slice(0, 3).forEach((err: any) => {
+            if (serverErrorSamples.length >= 3) return;
+            const row = err?.row ? `row ${err.row}` : 'row ?';
+            const details = Array.isArray(err?.errors) ? err.errors.join(', ') : 'validation error';
+            serverErrorSamples.push(`${row}: ${details}`);
+          });
+        };
+
+        for (let start = 0; start < leadsToCreate.length; start += CHUNK_SIZE) {
+          const chunk = leadsToCreate.slice(start, start + CHUNK_SIZE);
+
+          try {
+            await importChunk(chunk);
+            processedCount += chunk.length;
+            setImportProgress({ current: processedCount, total: leadsToCreate.length });
+          } catch (chunkError) {
+            // If a batch fails (timeout/network), retry each row so the rest still imports.
+            requestLevelFailures++;
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Chunk import failed, retrying row-by-row:', chunkError);
+            }
+
+            if (chunk.length > 1) {
+              for (const row of chunk) {
+                try {
+                  await importChunk([row]);
+                } catch (rowError) {
+                  requestLevelFailures++;
+                  aggregatedResults.failed += 1;
+                  if (process.env.NODE_ENV === 'development') {
+                    console.error('Row import failed:', rowError);
+                  }
+                } finally {
+                  processedCount += 1;
+                  setImportProgress({ current: processedCount, total: leadsToCreate.length });
+                }
               }
-              if (results.failed > 0) {
-                message += ` ${results.failed} failed on server.`;
-              }
-              if (results.skipped > 0) {
-                message += ` ${results.skipped} skipped on server.`;
-              }
-
-              setToastMessage(message);
-              setToastType('success');
-
-              // Auto-hide toast
-              setTimeout(() => {
-                setShowToast(false);
-              }, 5000);
-            },
-            onError: (error) => {
-              setIsImporting(false);
-              console.error('Bulk import mutation failed:', error);
-              setShowToast(true);
-              setToastMessage(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              setToastType('error');
-              setTimeout(() => {
-                setShowToast(false);
-              }, 5000);
+            } else {
+              aggregatedResults.failed += 1;
+              processedCount += 1;
+              setImportProgress({ current: processedCount, total: leadsToCreate.length });
             }
           }
-        );
+        }
+
+        setIsImporting(false);
+        setImportProgress({ current: 0, total: 0 });
+
+        setShowToast(true);
+        const estimatedTotalAfterImport = allLeads.length + aggregatedResults.successful;
+        let message = `Import complete: ${aggregatedResults.successful} created from this file.`;
+        if (filteredOutEmptyCount > 0) {
+          message += ` ${filteredOutEmptyCount} empty rows ignored.`;
+        }
+        if (aggregatedResults.failed > 0) {
+          message += ` ${aggregatedResults.failed} failed on server.`;
+        }
+        if (aggregatedResults.skipped > 0) {
+          message += ` ${aggregatedResults.skipped} skipped on server.`;
+        }
+        if (requestLevelFailures > 0) {
+          message += ` ${requestLevelFailures} request retries were needed.`;
+        }
+        if (aggregatedResults.successful === 0 && serverErrorSamples.length > 0) {
+          message += ` Example errors: ${serverErrorSamples.join(' | ')}`;
+        }
+        message += ` Total active leads in system: ~${estimatedTotalAfterImport}.`;
+
+        setToastMessage(message);
+        setToastType(aggregatedResults.successful > 0 ? 'success' : 'error');
+
+        setTimeout(() => {
+          setShowToast(false);
+        }, 6000);
       } else {
         // Show toast notification for no data
         setShowToast(true);
-        if (skippedDuplicateCount > 0) {
-          setToastMessage(`No new leads to import. ${skippedDuplicateCount} duplicates skipped.`);
-        } else {
-          setToastMessage('No new data to import.');
-        }
+        setToastMessage(filteredOutEmptyCount > 0
+          ? `No valid rows to import. ${filteredOutEmptyCount} empty rows were ignored.`
+          : 'No new data to import.');
         setToastType('info');
 
         // Auto-hide toast after 5 seconds
@@ -2792,7 +2774,7 @@ export default function AllLeadsPage() {
                   {allLeads.length}
                 </div>
                 <div className="text-black text-xs font-semibold uppercase tracking-wide group-hover:text-black transition-colors duration-300">
-                  Total Leads
+                  Total Active Leads
                 </div>
               </div>
 

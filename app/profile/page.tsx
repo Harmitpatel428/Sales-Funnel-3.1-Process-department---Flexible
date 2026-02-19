@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useUsers } from '../context/UserContext';
 import RoleGuard from '../components/RoleGuard';
+import MFASetupModal from '../components/MFASetupModal';
 
 // Password strength checker
 function checkPasswordStrength(password: string): { score: number; label: string; color: string } {
@@ -347,7 +348,7 @@ export default function ProfilePage() {
             </div>
 
             {/* MFA Modals */}
-            import MFASetupModal from '../components/MFASetupModal';
+            {/* MFA Modals */}
             <MFASetupModal
                 isOpen={showMFASetup}
                 onClose={() => setShowMFASetup(false)}

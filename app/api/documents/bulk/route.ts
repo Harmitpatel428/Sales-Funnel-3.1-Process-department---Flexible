@@ -61,13 +61,13 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
         }, { status: 403 });
     }
 
-    let result;
+    let bulkResult;
 
     // Wrap all operations in transaction
     await prisma.$transaction(async (tx) => {
         switch (action) {
             case 'DELETE':
-                result = await tx.document.updateMany({
+                bulkResult = await tx.document.updateMany({
                     where: { id: { in: documentIds } },
                     data: {
                         isDeleted: true,
@@ -89,7 +89,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
                 break;
 
             case 'VERIFY':
-                result = await tx.document.updateMany({
+                bulkResult = await tx.document.updateMany({
                     where: { id: { in: documentIds } },
                     data: {
                         status: 'VERIFIED',
@@ -112,7 +112,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
                 break;
 
             case 'REJECT':
-                result = await tx.document.updateMany({
+                bulkResult = await tx.document.updateMany({
                     where: { id: { in: documentIds } },
                     data: {
                         status: 'REJECTED',
@@ -159,7 +159,7 @@ const postHandler: ApiHandler = async (req: NextRequest, context: ApiContext) =>
     const response = NextResponse.json({
         success: true,
         action,
-        count: result?.count || 0,
+        count: bulkResult?.count || 0,
     });
 
     // Store idempotency result

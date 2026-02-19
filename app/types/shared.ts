@@ -246,8 +246,8 @@ export interface LeadContextType {
   isLoading?: boolean; // Added for API loading state
   addLead: (lead: Lead, columnConfigs?: ColumnConfig[]) => void;
   updateLead: (updatedLead: Lead, opts?: { touchActivity?: boolean }) => void;
-  deleteLead: (id: string) => void;
-  permanentlyDeleteLead: (id: string) => void;
+  deleteLead: (id: string) => Promise<void>;
+  permanentlyDeleteLead: (id: string) => Promise<void>;
   markAsDone: (id: string) => void;
   addActivity: (leadId: string, description: string, options?: {
     activityType?: Activity['activityType'],

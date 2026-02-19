@@ -438,13 +438,8 @@ export class WorkflowExecutor {
                         where: { id: execution.workflow.createdById }
                     });
                     if (creator?.email) {
-                        const { sendEmail } = await import('../email-service');
-                        await sendEmail({
-                            to: creator.email,
-                            subject: `Workflow Failed: ${execution.workflow.name}`,
-                            html: `<p>Workflow "${execution.workflow.name}" failed with error: ${errorMessage}</p>
-                     <p>Execution ID: ${executionId}</p>`
-                        });
+                        // Email service removed
+                        console.log(`Workflow failed notification would be sent to ${creator.email}: ${errorMessage}`);
                     }
                 } catch (e) {
                     console.error('Failed to notify workflow creator:', e);

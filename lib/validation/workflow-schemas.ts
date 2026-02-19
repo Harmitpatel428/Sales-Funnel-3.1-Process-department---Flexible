@@ -32,7 +32,7 @@ export const TriggerConfigSchema = z.object({
 
 // Action types
 export const ActionTypeSchema = z.enum([
-    'SEND_EMAIL',
+
     'ASSIGN_USER',
     'UPDATE_FIELD',
     'CREATE_TASK',
@@ -47,15 +47,7 @@ export const ActionTypeSchema = z.enum([
 export const ConditionTypeSchema = z.enum(['IF', 'ELSE_IF', 'ELSE', 'AND', 'OR']);
 
 // Action configuration schemas
-export const SendEmailConfigSchema = z.object({
-    templateId: z.string().optional(),
-    to: z.string(),
-    cc: z.string().optional(),
-    bcc: z.string().optional(),
-    subject: z.string(),
-    body: z.string(),
-    attachments: z.array(z.string()).optional()
-});
+
 
 export const AssignUserConfigSchema = z.object({
     userId: z.string().optional(),

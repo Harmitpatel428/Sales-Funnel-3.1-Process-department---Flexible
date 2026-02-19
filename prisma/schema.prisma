@@ -936,7 +936,7 @@ model WorkflowStep {
   workflowId      String
   stepType        String   // CONDITION, ACTION
   stepOrder       Int
-  actionType      String?  // SEND_EMAIL, ASSIGN_USER, UPDATE_FIELD, CREATE_TASK, WEBHOOK, WAIT, APPROVAL
+  actionType      String?  // ASSIGN_USER, UPDATE_FIELD, CREATE_TASK, WEBHOOK, WAIT, APPROVAL
   actionConfig    String   @default("{}") // JSON with parameters
   conditionType   String?  // IF, ELSE_IF, ELSE, AND, OR
   conditionConfig String   @default("{}") // JSON with field, operator, value

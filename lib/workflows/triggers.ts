@@ -3,9 +3,8 @@
  * Detects triggers and initiates workflow executions
  */
 
-import { PrismaClient, Workflow, Lead, Case } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import type { Workflow } from '@prisma/client';
+import { prisma } from '../db';
 
 // Trigger types enum
 export enum TriggerType {
